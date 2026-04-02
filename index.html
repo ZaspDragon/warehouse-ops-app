@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarehouseOS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">📦</div>
+        <div>
+          <h1>WarehouseOS</h1>
+          <p>All-in-one operations hub</p>
+        </div>
+      </div>
+
+      <div class="shift-box">
+        <label for="shiftSelect">Shift</label>
+        <select id="shiftSelect">
+          <option>Day Shift</option>
+          <option>Swing Shift</option>
+          <option>Night Shift</option>
+        </select>
+      </div>
+
+      <nav class="nav" id="navTabs">
+        <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="nav-btn" data-tab="operations">Operations</button>
+        <button class="nav-btn" data-tab="inventory">Inventory</button>
+        <button class="nav-btn" data-tab="receiving">Receiving</button>
+        <button class="nav-btn" data-tab="labor">Labor</button>
+        <button class="nav-btn" data-tab="quality">Quality</button>
+        <button class="nav-btn" data-tab="maintenance">Maintenance</button>
+        <button class="nav-btn" data-tab="reports">Reports</button>
+      </nav>
+
+      <div class="targets-card card">
+        <h3>Live Targets</h3>
+        <div class="target-row">
+          <span>Order SLA</span><strong>96%</strong>
+        </div>
+        <div class="bar"><span style="width:96%"></span></div>
+        <div class="target-row">
+          <span>Inventory Accuracy</span><strong>98.4%</strong>
+        </div>
+        <div class="bar"><span style="width:98.4%"></span></div>
+        <div class="target-row">
+          <span>Labor Utilization</span><strong>87%</strong>
+        </div>
+        <div class="bar"><span style="width:87%"></span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2>Warehouse Control Center</h2>
+          <p>Run inventory, labor, tasks, safety, receiving, and reporting from one place.</p>
+        </div>
+        <div class="topbar-tools">
+          <input id="searchInput" type="search" placeholder="Search people, bins, items, tasks..." />
+          <button class="primary-btn" id="newActionBtn">+ New Action</button>
+        </div>
+      </header>
+
+      <section class="tab-content active" id="dashboard">
+        <div class="kpi-grid" id="dashboardKpis"></div>
+
+        <div class="two-col">
+          <div class="card">
+            <div class="section-head">
+              <div>
+                <h3>Operations Snapshot</h3>
+                <p>Current performance and active floor tasks.</p>
+              </div>
+            </div>
+            <div class="mini-grid">
+              <div class="mini-stat">
+                <span>On-Time Rate</span>
+                <strong>96%</strong>
+                <small>Current shipping performance</small>
+              </div>
+              <div class="mini-stat">
+                <span>Inventory Accuracy</span>
+                <strong>98.4%</strong>
+                <small>Based on recent counts</small>
+              </div>
+              <div class="mini-stat">
+                <span>Labor Utilization</span>
+                <strong>87%</strong>
+                <small>Tracked active work time</small>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th>Owner</th>
+                    <th>Zone</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardTasks"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <div>
+                <h3>Supervisor Notes</h3>
+                <p>Shift notes, handoffs, and pain points.</p>
+              </div>
+            </div>
+            <textarea id="noteInput" rows="5" placeholder="Add shift notes, delays, wins, pain points, coaching notes..."></textarea>
+            <button class="primary-btn block-btn" id="saveNoteBtn">Save Note</button>
+            <div id="notesList" class="stack-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-content" id="operations">
+        <div class="section-head">
+          <div>
+            <h3>Operations Command</h3>
+            <p>Control tasks, replenishment, and floor execution.</p>
+          </div>
+          <button class="primary-btn">+ Create Task</button>
+        </div>
+        <div class="card table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Task</th>
+                <th>Owner</th>
+                <th>Zone</th>
+                <th>Priority</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="operationsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="tab-content" id="inventory">
+        <div class="section-head">
+          <div>
+            <h3>Inventory Control</h3>
+            <p>Track items, primaries, overstock, shortages, and bin health.</p>
+          </div>
+          <div class="toolbar-right">
+            <button class="secondary-btn">Filters</button>
+            <button class="primary-btn">+ New Count</button>
+          </div>
+        </div>
+        <div class="kpi-grid slim" id="inventoryKpis"></div>
+        <div class="card table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Description</th>
+                <th>On Hand</th>
+                <th>Primary</th>
+                <th>Overstock</th>
+                <th>Bin</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="inventoryTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="tab-content" id="receiving">
+        <div class="section-head">
+          <div>
+            <h3>Receiving & Inbound</h3>
+            <p>Manage arrivals, unloads, damages, dock status, and throughput.</p>
+          </div>
+        </div>
+        <div class="kpi-grid slim" id="receivingKpis"></div>
+        <div class="card">
+          <h3>Inbound Workflow</h3>
+          <div class="mini-grid">
+            <div class="mini-stat"><span>Check in trailer</span><small>Verify appointment, PO, and dock door assignment.</small></div>
+            <div class="mini-stat"><span>Receive & inspect</span><small>Count pallets, inspect damages, verify labels and paperwork.</small></div>
+            <div class="mini-stat"><span>Stage & release</span><small>Assign staging and hand off to floor team.</small></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-content" id="labor">
+        <div class="section-head">
+          <div>
+            <h3>Labor & Productivity</h3>
+            <p>Track employee output, downtime, coaching, and errors.</p>
+          </div>
+        </div>
+        <div class="subtabs">
+          <button class="subtab-btn active" data-subtab="people">People</button>
+          <button class="subtab-btn" data-subtab="leaderboard">Leaderboard</button>
+          <button class="subtab-btn" data-subtab="coaching">Coaching</button>
+        </div>
+
+        <div class="subtab-content active" id="people">
+          <div class="card table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Department</th>
+                  <th>Productivity</th>
+                  <th>Errors</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="laborTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="subtab-content" id="leaderboard">
+          <div class="leaderboard-grid" id="leaderboardGrid"></div>
+        </div>
+
+        <div class="subtab-content" id="coaching">
+          <div class="card form-grid">
+            <div>
+              <label>Employee</label>
+              <input type="text" placeholder="Select or type employee name" />
+            </div>
+            <div>
+              <label>Topic</label>
+              <input type="text" placeholder="Safety, productivity, scan compliance..." />
+            </div>
+            <div class="full">
+              <label>Coaching Notes</label>
+              <textarea rows="5" placeholder="What happened, what was reviewed, and what is the next expectation?"></textarea>
+            </div>
+            <div class="full">
+              <button class="primary-btn">Save Coaching Entry</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-content" id="quality">
+        <div class="section-head">
+          <div>
+            <h3>Quality & Safety</h3>
+            <p>Track incidents, near misses, variances, and damages.</p>
+          </div>
+        </div>
+        <div class="card table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Area</th>
+                <th>Severity</th>
+                <th>Owner</th>
+              </tr>
+            </thead>
+            <tbody id="qualityTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="tab-content" id="maintenance">
+        <div class="section-head">
+          <div>
+            <h3>Equipment & Maintenance</h3>
+            <p>Monitor forklift status, PM schedules, chargers, and service needs.</p>
+          </div>
+        </div>
+        <div class="kpi-grid slim" id="maintenanceKpis"></div>
+      </section>
+
+      <section class="tab-content" id="reports">
+        <div class="section-head">
+          <div>
+            <h3>Reports & Exports</h3>
+            <p>Generate daily, weekly, and leadership reports.</p>
+          </div>
+        </div>
+        <div class="report-grid" id="reportsGrid"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
