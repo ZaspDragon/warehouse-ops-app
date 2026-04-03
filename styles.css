@@ -94,14 +94,19 @@ textarea {
 
 .nav-btn {
   border: none;
-  border-radius: 16px;
-  padding: 14px 16px;
+  border-radius: 18px;
+  padding: 16px 18px;
   text-align: left;
   background: #f6f9fc;
-  color: #234;
+  color: #102a43;
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.nav-btn:hover {
+  background: #eaf1fb;
 }
 
 .nav-btn.active {
@@ -227,9 +232,17 @@ textarea {
   margin-bottom: 10px;
 }
 
+.text-lg {
+  font-size: 26px !important;
+}
+
 .card p {
   color: #5b7694;
   margin: 0;
+}
+
+.alert-card {
+  border-left: 6px solid #2563eb;
 }
 
 .section-head {
@@ -290,11 +303,30 @@ th {
   font-weight: 700;
 }
 
-.badge.blue { background: #dbeafe; color: #1d4ed8; }
-.badge.green { background: #dcfce7; color: #15803d; }
-.badge.red { background: #fee2e2; color: #b91c1c; }
-.badge.yellow { background: #fef3c7; color: #b45309; }
-.badge.gray { background: #e5e7eb; color: #374151; }
+.badge.blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badge.green {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badge.red {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.badge.yellow {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.badge.gray {
+  background: #e5e7eb;
+  color: #374151;
+}
 
 .stack-list {
   display: flex;
@@ -310,6 +342,16 @@ th {
   padding: 14px;
 }
 
+.coach-text {
+  margin-top: 8px;
+}
+
+.coach-date {
+  margin-top: 8px;
+  color: #5b7694;
+  font-size: 13px;
+}
+
 .mt-16 {
   margin-top: 16px;
 }
@@ -320,7 +362,6 @@ th {
 
 .filter-grid,
 .form-grid,
-.workflow-grid,
 .report-grid {
   display: grid;
   gap: 16px;
@@ -343,22 +384,6 @@ th {
 
 .full-span {
   grid-column: 1 / -1;
-}
-
-.workflow-grid {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.workflow-box {
-  background: #f6f9fc;
-  border: 1px solid #d8e3f0;
-  border-radius: 22px;
-  padding: 18px;
-}
-
-.workflow-box h3 {
-  margin-top: 0;
-  margin-bottom: 10px;
 }
 
 .report-grid {
@@ -446,8 +471,7 @@ th {
   .card-grid.four,
   .card-grid.five,
   .card-grid.three,
-  .report-grid,
-  .workflow-grid {
+  .report-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -484,8 +508,7 @@ th {
   .card-grid.three,
   .filter-grid,
   .form-grid,
-  .report-grid,
-  .workflow-grid {
+  .report-grid {
     grid-template-columns: 1fr;
   }
 }
