@@ -1,17 +1,18 @@
 const STORAGE_KEYS = {
-  tasks: "warehouse_tasks_v2",
-  notes: "warehouse_notes_v2",
-  inventory: "warehouse_inventory_v2",
-  counts: "warehouse_counts_v2",
-  trucks: "warehouse_trucks_v2",
-  coaching: "warehouse_coaching_v2"
+  tasks: "warehouse_tasks_v3",
+  notes: "warehouse_notes_v3",
+  inventory: "warehouse_inventory_v3",
+  counts: "warehouse_counts_v3",
+  trucks: "warehouse_trucks_v3",
+  coaching: "warehouse_coaching_v3",
+  quality: "warehouse_quality_v3"
 };
 
 const defaultTasks = [
-  { id: "T-1042", task: "Putaway pallet", owner: "Kris", zone: "A-10-3", priority: "High", status: "Active" },
-  { id: "T-1043", task: "Replenish primary", owner: "Henry", zone: "K05-2", priority: "High", status: "Queued" },
-  { id: "T-1044", task: "Cycle count", owner: "Dawitt", zone: "L4-2", priority: "Medium", status: "Active" },
-  { id: "T-1045", task: "Damage review", owner: "Yussif", zone: "QC", priority: "Low", status: "Pending" }
+  { id: "T-1042", task: "Putaway pallet", owner: "Kris", zone: "A-10-3", priority: "High", status: "Active", createdAt: new Date(Date.now() - 35 * 60000).toISOString() },
+  { id: "T-1043", task: "Replenish primary", owner: "Henry", zone: "K05-2", priority: "High", status: "Queued", createdAt: new Date(Date.now() - 15 * 60000).toISOString() },
+  { id: "T-1044", task: "Cycle count", owner: "Dawitt", zone: "L4-2", priority: "Medium", status: "Active", createdAt: new Date(Date.now() - 8 * 60000).toISOString() },
+  { id: "T-1045", task: "Damage review", owner: "Yussif", zone: "QC", priority: "Low", status: "Pending", createdAt: new Date(Date.now() - 52 * 60000).toISOString() }
 ];
 
 const defaultInventory = [
@@ -26,17 +27,17 @@ const defaultNotes = [
   "Cycle count variance found on item 581220."
 ];
 
-const laborData = [
+const defaultLaborData = [
   { name: "Kris", role: "Lift Driver", department: "Putaway", productivity: 94, errors: 1, status: "On Floor" },
   { name: "Henry", role: "Lift Driver", department: "Replenishment", productivity: 88, errors: 2, status: "On Floor" },
   { name: "Dawitt", role: "Inventory", department: "Cycle Count", productivity: 91, errors: 0, status: "Counting" },
-  { name: "Yussif", role: "Lift Driver", department: "Putaway", productivity: 79, errors: 3, status: "Downtime" }
+  { name: "Yussif", role: "Lift Driver", department: "Putaway", productivity: 72, errors: 3, status: "Downtime" }
 ];
 
-const qualityData = [
-  { date: "2026-04-02", type: "Near Miss", area: "Receiving", severity: "Medium", owner: "Alicia" },
-  { date: "2026-04-02", type: "Inventory Variance", area: "Aisle K", severity: "High", owner: "Henry" },
-  { date: "2026-04-01", type: "Damaged Product", area: "Aisle A", severity: "Low", owner: "Kris" }
+const defaultQualityData = [
+  { date: "2026-04-02", type: "Near Miss", area: "Receiving", severity: "Medium", owner: "Alicia", notes: "Forklift traffic too close to dock." },
+  { date: "2026-04-02", type: "Inventory Variance", area: "Aisle K", severity: "High", owner: "Henry", notes: "Mismatch between physical and system quantity." },
+  { date: "2026-04-01", type: "Damaged Product", area: "Aisle A", severity: "Low", owner: "Kris", notes: "Crushed corner on inbound case." }
 ];
 
 let tasks = loadStorage(STORAGE_KEYS.tasks, defaultTasks);
@@ -45,6 +46,8 @@ let inventory = loadStorage(STORAGE_KEYS.inventory, defaultInventory);
 let counts = loadStorage(STORAGE_KEYS.counts, []);
 let trucks = loadStorage(STORAGE_KEYS.trucks, []);
 let coachingEntries = loadStorage(STORAGE_KEYS.coaching, []);
+let qualityData = loadStorage(STORAGE_KEYS.quality, defaultQualityData);
+const laborData = defaultLaborData;
 
 let inventoryFiltersOpen = false;
 let inventoryFilterState = {
@@ -66,9 +69,12 @@ document.addEventListener("DOMContentLoaded", () => {
   setupNav();
   setupButtons();
   renderAll();
+
   setInterval(() => {
     renderReceivingTable();
     renderReceivingStats();
+    renderTasks();
+    renderDashboardStats();
   }, 1000);
 });
 
@@ -104,6 +110,7 @@ function setupButtons() {
   document.getElementById("filtersBtn").addEventListener("click", toggleInventoryFilters);
   document.getElementById("newCountBtn").addEventListener("click", openNewCountModal);
   document.getElementById("addTruckBtn").addEventListener("click", openAddTruckModal);
+  document.getElementById("addIncidentBtn").addEventListener("click", openAddIncidentModal);
   document.getElementById("closeModalBtn").addEventListener("click", closeModal);
 
   document.getElementById("saveDashboardNoteBtn").addEventListener("click", () => {
@@ -160,7 +167,19 @@ function renderAll() {
 function renderDashboardStats() {
   document.getElementById("dashboardTruckCount").textContent = trucks.length;
   document.getElementById("dashboardCountCount").textContent = counts.length;
-  document.getElementById("dashboardTaskCount").textContent = tasks.length;
+  document.getElementById("dashboardTaskCount").textContent = tasks.filter(t => t.status !== "Done").length;
+
+  document.getElementById("tasksBehind").textContent = tasks.filter(t =>
+    t.status !== "Done" && (t.status === "Queued" || t.status === "Pending" || isTaskAtRisk(t))
+  ).length;
+
+  document.getElementById("lowInventory").textContent = inventory.filter(i =>
+    i.status === "Low" || i.status === "Out"
+  ).length;
+
+  document.getElementById("activeTrucks").textContent = trucks.filter(t => t.status === "Active").length;
+
+  document.getElementById("laborIssues").textContent = laborData.filter(l => l.productivity < 75).length;
 }
 
 function getSearchValue() {
@@ -169,7 +188,6 @@ function getSearchValue() {
 
 function renderTasks() {
   const search = getSearchValue();
-
   const filtered = tasks.filter(t =>
     `${t.id} ${t.task} ${t.owner} ${t.zone} ${t.priority} ${t.status}`.toLowerCase().includes(search)
   );
@@ -181,14 +199,19 @@ function renderTasks() {
   dashboardBody.innerHTML = "";
 
   filtered.forEach(task => {
-    const rowHtml = `
+    const ageText = getTaskAge(task);
+    const risk = isTaskAtRisk(task) ? '<span class="badge red">At Risk</span>' : '<span class="badge green">OK</span>';
+
+    operationsBody.insertAdjacentHTML("beforeend", `
       <tr>
         <td>${task.id}</td>
-        <td>${task.task}</td>
-        <td>${task.owner}</td>
-        <td>${task.zone}</td>
+        <td>${escapeHtml(task.task)}</td>
+        <td>${escapeHtml(task.owner)}</td>
+        <td>${escapeHtml(task.zone)}</td>
         <td>${badge(task.priority)}</td>
         <td>${badge(task.status)}</td>
+        <td>${ageText}</td>
+        <td>${risk}</td>
         <td>
           <div class="action-row">
             <button class="small-btn" onclick="toggleTaskStatus('${task.id}')">Advance</button>
@@ -196,16 +219,14 @@ function renderTasks() {
           </div>
         </td>
       </tr>
-    `;
-
-    operationsBody.insertAdjacentHTML("beforeend", rowHtml);
+    `);
 
     dashboardBody.insertAdjacentHTML("beforeend", `
       <tr>
         <td>${task.id}</td>
-        <td>${task.task}</td>
-        <td>${task.owner}</td>
-        <td>${task.zone}</td>
+        <td>${escapeHtml(task.task)}</td>
+        <td>${escapeHtml(task.owner)}</td>
+        <td>${escapeHtml(task.zone)}</td>
         <td>${badge(task.priority)}</td>
         <td>${badge(task.status)}</td>
       </tr>
@@ -241,12 +262,12 @@ function renderInventory() {
   filtered.forEach(item => {
     body.insertAdjacentHTML("beforeend", `
       <tr>
-        <td>${item.item}</td>
-        <td>${item.desc}</td>
+        <td>${escapeHtml(item.item)}</td>
+        <td>${escapeHtml(item.desc)}</td>
         <td>${item.onHand}</td>
         <td>${item.primary}</td>
         <td>${item.overstock}</td>
-        <td>${item.bin}</td>
+        <td>${escapeHtml(item.bin)}</td>
         <td>${badge(item.status)}</td>
       </tr>
     `);
@@ -267,16 +288,21 @@ function renderReceivingTable() {
 
   filtered.forEach(truck => {
     const timerText = getTruckElapsedTime(truck);
+    const delay = isTruckDelayed(truck)
+      ? '<span class="badge red">Delayed</span>'
+      : '<span class="badge green">On Time</span>';
+
     body.insertAdjacentHTML("beforeend", `
       <tr>
-        <td>${truck.truckNumber}</td>
-        <td>${truck.carrier}</td>
-        <td>${truck.dockDoor}</td>
+        <td>${escapeHtml(truck.truckNumber)}</td>
+        <td>${escapeHtml(truck.carrier)}</td>
+        <td>${escapeHtml(truck.dockDoor)}</td>
         <td>${truck.containers}</td>
         <td>${truck.osds}</td>
         <td>${formatDateTime(truck.startTime)}</td>
         <td>${timerText}</td>
         <td>${badge(truck.status)}</td>
+        <td>${delay}</td>
         <td>
           <div class="action-row">
             ${truck.status === "Active"
@@ -322,10 +348,11 @@ function renderLabor() {
     .forEach(emp => {
       body.insertAdjacentHTML("beforeend", `
         <tr>
-          <td>${emp.name}</td>
-          <td>${emp.role}</td>
-          <td>${emp.department}</td>
+          <td>${escapeHtml(emp.name)}</td>
+          <td>${escapeHtml(emp.role)}</td>
+          <td>${escapeHtml(emp.department)}</td>
           <td>${emp.productivity}%</td>
+          <td><span class="badge ${getLaborStatusClass(emp.productivity)}">${getLaborGoalLabel(emp.productivity)}</span></td>
           <td>${emp.errors}</td>
           <td>${badge(emp.status)}</td>
         </tr>
@@ -335,19 +362,29 @@ function renderLabor() {
 
 function renderQuality() {
   const body = document.getElementById("qualityTable");
+  const search = getSearchValue();
   body.innerHTML = "";
 
-  qualityData.forEach(item => {
+  const filtered = qualityData.filter(item =>
+    `${item.date} ${item.type} ${item.area} ${item.severity} ${item.owner} ${item.notes}`.toLowerCase().includes(search)
+  );
+
+  filtered.forEach(item => {
     body.insertAdjacentHTML("beforeend", `
       <tr>
-        <td>${item.date}</td>
-        <td>${item.type}</td>
-        <td>${item.area}</td>
+        <td>${escapeHtml(item.date)}</td>
+        <td>${escapeHtml(item.type)}</td>
+        <td>${escapeHtml(item.area)}</td>
         <td>${badge(item.severity)}</td>
-        <td>${item.owner}</td>
+        <td>${escapeHtml(item.owner)}</td>
+        <td>${escapeHtml(item.notes || "")}</td>
       </tr>
     `);
   });
+
+  document.getElementById("qualityTotalCount").textContent = qualityData.length;
+  document.getElementById("qualityHighCount").textContent = qualityData.filter(i => i.severity === "High").length;
+  document.getElementById("qualityTopArea").textContent = getTopIssueArea();
 }
 
 function renderCoaching() {
@@ -358,8 +395,8 @@ function renderCoaching() {
     list.insertAdjacentHTML("beforeend", `
       <div class="coach-box">
         <strong>${escapeHtml(entry.employee)}</strong> — ${escapeHtml(entry.topic)}
-        <div style="margin-top:8px;">${escapeHtml(entry.notes)}</div>
-        <div style="margin-top:8px; color:#5b7694; font-size:13px;">${formatDateTime(entry.createdAt)}</div>
+        <div class="coach-text">${escapeHtml(entry.notes)}</div>
+        <div class="coach-date">${formatDateTime(entry.createdAt)}</div>
       </div>
     `);
   });
@@ -381,18 +418,22 @@ function openNewActionModal() {
           <option value="issue">Issue</option>
         </select>
       </div>
+
       <div>
         <label>Owner</label>
         <input id="newActionOwner" type="text" placeholder="Kris" />
       </div>
+
       <div class="full-span">
         <label>Description</label>
         <textarea id="newActionDescription" placeholder="What needs to happen?"></textarea>
       </div>
+
       <div>
         <label>Zone / Area</label>
         <input id="newActionZone" type="text" placeholder="A-10-3 or Receiving" />
       </div>
+
       <div>
         <label>Priority</label>
         <select id="newActionPriority">
@@ -402,6 +443,7 @@ function openNewActionModal() {
         </select>
       </div>
     </div>
+
     <div class="mt-16">
       <button class="primary-btn full" onclick="saveNewAction()">Save Action</button>
     </div>
@@ -424,7 +466,8 @@ function saveNewAction() {
       owner,
       zone,
       priority,
-      status: type === "issue" ? "Pending" : "Active"
+      status: type === "issue" ? "Pending" : "Active",
+      createdAt: new Date().toISOString()
     });
     saveStorage(STORAGE_KEYS.tasks, tasks);
     renderTasks();
@@ -446,14 +489,17 @@ function openCreateTaskModal() {
         <label>Task</label>
         <input id="taskNameInput" type="text" placeholder="Replenish primary" />
       </div>
+
       <div>
         <label>Owner</label>
         <input id="taskOwnerInput" type="text" placeholder="Henry" />
       </div>
+
       <div>
         <label>Zone</label>
         <input id="taskZoneInput" type="text" placeholder="K05-2" />
       </div>
+
       <div>
         <label>Priority</label>
         <select id="taskPriorityInput">
@@ -463,6 +509,7 @@ function openCreateTaskModal() {
         </select>
       </div>
     </div>
+
     <div class="mt-16">
       <button class="primary-btn full" onclick="saveTask()">Save Task</button>
     </div>
@@ -483,7 +530,8 @@ function saveTask() {
     owner,
     zone,
     priority,
-    status: "Active"
+    status: "Active",
+    createdAt: new Date().toISOString()
   });
 
   saveStorage(STORAGE_KEYS.tasks, tasks);
@@ -503,6 +551,7 @@ function toggleTaskStatus(id) {
 
   saveStorage(STORAGE_KEYS.tasks, tasks);
   renderTasks();
+  renderDashboardStats();
   showToast("Task status updated.");
 }
 
@@ -521,19 +570,23 @@ function openNewCountModal() {
         <label>Item Number</label>
         <input id="countItemInput" type="text" placeholder="607529" />
       </div>
+
       <div>
         <label>Bin</label>
         <input id="countBinInput" type="text" placeholder="A-10-3" />
       </div>
+
       <div>
         <label>Counted Quantity</label>
         <input id="countQtyInput" type="number" placeholder="12" />
       </div>
+
       <div>
         <label>Description</label>
         <input id="countDescInput" type="text" placeholder="Valve Assembly" />
       </div>
     </div>
+
     <div class="mt-16">
       <button class="primary-btn full" onclick="saveCount()">Save Count</button>
     </div>
@@ -591,23 +644,28 @@ function openAddTruckModal() {
         <label>Truck Number</label>
         <input id="truckNumberInput" type="text" placeholder="TRK-104" />
       </div>
+
       <div>
         <label>Carrier</label>
         <input id="truckCarrierInput" type="text" placeholder="FedEx Freight" />
       </div>
+
       <div>
         <label>Dock Door</label>
         <input id="truckDockInput" type="text" placeholder="Door 4" />
       </div>
+
       <div>
         <label>Containers</label>
         <input id="truckContainersInput" type="number" placeholder="2" />
       </div>
+
       <div>
         <label>OSDs</label>
         <input id="truckOsdInput" type="number" placeholder="1" />
       </div>
     </div>
+
     <div class="mt-16">
       <button class="primary-btn full" onclick="saveTruck()">Save Truck & Start Timer</button>
     </div>
@@ -657,6 +715,7 @@ function stopTruckTimer(id) {
   saveStorage(STORAGE_KEYS.trucks, trucks);
   renderReceivingTable();
   renderReceivingStats();
+  renderDashboardStats();
   showToast("Truck timer stopped.");
 }
 
@@ -672,6 +731,7 @@ function restartTruckTimer(id) {
   saveStorage(STORAGE_KEYS.trucks, trucks);
   renderReceivingTable();
   renderReceivingStats();
+  renderDashboardStats();
   showToast("Truck timer restarted.");
 }
 
@@ -685,23 +745,28 @@ function editTruck(id) {
         <label>Truck Number</label>
         <input id="editTruckNumberInput" type="text" value="${escapeAttribute(truck.truckNumber)}" />
       </div>
+
       <div>
         <label>Carrier</label>
         <input id="editTruckCarrierInput" type="text" value="${escapeAttribute(truck.carrier)}" />
       </div>
+
       <div>
         <label>Dock Door</label>
         <input id="editTruckDockInput" type="text" value="${escapeAttribute(truck.dockDoor)}" />
       </div>
+
       <div>
         <label>Containers</label>
         <input id="editTruckContainersInput" type="number" value="${truck.containers}" />
       </div>
+
       <div>
         <label>OSDs</label>
         <input id="editTruckOsdInput" type="number" value="${truck.osds}" />
       </div>
     </div>
+
     <div class="mt-16">
       <button class="primary-btn full" onclick="saveTruckEdit('${truck.id}')">Save Changes</button>
     </div>
@@ -734,12 +799,88 @@ function deleteTruck(id) {
   showToast("Truck deleted.");
 }
 
-function getTruckElapsedTime(truck) {
-  if (truck.status === "Active") {
-    const elapsed = Math.floor((new Date() - new Date(truck.startTime)) / 1000);
-    return secondsToClock(elapsed);
-  }
-  return secondsToClock(truck.totalElapsedSeconds || 0);
+function openAddIncidentModal() {
+  openModal("Add Quality / Safety Incident", `
+    <div class="form-grid">
+      <div>
+        <label>Date</label>
+        <input id="incidentDateInput" type="date" />
+      </div>
+
+      <div>
+        <label>Type</label>
+        <select id="incidentTypeInput">
+          <option value="Near Miss">Near Miss</option>
+          <option value="Damaged Product">Damaged Product</option>
+          <option value="Inventory Variance">Inventory Variance</option>
+          <option value="Safety Violation">Safety Violation</option>
+          <option value="Product Damage">Product Damage</option>
+          <option value="OSD Issue">OSD Issue</option>
+          <option value="Equipment Damage">Equipment Damage</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Area</label>
+        <input id="incidentAreaInput" type="text" placeholder="Receiving, Aisle K, Dock 4..." />
+      </div>
+
+      <div>
+        <label>Severity</label>
+        <select id="incidentSeverityInput">
+          <option value="Low">Low</option>
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Owner</label>
+        <input id="incidentOwnerInput" type="text" placeholder="Henry" />
+      </div>
+
+      <div class="full-span">
+        <label>Notes</label>
+        <textarea id="incidentNotesInput" placeholder="What happened?"></textarea>
+      </div>
+    </div>
+
+    <div class="mt-16">
+      <button class="primary-btn full" onclick="saveIncident()">Save Incident</button>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const today = new Date().toISOString().split("T")[0];
+    const input = document.getElementById("incidentDateInput");
+    if (input) input.value = today;
+  }, 0);
+}
+
+function saveIncident() {
+  const date = document.getElementById("incidentDateInput").value;
+  const type = document.getElementById("incidentTypeInput").value;
+  const area = document.getElementById("incidentAreaInput").value.trim();
+  const severity = document.getElementById("incidentSeverityInput").value;
+  const owner = document.getElementById("incidentOwnerInput").value.trim();
+  const notesText = document.getElementById("incidentNotesInput").value.trim();
+
+  if (!date || !area || !owner) return showToast("Fill in date, area, and owner.");
+
+  qualityData.unshift({
+    date,
+    type,
+    area,
+    severity,
+    owner,
+    notes: notesText
+  });
+
+  saveStorage(STORAGE_KEYS.quality, qualityData);
+  renderQuality();
+  closeModal();
+  showToast("Incident added.");
 }
 
 function saveCoachingEntry() {
@@ -771,18 +912,26 @@ function generateReport(type) {
 
   if (type === "supervisor") {
     content += "DAILY SUPERVISOR REPORT\n\n";
+    content += `Open Tasks: ${tasks.filter(t => t.status !== "Done").length}\n`;
+    content += `Tasks Behind: ${tasks.filter(t => t.status !== "Done" && (t.status === "Queued" || t.status === "Pending" || isTaskAtRisk(t))).length}\n`;
+    content += `Trucks: ${trucks.length}\n`;
+    content += `Low Inventory: ${inventory.filter(i => i.status === "Low" || i.status === "Out").length}\n`;
+    content += `Incidents: ${qualityData.length}\n\n`;
+
     content += "TASKS:\n";
     tasks.forEach(t => {
       content += `${t.id} | ${t.task} | ${t.owner} | ${t.zone} | ${t.priority} | ${t.status}\n`;
     });
+
     content += "\nNOTES:\n";
     notes.forEach(n => {
       content += `- ${n}\n`;
     });
-    content += "\nRECEIVING SUMMARY:\n";
-    content += `Trucks: ${trucks.length}\n`;
-    content += `OSDs: ${trucks.reduce((s, t) => s + Number(t.osds || 0), 0)}\n`;
-    content += `Containers: ${trucks.reduce((s, t) => s + Number(t.containers || 0), 0)}\n`;
+
+    content += "\nCOACHING:\n";
+    coachingEntries.forEach(c => {
+      content += `${c.employee} | ${c.topic} | ${c.notes}\n`;
+    });
   }
 
   if (type === "receiving") {
@@ -797,6 +946,7 @@ function generateReport(type) {
     getFilteredInventory().forEach(i => {
       content += `${i.item} | ${i.desc} | On Hand: ${i.onHand} | Primary: ${i.primary} | Overstock: ${i.overstock} | Bin: ${i.bin} | ${i.status}\n`;
     });
+
     content += "\nCOUNT HISTORY:\n";
     counts.forEach(c => {
       content += `${c.item} | ${c.desc} | Qty: ${c.qty} | Bin: ${c.bin} | ${formatDateTime(c.createdAt)}\n`;
@@ -824,14 +974,78 @@ function showToast(message) {
   setTimeout(() => toast.classList.add("hidden"), 2200);
 }
 
+function getTaskAge(task) {
+  if (!task.createdAt) return "-";
+  const diffMs = Date.now() - new Date(task.createdAt).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  const hrs = Math.floor(mins / 60);
+
+  if (hrs > 0) {
+    return `${hrs}h ${mins % 60}m`;
+  }
+  return `${mins}m`;
+}
+
+function isTaskAtRisk(task) {
+  if (!task.createdAt || task.status === "Done") return false;
+  const elapsed = (Date.now() - new Date(task.createdAt)) / 60000;
+  return elapsed > 30;
+}
+
+function isTruckDelayed(truck) {
+  if (truck.status !== "Active") return false;
+  const elapsed = (Date.now() - new Date(truck.startTime)) / 60000;
+  return elapsed > 60;
+}
+
+function getTruckElapsedTime(truck) {
+  if (truck.status === "Active") {
+    const elapsed = Math.floor((new Date() - new Date(truck.startTime)) / 1000);
+    return secondsToClock(elapsed);
+  }
+  return secondsToClock(truck.totalElapsedSeconds || 0);
+}
+
+function getLaborStatusClass(productivity) {
+  if (productivity >= 90) return "green";
+  if (productivity >= 75) return "yellow";
+  return "red";
+}
+
+function getLaborGoalLabel(productivity) {
+  if (productivity >= 90) return "Above Goal";
+  if (productivity >= 75) return "Near Goal";
+  return "Below Goal";
+}
+
+function getTopIssueArea() {
+  if (!qualityData.length) return "None";
+  const counter = {};
+  qualityData.forEach(i => {
+    counter[i.area] = (counter[i.area] || 0) + 1;
+  });
+
+  let topArea = "None";
+  let topCount = 0;
+
+  Object.entries(counter).forEach(([area, count]) => {
+    if (count > topCount) {
+      topArea = area;
+      topCount = count;
+    }
+  });
+
+  return topArea;
+}
+
 function badge(value) {
   const v = String(value).toLowerCase();
 
   let cls = "gray";
-  if (["active", "healthy", "on floor", "done", "completed"].includes(v)) cls = "green";
+  if (["active", "healthy", "on floor", "done", "completed", "on time"].includes(v)) cls = "green";
   if (["queued", "medium", "counting"].includes(v)) cls = "blue";
-  if (["pending", "low", "lowpriority"].includes(v)) cls = "yellow";
-  if (["high", "out", "downtime"].includes(v)) cls = "red";
+  if (["pending", "low", "near goal"].includes(v)) cls = "yellow";
+  if (["high", "out", "downtime", "below goal", "delayed"].includes(v)) cls = "red";
 
   return `<span class="badge ${cls}">${escapeHtml(value)}</span>`;
 }
@@ -887,3 +1101,4 @@ window.restartTruckTimer = restartTruckTimer;
 window.editTruck = editTruck;
 window.saveTruckEdit = saveTruckEdit;
 window.deleteTruck = deleteTruck;
+window.saveIncident = saveIncident;
