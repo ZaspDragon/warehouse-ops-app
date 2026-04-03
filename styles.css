@@ -86,6 +86,10 @@ textarea {
   resize: vertical;
 }
 
+#putawayOcrPreview {
+  min-height: 180px;
+}
+
 .nav-menu {
   display: flex;
   flex-direction: column;
