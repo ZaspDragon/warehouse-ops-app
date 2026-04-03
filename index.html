@@ -251,9 +251,12 @@
         <div class="section-head">
           <div>
             <h2>Receiving & Inbound</h2>
-            <p>Track trucks, containers, OSDs, and live dock time.</p>
+            <p>Track trucks, containers, OSDs, live dock time, and put away logs.</p>
           </div>
-          <button id="addTruckBtn" class="primary-btn">+ Add Truck</button>
+          <div class="btn-row">
+            <button id="addTruckBtn" class="primary-btn">+ Add Truck</button>
+            <button id="uploadPutawayBtn" class="primary-btn">+ Upload Put Away Log</button>
+          </div>
         </div>
 
         <div class="card-grid five">
@@ -288,6 +291,26 @@
           </div>
         </div>
 
+        <div class="card-grid three">
+          <div class="card stat-card">
+            <h3>Put Away Logs</h3>
+            <div class="stat-value" id="putawayLogTotal">0</div>
+            <p>Total captured entries</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Unique Locations</h3>
+            <div class="stat-value" id="putawayLocationTotal">0</div>
+            <p>Bins captured</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Last Upload Entries</h3>
+            <div class="stat-value" id="putawayLastUploadCount">0</div>
+            <p>Entries found in latest image</p>
+          </div>
+        </div>
+
         <div class="card">
           <div class="section-head section-head-tight">
             <div>
@@ -312,6 +335,29 @@
                 </tr>
               </thead>
               <tbody id="receivingTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-head section-head-tight">
+            <div>
+              <h2>Put Away Log Capture</h2>
+              <p>Upload a put away log photo, count entries, and save location data.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Log / Item #</th>
+                  <th>Location</th>
+                  <th>Raw Line</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="putawayTable"></tbody>
             </table>
           </div>
         </div>
@@ -439,7 +485,7 @@
 
           <div class="card report-card">
             <h3>Receiving Report</h3>
-            <p>Truck totals, dock times, OSDs, and containers.</p>
+            <p>Truck totals, dock times, OSDs, containers, and put away logs.</p>
             <button class="primary-btn generate-report-btn" data-report="receiving">Generate</button>
           </div>
 
@@ -465,6 +511,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
