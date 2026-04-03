@@ -1,11 +1,12 @@
 const STORAGE_KEYS = {
-  tasks: "warehouse_tasks_v3",
-  notes: "warehouse_notes_v3",
-  inventory: "warehouse_inventory_v3",
-  counts: "warehouse_counts_v3",
-  trucks: "warehouse_trucks_v3",
-  coaching: "warehouse_coaching_v3",
-  quality: "warehouse_quality_v3"
+  tasks: "warehouse_tasks_v4",
+  notes: "warehouse_notes_v4",
+  inventory: "warehouse_inventory_v4",
+  counts: "warehouse_counts_v4",
+  trucks: "warehouse_trucks_v4",
+  coaching: "warehouse_coaching_v4",
+  quality: "warehouse_quality_v4",
+  putawayLogs: "warehouse_putaway_logs_v1"
 };
 
 const defaultTasks = [
@@ -47,6 +48,9 @@ let counts = loadStorage(STORAGE_KEYS.counts, []);
 let trucks = loadStorage(STORAGE_KEYS.trucks, []);
 let coachingEntries = loadStorage(STORAGE_KEYS.coaching, []);
 let qualityData = loadStorage(STORAGE_KEYS.quality, defaultQualityData);
+let putawayLogs = loadStorage(STORAGE_KEYS.putawayLogs, []);
+let lastPutawayUploadCount = 0;
+
 const laborData = defaultLaborData;
 
 let inventoryFiltersOpen = false;
@@ -111,6 +115,7 @@ function setupButtons() {
   document.getElementById("newCountBtn").addEventListener("click", openNewCountModal);
   document.getElementById("addTruckBtn").addEventListener("click", openAddTruckModal);
   document.getElementById("addIncidentBtn").addEventListener("click", openAddIncidentModal);
+  document.getElementById("uploadPutawayBtn").addEventListener("click", openPutawayUploadModal);
   document.getElementById("closeModalBtn").addEventListener("click", closeModal);
 
   document.getElementById("saveDashboardNoteBtn").addEventListener("click", () => {
@@ -158,6 +163,7 @@ function renderAll() {
   renderInventory();
   renderReceivingTable();
   renderReceivingStats();
+  renderPutawayLogs();
   renderLabor();
   renderQuality();
   renderCoaching();
@@ -336,6 +342,39 @@ function renderReceivingStats() {
     : 0;
 
   document.getElementById("receivingAverageDockTime").textContent = secondsToClock(avg);
+}
+
+function renderPutawayLogs() {
+  const body = document.getElementById("putawayTable");
+  if (!body) return;
+
+  const search = getSearchValue();
+  body.innerHTML = "";
+
+  const filtered = putawayLogs.filter(entry =>
+    `${entry.date} ${entry.logNumber} ${entry.location} ${entry.rawLine}`.toLowerCase().includes(search)
+  );
+
+  filtered.forEach(entry => {
+    body.insertAdjacentHTML("beforeend", `
+      <tr>
+        <td>${formatDateTime(entry.date)}</td>
+        <td>${escapeHtml(entry.logNumber)}</td>
+        <td>${escapeHtml(entry.location)}</td>
+        <td>${escapeHtml(entry.rawLine)}</td>
+        <td>
+          <div class="action-row">
+            <button class="small-btn" onclick="deletePutawayLog('${entry.id}')">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `);
+  });
+
+  document.getElementById("putawayLogTotal").textContent = putawayLogs.length;
+  const uniqueLocations = new Set(putawayLogs.map(x => x.location));
+  document.getElementById("putawayLocationTotal").textContent = uniqueLocations.size;
+  document.getElementById("putawayLastUploadCount").textContent = lastPutawayUploadCount;
 }
 
 function renderLabor() {
@@ -799,6 +838,121 @@ function deleteTruck(id) {
   showToast("Truck deleted.");
 }
 
+function openPutawayUploadModal() {
+  openModal("Upload Put Away Log Image", `
+    <div class="form-grid">
+      <div class="full-span">
+        <label>Select image</label>
+        <input id="putawayImageInput" type="file" accept="image/*" />
+      </div>
+
+      <div class="full-span">
+        <label>Preview OCR text</label>
+        <textarea id="putawayOcrPreview" placeholder="OCR text will appear here after reading image..."></textarea>
+      </div>
+    </div>
+
+    <div class="mt-16 action-row">
+      <button class="primary-btn" onclick="processPutawayImage()">Read Image</button>
+      <button class="secondary-btn" onclick="savePutawayFromPreview()">Save From Text</button>
+    </div>
+  `);
+}
+
+async function processPutawayImage() {
+  const fileInput = document.getElementById("putawayImageInput");
+  if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+    return showToast("Choose an image first.");
+  }
+
+  if (typeof Tesseract === "undefined") {
+    return showToast("OCR library did not load.");
+  }
+
+  showToast("Reading put away log image...");
+
+  try {
+    const file = fileInput.files[0];
+    const result = await Tesseract.recognize(file, "eng");
+    const text = result.data.text || "";
+    document.getElementById("putawayOcrPreview").value = text;
+    showToast("Image read. Review text and save.");
+  } catch (err) {
+    console.error(err);
+    showToast("Could not read image.");
+  }
+}
+
+function savePutawayFromPreview() {
+  const text = document.getElementById("putawayOcrPreview").value.trim();
+  if (!text) return showToast("No OCR text to save.");
+
+  const parsed = parsePutawayLogText(text);
+
+  if (!parsed.length) {
+    return showToast("No put away entries found.");
+  }
+
+  const now = new Date().toISOString();
+
+  parsed.forEach(entry => {
+    putawayLogs.unshift({
+      id: cryptoRandomId(),
+      date: now,
+      logNumber: entry.logNumber,
+      location: entry.location,
+      rawLine: entry.rawLine
+    });
+  });
+
+  lastPutawayUploadCount = parsed.length;
+  saveStorage(STORAGE_KEYS.putawayLogs, putawayLogs);
+  renderPutawayLogs();
+  closeModal();
+  showToast(`Saved ${parsed.length} put away entries.`);
+}
+
+function parsePutawayLogText(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const results = [];
+
+  for (const line of lines) {
+    const locationMatch = line.match(/\b[A-Z]{1,2}-?\d{1,2}-\d\b|\b[A-Z]\d{1,2}-\d\b|\b[A-Z]{1,2}\d{1,2}-\d\b/i);
+    const logMatch = line.match(/\b\d{5,8}\b/);
+
+    if (locationMatch && logMatch) {
+      results.push({
+        logNumber: logMatch[0],
+        location: locationMatch[0].toUpperCase(),
+        rawLine: line
+      });
+    }
+  }
+
+  return dedupePutawayEntries(results);
+}
+
+function dedupePutawayEntries(entries) {
+  const seen = new Set();
+  return entries.filter(entry => {
+    const key = `${entry.logNumber}|${entry.location}|${entry.rawLine}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function deletePutawayLog(id) {
+  putawayLogs = putawayLogs.filter(entry => entry.id !== id);
+  saveStorage(STORAGE_KEYS.putawayLogs, putawayLogs);
+  renderPutawayLogs();
+  showToast("Put away log entry deleted.");
+}
+
 function openAddIncidentModal() {
   openModal("Add Quality / Safety Incident", `
     <div class="form-grid">
@@ -916,7 +1070,8 @@ function generateReport(type) {
     content += `Tasks Behind: ${tasks.filter(t => t.status !== "Done" && (t.status === "Queued" || t.status === "Pending" || isTaskAtRisk(t))).length}\n`;
     content += `Trucks: ${trucks.length}\n`;
     content += `Low Inventory: ${inventory.filter(i => i.status === "Low" || i.status === "Out").length}\n`;
-    content += `Incidents: ${qualityData.length}\n\n`;
+    content += `Incidents: ${qualityData.length}\n`;
+    content += `Put Away Logs: ${putawayLogs.length}\n\n`;
 
     content += "TASKS:\n";
     tasks.forEach(t => {
@@ -938,6 +1093,11 @@ function generateReport(type) {
     content += "RECEIVING REPORT\n\n";
     trucks.forEach(t => {
       content += `Truck ${t.truckNumber} | Carrier: ${t.carrier} | Door: ${t.dockDoor} | Containers: ${t.containers} | OSDs: ${t.osds} | Status: ${t.status} | Dock Time: ${getTruckElapsedTime(t)}\n`;
+    });
+
+    content += "\nPUT AWAY LOGS:\n";
+    putawayLogs.forEach(p => {
+      content += `${formatDateTime(p.date)} | ${p.logNumber} | ${p.location} | ${p.rawLine}\n`;
     });
   }
 
@@ -1042,10 +1202,10 @@ function badge(value) {
   const v = String(value).toLowerCase();
 
   let cls = "gray";
-  if (["active", "healthy", "on floor", "done", "completed", "on time"].includes(v)) cls = "green";
+  if (["active", "healthy", "on floor", "done", "completed", "on time", "above goal", "ok"].includes(v)) cls = "green";
   if (["queued", "medium", "counting"].includes(v)) cls = "blue";
   if (["pending", "low", "near goal"].includes(v)) cls = "yellow";
-  if (["high", "out", "downtime", "below goal", "delayed"].includes(v)) cls = "red";
+  if (["high", "out", "downtime", "below goal", "delayed", "at risk"].includes(v)) cls = "red";
 
   return `<span class="badge ${cls}">${escapeHtml(value)}</span>`;
 }
@@ -1102,3 +1262,6 @@ window.editTruck = editTruck;
 window.saveTruckEdit = saveTruckEdit;
 window.deleteTruck = deleteTruck;
 window.saveIncident = saveIncident;
+window.processPutawayImage = processPutawayImage;
+window.savePutawayFromPreview = savePutawayFromPreview;
+window.deletePutawayLog = deletePutawayLog;
