@@ -37,16 +37,45 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 /* -------------------------------
+   ROLE ACCESS
+-------------------------------- */
+const ROLE_ALLOWED_VIEWS = {
+  admin: ['dashboard', 'operations', 'inventory', 'receiving', 'putaway', 'labor', 'quality', 'reports'],
+  lead: ['dashboard', 'operations', 'inventory', 'receiving', 'putaway', 'labor', 'quality', 'reports'],
+  stocker: ['putaway'],
+  cycle_counter: ['inventory'],
+};
+
+const ROLE_HOME_VIEW = {
+  admin: 'dashboard',
+  lead: 'dashboard',
+  stocker: 'putaway',
+  cycle_counter: 'inventory',
+};
+
+function getAllowedViews(role) {
+  return ROLE_ALLOWED_VIEWS[role] || [];
+}
+
+function getHomeView(role) {
+  return ROLE_HOME_VIEW[role] || 'putaway';
+}
+
+function roleCanAccess(role, view) {
+  return getAllowedViews(role).includes(view);
+}
+
+/* -------------------------------
    LOCAL STORAGE APP DATA
 -------------------------------- */
 const STORAGE_KEYS = {
-  tasks: 'warehouse_tasks_v4',
-  notes: 'warehouse_notes_v4',
-  inventory: 'warehouse_inventory_v4',
-  counts: 'warehouse_counts_v4',
-  trucks: 'warehouse_trucks_v4',
-  coaching: 'warehouse_coaching_v4',
-  quality: 'warehouse_quality_v4',
+  tasks: 'warehouse_tasks_v5',
+  notes: 'warehouse_notes_v5',
+  inventory: 'warehouse_inventory_v5',
+  counts: 'warehouse_counts_v5',
+  trucks: 'warehouse_trucks_v5',
+  coaching: 'warehouse_coaching_v5',
+  quality: 'warehouse_quality_v5',
 };
 
 const defaultTasks = [
@@ -103,8 +132,22 @@ let lastPutawayUploadCount = 0;
 let unsubs = [];
 
 /* -------------------------------
+   CYCLE COUNT LOCAL STATE
+-------------------------------- */
+const CC_STORAGE_KEY = 'cycleCountPro_embedded_v1';
+const CC_DOWNTIME_LIMIT_MINUTES = 25;
+const ccDefaultState = {
+  currentSessionId: null,
+  sessions: {},
+};
+let ccState = loadLocalJson(CC_STORAGE_KEY, ccDefaultState);
+
+/* -------------------------------
    DOM
 -------------------------------- */
+const appShell = document.querySelector('.app-shell');
+const sidebar = document.getElementById('sidebar');
+
 const views = {
   dashboard: document.getElementById('dashboardView'),
   operations: document.getElementById('operationsView'),
@@ -123,6 +166,9 @@ const sessionEmail = document.getElementById('sessionEmail');
 const sessionRole = document.getElementById('sessionRole');
 const signOutBtn = document.getElementById('signOutBtn');
 const adminSection = document.getElementById('adminSection');
+const topbarSubtitle = document.getElementById('topbarSubtitle');
+const newActionBtn = document.getElementById('newActionBtn');
+const globalSearch = document.getElementById('globalSearch');
 
 const loginForm = document.getElementById('loginForm');
 const loginMsg = document.getElementById('loginMsg');
@@ -149,14 +195,37 @@ const employeeMsg = document.getElementById('employeeMsg');
 const employeeList = document.getElementById('employeeList');
 
 /* -------------------------------
+   CYCLE COUNT DOM
+-------------------------------- */
+const ccEls = {
+  counterName: document.getElementById('ccCounterName'),
+  stockCountId: document.getElementById('ccStockCountId'),
+  siteId: document.getElementById('ccSiteId'),
+  status: document.getElementById('ccStatus'),
+  countDate: document.getElementById('ccCountDate'),
+  startTime: document.getElementById('ccStartTime'),
+  sessionBadge: document.getElementById('ccSessionBadge'),
+  worksheetBody: document.getElementById('ccWorksheetBody'),
+  downtimeLog: document.getElementById('ccDowntimeLog'),
+  savedSessions: document.getElementById('ccSavedSessions'),
+  totalRows: document.getElementById('ccTotalRows'),
+  doneRows: document.getElementById('ccDoneRows'),
+  varianceRows: document.getElementById('ccVarianceRows'),
+  activityEvents: document.getElementById('ccActivityEvents'),
+  downtimeEvents: document.getElementById('ccDowntimeEvents'),
+  rowTemplate: document.getElementById('ccRowTemplate'),
+};
+
+/* -------------------------------
    INIT
 -------------------------------- */
 document.addEventListener('DOMContentLoaded', () => {
   setupNav();
   setupButtons();
   setToday();
-  buildLineRows();
+  buildLineRows(25);
   updateTotals();
+  initCycleCount();
   renderAll();
 
   setInterval(() => {
@@ -183,19 +252,93 @@ function saveStorage(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function loadLocalJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return deepClone(fallback);
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : deepClone(fallback);
+  } catch {
+    return deepClone(fallback);
+  }
+}
+
+function saveLocalJson(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function deepClone(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 /* -------------------------------
-   NAV
+   NAV / ROLE ACCESS
 -------------------------------- */
 function setupNav() {
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
+      if (!currentUserProfile) return;
 
       const target = btn.dataset.view;
-      Object.values(views).forEach((v) => v.classList.remove('active'));
-      if (views[target]) views[target].classList.add('active');
+      if (!roleCanAccess(currentUserProfile.role, target)) {
+        showToast('You do not have access to that section.');
+        return;
+      }
+
+      activateView(target);
     });
+  });
+}
+
+function activateView(viewName) {
+  document.querySelectorAll('.nav-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === viewName);
+  });
+
+  Object.entries(views).forEach(([name, viewEl]) => {
+    viewEl.classList.toggle('active', name === viewName);
+  });
+}
+
+function applyRoleAccess(role) {
+  const allowedViews = getAllowedViews(role);
+  const homeView = getHomeView(role);
+
+  document.querySelectorAll('.nav-btn').forEach((btn) => {
+    const allowed = allowedViews.includes(btn.dataset.view);
+    btn.classList.toggle('hidden', !allowed);
+    btn.disabled = !allowed;
+  });
+
+  Object.entries(views).forEach(([name, viewEl]) => {
+    const allowed = allowedViews.includes(name);
+    viewEl.classList.toggle('hidden', !allowed);
+    viewEl.classList.toggle('active', allowed && name === homeView);
+  });
+
+  if (role === 'stocker' || role === 'cycle_counter') {
+    sidebar.classList.add('hidden');
+    appShell.classList.add('compact-role');
+    newActionBtn.classList.add('hidden');
+    globalSearch.classList.add('hidden');
+    topbarSubtitle.textContent = role === 'stocker'
+      ? 'Put away entry only.'
+      : 'Inventory and cycle count only.';
+  } else {
+    sidebar.classList.remove('hidden');
+    appShell.classList.remove('compact-role');
+    newActionBtn.classList.remove('hidden');
+    globalSearch.classList.remove('hidden');
+    topbarSubtitle.textContent = 'Run tasks, receiving, labor, counts, safety, reports, and put away logs in one place.';
+  }
+
+  activateView(homeView);
+}
+
+function hideAllAppViews() {
+  Object.values(views).forEach((viewEl) => {
+    viewEl.classList.remove('active');
+    viewEl.classList.add('hidden');
   });
 }
 
@@ -203,7 +346,7 @@ function setupNav() {
    BUTTONS / EVENTS
 -------------------------------- */
 function setupButtons() {
-  document.getElementById('newActionBtn')?.addEventListener('click', openNewActionModal);
+  newActionBtn?.addEventListener('click', openNewActionModal);
   document.getElementById('createTaskBtn')?.addEventListener('click', openCreateTaskModal);
   document.getElementById('filtersBtn')?.addEventListener('click', toggleInventoryFilters);
   document.getElementById('newCountBtn')?.addEventListener('click', openNewCountModal);
@@ -248,7 +391,7 @@ function setupButtons() {
     if (e.target.id === 'modalOverlay') closeModal();
   });
 
-  document.getElementById('globalSearch')?.addEventListener('input', renderAll);
+  globalSearch?.addEventListener('input', renderAll);
 
   loginForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -352,6 +495,11 @@ onAuthStateChanged(auth, async (user) => {
     appView.classList.add('hidden');
     sessionBox.classList.add('hidden');
     adminSection?.classList.add('hidden');
+    sidebar.classList.remove('hidden');
+    appShell.classList.remove('compact-role');
+    newActionBtn.classList.remove('hidden');
+    globalSearch.classList.remove('hidden');
+    hideAllAppViews();
     setMessage(loginMsg);
     return;
   }
@@ -370,6 +518,8 @@ onAuthStateChanged(auth, async (user) => {
       'hidden',
       !['admin', 'lead'].includes(currentUserProfile.role)
     );
+
+    applyRoleAccess(currentUserProfile.role || '');
 
     unsubs.push(watchEmployees());
     unsubs.push(watchPutawayLogs());
@@ -394,10 +544,11 @@ function setMessage(el, text = '', type = '') {
   if (type) el.classList.add(type);
 }
 
-function buildLineRows() {
+function buildLineRows(rowCount = 25) {
   if (!lineItemsBody) return;
   lineItemsBody.innerHTML = '';
-  for (let i = 1; i <= 8; i += 1) {
+
+  for (let i = 1; i <= rowCount; i += 1) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${i}</td>
@@ -408,6 +559,7 @@ function buildLineRows() {
     `;
     lineItemsBody.appendChild(tr);
   }
+
   bindTotalListeners();
 }
 
@@ -438,7 +590,7 @@ function updateTotals() {
 function clearPutawayForm() {
   putAwayForm?.reset();
   setToday();
-  buildLineRows();
+  buildLineRows(25);
   updateTotals();
   setMessage(formMsg);
 }
@@ -689,14 +841,8 @@ function downloadPutawayCSV(rows) {
   URL.revokeObjectURL(url);
 }
 
-function csvEscape(value) {
-  const str = String(value ?? '');
-  if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
-  return str;
-}
-
 /* -------------------------------
-   WAREHOUSE OPS RENDERING
+   MAIN RENDERING
 -------------------------------- */
 function renderAll() {
   renderTasks();
@@ -730,7 +876,7 @@ function renderDashboardStats() {
 }
 
 function getSearchValue() {
-  return (document.getElementById('globalSearch')?.value || '').trim().toLowerCase();
+  return (globalSearch?.value || '').trim().toLowerCase();
 }
 
 function renderTasks() {
@@ -762,8 +908,8 @@ function renderTasks() {
         <td>${risk}</td>
         <td>
           <div class="action-row">
-            <button class="small-btn" onclick="toggleTaskStatus('${task.id}')">Advance</button>
-            <button class="small-btn" onclick="deleteTask('${task.id}')">Delete</button>
+            <button class="small-btn task-advance-btn" data-id="${task.id}">Advance</button>
+            <button class="small-btn task-delete-btn" data-id="${task.id}">Delete</button>
           </div>
         </td>
       </tr>
@@ -779,6 +925,14 @@ function renderTasks() {
         <td>${badge(task.status)}</td>
       </tr>
     `);
+  });
+
+  document.querySelectorAll('.task-advance-btn').forEach((btn) => {
+    btn.addEventListener('click', () => toggleTaskStatus(btn.dataset.id));
+  });
+
+  document.querySelectorAll('.task-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteTask(btn.dataset.id));
   });
 }
 
@@ -852,14 +1006,27 @@ function renderReceivingTable() {
         <td>
           <div class="action-row">
             ${truck.status === 'Active'
-              ? `<button class="small-btn" onclick="stopTruckTimer('${truck.id}')">Stop Timer</button>`
-              : `<button class="small-btn" onclick="restartTruckTimer('${truck.id}')">Restart</button>`}
-            <button class="small-btn" onclick="editTruck('${truck.id}')">Edit</button>
-            <button class="small-btn" onclick="deleteTruck('${truck.id}')">Delete</button>
+              ? `<button class="small-btn truck-stop-btn" data-id="${truck.id}">Stop Timer</button>`
+              : `<button class="small-btn truck-restart-btn" data-id="${truck.id}">Restart</button>`}
+            <button class="small-btn truck-edit-btn" data-id="${truck.id}">Edit</button>
+            <button class="small-btn truck-delete-btn" data-id="${truck.id}">Delete</button>
           </div>
         </td>
       </tr>
     `);
+  });
+
+  document.querySelectorAll('.truck-stop-btn').forEach((btn) => {
+    btn.addEventListener('click', () => stopTruckTimer(btn.dataset.id));
+  });
+  document.querySelectorAll('.truck-restart-btn').forEach((btn) => {
+    btn.addEventListener('click', () => restartTruckTimer(btn.dataset.id));
+  });
+  document.querySelectorAll('.truck-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => editTruck(btn.dataset.id));
+  });
+  document.querySelectorAll('.truck-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteTruck(btn.dataset.id));
   });
 }
 
@@ -956,6 +1123,10 @@ function toggleInventoryFilters() {
 }
 
 function openNewActionModal() {
+  if (!currentUserProfile || !['admin', 'lead'].includes(currentUserProfile.role)) {
+    return showToast('You do not have access to that action.');
+  }
+
   openModal('New Action', `
     <div class="form-grid">
       <div>
@@ -988,9 +1159,11 @@ function openNewActionModal() {
       </div>
     </div>
     <div class="mt-16">
-      <button class="primary-btn full" onclick="saveNewAction()">Save Action</button>
+      <button id="saveNewActionBtn" class="primary-btn full">Save Action</button>
     </div>
   `);
+
+  document.getElementById('saveNewActionBtn')?.addEventListener('click', saveNewAction);
 }
 
 function saveNewAction() {
@@ -1050,9 +1223,11 @@ function openCreateTaskModal() {
       </div>
     </div>
     <div class="mt-16">
-      <button class="primary-btn full" onclick="saveTask()">Save Task</button>
+      <button id="saveTaskBtn" class="primary-btn full">Save Task</button>
     </div>
   `);
+
+  document.getElementById('saveTaskBtn')?.addEventListener('click', saveTask);
 }
 
 function saveTask() {
@@ -1123,9 +1298,11 @@ function openNewCountModal() {
       </div>
     </div>
     <div class="mt-16">
-      <button class="primary-btn full" onclick="saveCount()">Save Count</button>
+      <button id="saveCountBtn" class="primary-btn full">Save Count</button>
     </div>
   `);
+
+  document.getElementById('saveCountBtn')?.addEventListener('click', saveCount);
 }
 
 function saveCount() {
@@ -1189,9 +1366,11 @@ function openAddTruckModal() {
       </div>
     </div>
     <div class="mt-16">
-      <button class="primary-btn full" onclick="saveTruck()">Save Truck & Start Timer</button>
+      <button id="saveTruckBtn" class="primary-btn full">Save Truck & Start Timer</button>
     </div>
   `);
+
+  document.getElementById('saveTruckBtn')?.addEventListener('click', saveTruck);
 }
 
 function saveTruck() {
@@ -1285,9 +1464,11 @@ function editTruck(id) {
       </div>
     </div>
     <div class="mt-16">
-      <button class="primary-btn full" onclick="saveTruckEdit('${truck.id}')">Save Changes</button>
+      <button id="saveTruckEditBtn" class="primary-btn full">Save Changes</button>
     </div>
   `);
+
+  document.getElementById('saveTruckEditBtn')?.addEventListener('click', () => saveTruckEdit(id));
 }
 
 function saveTruckEdit(id) {
@@ -1329,10 +1510,13 @@ function openPutawayUploadModal() {
       </div>
     </div>
     <div class="mt-16 action-row">
-      <button class="primary-btn" onclick="processPutawayImage()">Read Image</button>
-      <button class="secondary-btn" onclick="savePutawayFromPreview()">Save From Text</button>
+      <button id="processPutawayImageBtn" class="primary-btn">Read Image</button>
+      <button id="savePutawayFromPreviewBtn" class="secondary-btn">Save From Text</button>
     </div>
   `);
+
+  document.getElementById('processPutawayImageBtn')?.addEventListener('click', processPutawayImage);
+  document.getElementById('savePutawayFromPreviewBtn')?.addEventListener('click', savePutawayFromPreview);
 }
 
 async function processPutawayImage() {
@@ -1468,7 +1652,7 @@ function openAddIncidentModal() {
       </div>
     </div>
     <div class="mt-16">
-      <button class="primary-btn full" onclick="saveIncident()">Save Incident</button>
+      <button id="saveIncidentBtn" class="primary-btn full">Save Incident</button>
     </div>
   `);
 
@@ -1477,6 +1661,8 @@ function openAddIncidentModal() {
     const input = document.getElementById('incidentDateInput');
     if (input) input.value = today;
   }, 0);
+
+  document.getElementById('saveIncidentBtn')?.addEventListener('click', saveIncident);
 }
 
 function saveIncident() {
@@ -1501,7 +1687,7 @@ function saveCoachingEntry() {
   const topic = document.getElementById('coachTopic').value.trim();
   const notesText = document.getElementById('coachNotes').value.trim();
 
-  if (!employee || !topic || !notesText) return showToast('Fill in all coaching fields.');
+  if (!employee || !topic || !notesText) return showToast('Fill in employee, topic, and notes.');
 
   coachingEntries.unshift({
     employee,
@@ -1511,116 +1697,528 @@ function saveCoachingEntry() {
   });
 
   saveStorage(STORAGE_KEYS.coaching, coachingEntries);
+  renderCoaching();
+
   document.getElementById('coachEmployee').value = '';
   document.getElementById('coachTopic').value = '';
   document.getElementById('coachNotes').value = '';
 
-  renderCoaching();
   showToast('Coaching entry saved.');
 }
 
 function generateReport(type) {
-  let content = '';
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    type,
+    tasks,
+    notes,
+    inventory,
+    counts,
+    trucks,
+    coachingEntries,
+    qualityData,
+    putawayLogs,
+  };
 
-  if (type === 'supervisor') {
-    content += 'DAILY SUPERVISOR REPORT\n\n';
-    content += `Open Tasks: ${tasks.filter((t) => t.status !== 'Done').length}\n`;
-    content += `Tasks Behind: ${tasks.filter((t) => t.status !== 'Done' && (t.status === 'Queued' || t.status === 'Pending' || isTaskAtRisk(t))).length}\n`;
-    content += `Trucks: ${trucks.length}\n`;
-    content += `Low Inventory: ${inventory.filter((i) => i.status === 'Low' || i.status === 'Out').length}\n`;
-    content += `Incidents: ${qualityData.length}\n`;
-    content += `Put Away Logs: ${putawayLogs.length}\n\n`;
-
-    content += 'TASKS:\n';
-    tasks.forEach((t) => {
-      content += `${t.id} | ${t.task} | ${t.owner} | ${t.zone} | ${t.priority} | ${t.status}\n`;
-    });
-
-    content += '\nNOTES:\n';
-    notes.forEach((n) => {
-      content += `- ${n}\n`;
-    });
-
-    content += '\nCOACHING:\n';
-    coachingEntries.forEach((c) => {
-      content += `${c.employee} | ${c.topic} | ${c.notes}\n`;
-    });
-  }
-
-  if (type === 'receiving') {
-    content += 'RECEIVING REPORT\n\n';
-    trucks.forEach((t) => {
-      content += `Truck ${t.truckNumber} | Carrier: ${t.carrier} | Door: ${t.dockDoor} | Containers: ${t.containers} | OSDs: ${t.osds} | Status: ${t.status} | Dock Time: ${getTruckElapsedTime(t)}\n`;
-    });
-
-    content += '\nPUT AWAY LOGS:\n';
-    putawayLogs.forEach((log) => {
-      (log.lines || []).forEach((line) => {
-        content += `${log.workDate} | ${log.workerName} | ${line.itemNumber} | Qty: ${line.quantity} | ${line.location} | ${line.notes}\n`;
-      });
-    });
-  }
-
-  if (type === 'inventory') {
-    content += 'INVENTORY REPORT\n\n';
-    getFilteredInventory().forEach((i) => {
-      content += `${i.item} | ${i.desc} | On Hand: ${i.onHand} | Primary: ${i.primary} | Overstock: ${i.overstock} | Bin: ${i.bin} | ${i.status}\n`;
-    });
-
-    content += '\nCOUNT HISTORY:\n';
-    counts.forEach((c) => {
-      content += `${c.item} | ${c.desc} | Qty: ${c.qty} | Bin: ${c.bin} | ${formatDateTime(c.createdAt)}\n`;
-    });
-  }
-
-  downloadTextFile(`${type}-report.txt`, content);
-  showToast('Report downloaded.');
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${type}-report-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Report generated.');
 }
 
-/* -------------------------------
-   UI HELPERS
--------------------------------- */
-function openModal(title, html) {
+function openModal(title, content) {
   document.getElementById('modalTitle').textContent = title;
-  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalBody').innerHTML = content;
   document.getElementById('modalOverlay').classList.remove('hidden');
 }
 
 function closeModal() {
   document.getElementById('modalOverlay').classList.add('hidden');
+  document.getElementById('modalBody').innerHTML = '';
 }
 
-function showToast(message) {
-  const toast = document.getElementById('toast');
-  toast.textContent = message;
-  toast.classList.remove('hidden');
-  setTimeout(() => toast.classList.add('hidden'), 2200);
+/* -------------------------------
+   CYCLE COUNT EMBEDDED APP
+-------------------------------- */
+function initCycleCount() {
+  setCcDefaults();
+
+  document.getElementById('ccStartSessionBtn')?.addEventListener('click', ccStartSession);
+  document.getElementById('ccSaveSessionBtn')?.addEventListener('click', ccSaveCurrentSession);
+  document.getElementById('ccAddRowBtn')?.addEventListener('click', ccOnAddRow);
+  document.getElementById('ccExportSessionCsvBtn')?.addEventListener('click', ccExportCurrentSessionCsv);
+  document.getElementById('ccExportAllJsonBtn')?.addEventListener('click', ccExportAllJson);
+  document.getElementById('ccClearSavedBtn')?.addEventListener('click', ccClearSavedData);
+
+  ccEls.worksheetBody?.addEventListener('input', ccHandleRowInput);
+  ccEls.worksheetBody?.addEventListener('change', ccHandleRowInput);
+  ccEls.worksheetBody?.addEventListener('click', ccHandleRowClick);
+
+  ccRenderAll();
+}
+
+function setCcDefaults() {
+  const now = new Date();
+
+  if (ccEls.countDate && !ccEls.countDate.value) {
+    ccEls.countDate.value = now.toISOString().slice(0, 10);
+  }
+
+  if (ccEls.startTime && !ccEls.startTime.value) {
+    ccEls.startTime.value = now.toTimeString().slice(0, 5);
+  }
+}
+
+function ccSaveState() {
+  saveLocalJson(CC_STORAGE_KEY, ccState);
+}
+
+function ccGenerateId() {
+  return 'cc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+}
+
+function ccStartSession() {
+  const id = ccGenerateId();
+
+  const session = {
+    id,
+    counterName: (ccEls.counterName.value || '').trim() || 'Unknown Counter',
+    stockCountId: (ccEls.stockCountId.value || '').trim() || ('CC-' + new Date().toISOString().slice(0, 10)),
+    siteId: (ccEls.siteId.value || '').trim() || 'OHC',
+    status: ccEls.status.value || 'In Progress',
+    countDate: ccEls.countDate.value || new Date().toISOString().slice(0, 10),
+    startTime: ccEls.startTime.value || new Date().toTimeString().slice(0, 5),
+    rows: [],
+    activityLog: [],
+    downtimeLog: [],
+    lastCountTime: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  ccState.sessions[id] = session;
+  ccState.currentSessionId = id;
+  ccSaveState();
+  ccRenderAll();
+  showToast('New cycle count session started.');
+}
+
+function ccEnsureSession() {
+  if (!ccState.currentSessionId || !ccState.sessions[ccState.currentSessionId]) {
+    ccStartSession();
+  }
+}
+
+function ccGetCurrentSession() {
+  if (!ccState.currentSessionId) return null;
+  return ccState.sessions[ccState.currentSessionId] || null;
+}
+
+function ccSaveCurrentSession() {
+  const session = ccGetCurrentSession();
+  if (!session) {
+    showToast('Start a cycle count session first.');
+    return;
+  }
+
+  session.counterName = (ccEls.counterName.value || '').trim() || session.counterName;
+  session.stockCountId = (ccEls.stockCountId.value || '').trim() || session.stockCountId;
+  session.siteId = (ccEls.siteId.value || '').trim() || session.siteId;
+  session.status = ccEls.status.value || session.status;
+  session.countDate = ccEls.countDate.value || session.countDate;
+  session.startTime = ccEls.startTime.value || session.startTime;
+  session.updatedAt = new Date().toISOString();
+
+  ccSaveState();
+  ccRenderSessionInfo();
+  ccRenderSavedSessions();
+  showToast('Cycle count session saved.');
+}
+
+function ccOnAddRow() {
+  ccEnsureSession();
+  ccAddRow();
+  ccSaveState();
+  ccRenderWorksheet();
+  ccRenderStats();
+  ccRenderSavedSessions();
+}
+
+function ccAddRow(prefill = {}) {
+  const session = ccGetCurrentSession();
+  if (!session) return;
+
+  session.rows.push({
+    id: ccGenerateId(),
+    site_id: prefill.site_id || session.siteId || '',
+    bin: prefill.bin || '',
+    item_number: prefill.item_number || '',
+    description: prefill.description || '',
+    uom: prefill.uom || '',
+    on_hand_qty: prefill.on_hand_qty != null ? prefill.on_hand_qty : '',
+    counted_qty: prefill.counted_qty != null ? prefill.counted_qty : '',
+    variance: '',
+    reason_code: prefill.reason_code || '',
+    done: false,
+    count_time: '',
+    last_logged_count_time: null,
+    last_logged_count_value: null,
+  });
+
+  session.updatedAt = new Date().toISOString();
+}
+
+function ccHandleRowInput(event) {
+  const field = event.target.dataset.field;
+  if (!field) return;
+
+  const rowEl = event.target.closest('tr');
+  if (!rowEl) return;
+
+  const rowId = rowEl.dataset.rowId;
+  const session = ccGetCurrentSession();
+  if (!session) return;
+
+  const row = session.rows.find((r) => r.id === rowId);
+  if (!row) return;
+
+  if (event.target.type === 'checkbox') {
+    row[field] = event.target.checked;
+  } else {
+    row[field] = event.target.value;
+  }
+
+  const onHand = parseNullableNumber(row.on_hand_qty);
+  const counted = parseNullableNumber(row.counted_qty);
+
+  if (onHand !== null && counted !== null) {
+    row.variance = String(counted - onHand);
+  } else {
+    row.variance = '';
+  }
+
+  const varianceInput = rowEl.querySelector('[data-field="variance"]');
+  if (varianceInput) {
+    varianceInput.value = row.variance;
+  }
+
+  const isCountEvent =
+    field === 'counted_qty' &&
+    row.counted_qty !== '' &&
+    row.counted_qty !== null &&
+    row.counted_qty !== undefined;
+
+  if (isCountEvent) {
+    const didLog = ccRecordCountEvent(row);
+
+    if (didLog) {
+      const countTimeSpan = rowEl.querySelector('[data-field="count_time"]');
+      if (countTimeSpan) {
+        countTimeSpan.textContent = row.count_time || '—';
+      }
+    }
+  }
+
+  session.updatedAt = new Date().toISOString();
+  ccSaveState();
+
+  ccRenderStats();
+  ccRenderDowntime();
+  ccRenderSavedSessions();
+}
+
+function ccRecordCountEvent(row) {
+  const session = ccGetCurrentSession();
+  if (!session) return false;
+
+  const nowIso = new Date().toISOString();
+  const currentCountValue = String(row.counted_qty);
+
+  if (row.last_logged_count_value === currentCountValue) {
+    return false;
+  }
+
+  if (row.last_logged_count_time) {
+    const secondsSinceLastLog = (new Date(nowIso) - new Date(row.last_logged_count_time)) / 1000;
+    if (secondsSinceLastLog < 1) {
+      return false;
+    }
+  }
+
+  if (session.lastCountTime) {
+    const gapMin = minutesBetween(session.lastCountTime, nowIso);
+
+    if (gapMin > CC_DOWNTIME_LIMIT_MINUTES) {
+      session.downtimeLog.unshift({
+        id: ccGenerateId(),
+        previousCountTime: session.lastCountTime,
+        currentCountTime: nowIso,
+        gapMin: round2(gapMin),
+        bin: row.bin || '',
+        item_number: row.item_number || '',
+      });
+    }
+  }
+
+  row.count_time = formatDateTime(nowIso);
+  row.last_logged_count_time = nowIso;
+  row.last_logged_count_value = currentCountValue;
+
+  session.activityLog.unshift({
+    id: ccGenerateId(),
+    time: nowIso,
+    bin: row.bin || '',
+    item_number: row.item_number || '',
+    counted_qty: row.counted_qty || '',
+  });
+
+  session.lastCountTime = nowIso;
+  return true;
+}
+
+function ccHandleRowClick(event) {
+  const action = event.target.dataset.action;
+  if (action !== 'delete') return;
+
+  const rowEl = event.target.closest('tr');
+  if (!rowEl) return;
+
+  const rowId = rowEl.dataset.rowId;
+  const session = ccGetCurrentSession();
+  if (!session) return;
+
+  session.rows = session.rows.filter((r) => r.id !== rowId);
+  session.updatedAt = new Date().toISOString();
+
+  ccSaveState();
+  ccRenderAll();
+}
+
+function ccRenderAll() {
+  ccRenderSessionInfo();
+  ccRenderWorksheet();
+  ccRenderStats();
+  ccRenderDowntime();
+  ccRenderSavedSessions();
+}
+
+function ccRenderSessionInfo() {
+  const session = ccGetCurrentSession();
+
+  if (!session) {
+    ccEls.sessionBadge.textContent = 'No active session';
+    ccEls.sessionBadge.className = 'badge muted';
+    return;
+  }
+
+  ccEls.counterName.value = session.counterName || '';
+  ccEls.stockCountId.value = session.stockCountId || '';
+  ccEls.siteId.value = session.siteId || '';
+  ccEls.status.value = session.status || 'In Progress';
+  ccEls.countDate.value = session.countDate || '';
+  ccEls.startTime.value = session.startTime || '';
+
+  ccEls.sessionBadge.textContent = `${session.counterName} • ${session.stockCountId}`;
+  ccEls.sessionBadge.className = 'badge';
+}
+
+function ccRenderWorksheet() {
+  const session = ccGetCurrentSession();
+  ccEls.worksheetBody.innerHTML = '';
+
+  if (!session || !ccEls.rowTemplate) return;
+
+  session.rows.forEach((row) => {
+    const clone = ccEls.rowTemplate.content.firstElementChild.cloneNode(true);
+    clone.dataset.rowId = row.id;
+
+    clone.querySelectorAll('[data-field]').forEach((el) => {
+      const field = el.dataset.field;
+
+      if (el.tagName === 'SPAN') {
+        el.textContent = row[field] || '—';
+      } else if (el.type === 'checkbox') {
+        el.checked = !!row[field];
+      } else {
+        el.value = row[field] != null ? row[field] : '';
+      }
+    });
+
+    ccEls.worksheetBody.appendChild(clone);
+  });
+}
+
+function ccRenderStats() {
+  const session = ccGetCurrentSession();
+  const rows = session ? session.rows : [];
+
+  ccEls.totalRows.textContent = rows.length;
+  ccEls.doneRows.textContent = rows.filter((r) => r.done).length;
+  ccEls.varianceRows.textContent = rows.filter((r) => String(r.variance) !== '' && Number(r.variance) !== 0).length;
+  ccEls.activityEvents.textContent = session ? session.activityLog.length : 0;
+  ccEls.downtimeEvents.textContent = session ? session.downtimeLog.length : 0;
+}
+
+function ccRenderDowntime() {
+  const session = ccGetCurrentSession();
+
+  if (!session || !session.downtimeLog.length) {
+    ccEls.downtimeLog.className = 'empty-state';
+    ccEls.downtimeLog.textContent = 'No downtime events yet.';
+    return;
+  }
+
+  ccEls.downtimeLog.className = 'log-list';
+  ccEls.downtimeLog.innerHTML = session.downtimeLog.map((item) => `
+    <div class="log-item">
+      <strong>${item.gapMin} minute gap</strong>
+      <div>Previous count: ${formatDateTime(item.previousCountTime)}</div>
+      <div>Next count: ${formatDateTime(item.currentCountTime)}</div>
+      <div>Triggered by: Bin ${escapeHtml(item.bin || '—')} | Item ${escapeHtml(item.item_number || '—')}</div>
+    </div>
+  `).join('');
+}
+
+function ccRenderSavedSessions() {
+  const sessions = Object.values(ccState.sessions).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+  if (!sessions.length) {
+    ccEls.savedSessions.className = 'empty-state';
+    ccEls.savedSessions.textContent = 'No saved sessions yet.';
+    return;
+  }
+
+  ccEls.savedSessions.className = 'saved-session-list';
+  ccEls.savedSessions.innerHTML = sessions.map((session) => `
+    <div class="session-item">
+      <strong>${escapeHtml(session.counterName)} • ${escapeHtml(session.stockCountId)}</strong>
+      <div>${escapeHtml(session.siteId)} • ${escapeHtml(session.countDate)} • ${escapeHtml(session.status)}</div>
+      <div>${session.rows.length} rows • ${session.activityLog.length} counts • ${session.downtimeLog.length} downtime events</div>
+      <div class="actions">
+        <button class="secondary-btn cc-session-load-btn" data-session-id="${session.id}" type="button">Load</button>
+        <button class="danger-btn cc-session-delete-btn" data-session-id="${session.id}" type="button">Delete</button>
+      </div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.cc-session-load-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ccState.currentSessionId = btn.dataset.sessionId;
+      ccSaveState();
+      ccRenderAll();
+    });
+  });
+
+  document.querySelectorAll('.cc-session-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.sessionId;
+      if (ccState.currentSessionId === id) {
+        ccState.currentSessionId = null;
+      }
+      delete ccState.sessions[id];
+      ccSaveState();
+      ccRenderAll();
+    });
+  });
+}
+
+function ccExportCurrentSessionCsv() {
+  const session = ccGetCurrentSession();
+
+  if (!session) {
+    showToast('No active cycle count session to export.');
+    return;
+  }
+
+  const headers = [
+    'site_id',
+    'bin',
+    'item_number',
+    'description',
+    'uom',
+    'on_hand_qty',
+    'counted_qty',
+    'variance',
+    'reason_code',
+    'done',
+    'count_time',
+  ];
+
+  const csv = [headers.join(',')]
+    .concat(
+      session.rows.map((row) => headers.map((h) => csvSafe(row[h])).join(','))
+    )
+    .join('\n');
+
+  downloadFile(csv, `${session.stockCountId || 'cycle-count'}-session.csv`, 'text/csv;charset=utf-8;');
+}
+
+function ccExportAllJson() {
+  downloadFile(JSON.stringify(ccState, null, 2), 'cycle-count-pro-data.json', 'application/json;charset=utf-8;');
+}
+
+function ccClearSavedData() {
+  if (!confirm('Clear all saved cycle count data from this browser?')) return;
+
+  ccState = deepClone(ccDefaultState);
+  ccSaveState();
+  ccRenderAll();
+}
+
+/* -------------------------------
+   HELPERS
+-------------------------------- */
+function badge(value) {
+  const label = String(value ?? '');
+  const cls = /high|delayed|out|pending/i.test(label)
+    ? 'red'
+    : /medium|low/i.test(label)
+    ? 'yellow'
+    : /healthy|active|done|completed|on time|ok/i.test(label)
+    ? 'green'
+    : '';
+  return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
 }
 
 function getTaskAge(task) {
-  if (!task.createdAt) return '-';
-  const diffMs = Date.now() - new Date(task.createdAt).getTime();
-  const mins = Math.floor(diffMs / 60000);
-  const hrs = Math.floor(mins / 60);
-  return hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m`;
+  const minutes = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}h ${mins}m`;
 }
 
 function isTaskAtRisk(task) {
-  if (!task.createdAt || task.status === 'Done') return false;
-  return (Date.now() - new Date(task.createdAt)) / 60000 > 30;
-}
-
-function isTruckDelayed(truck) {
-  if (truck.status !== 'Active') return false;
-  return (Date.now() - new Date(truck.startTime)) / 60000 > 60;
+  const minutes = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 60000);
+  return minutes > 45 && task.status !== 'Done';
 }
 
 function getTruckElapsedTime(truck) {
-  if (truck.status === 'Active') {
-    const elapsed = Math.floor((new Date() - new Date(truck.startTime)) / 1000);
-    return secondsToClock(elapsed);
+  if (truck.status !== 'Active') {
+    return secondsToClock(truck.totalElapsedSeconds || 0);
   }
-  return secondsToClock(truck.totalElapsedSeconds || 0);
+
+  const seconds = Math.floor((Date.now() - new Date(truck.startTime).getTime()) / 1000);
+  return secondsToClock(seconds);
+}
+
+function isTruckDelayed(truck) {
+  const activeSeconds = truck.status === 'Active'
+    ? Math.floor((Date.now() - new Date(truck.startTime).getTime()) / 1000)
+    : truck.totalElapsedSeconds || 0;
+  return activeSeconds > 2 * 60 * 60;
+}
+
+function secondsToClock(totalSeconds) {
+  const sec = Math.max(0, Number(totalSeconds) || 0);
+  const hours = String(Math.floor(sec / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+  const seconds = String(sec % 60).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
 }
 
 function getLaborStatusClass(productivity) {
@@ -1637,89 +2235,87 @@ function getLaborGoalLabel(productivity) {
 
 function getTopIssueArea() {
   if (!qualityData.length) return 'None';
-  const counter = {};
-  qualityData.forEach((i) => {
-    counter[i.area] = (counter[i.area] || 0) + 1;
+  const countsByArea = {};
+  qualityData.forEach((item) => {
+    countsByArea[item.area] = (countsByArea[item.area] || 0) + 1;
   });
-
-  let topArea = 'None';
-  let topCount = 0;
-  Object.entries(counter).forEach(([area, count]) => {
-    if (count > topCount) {
-      topArea = area;
-      topCount = count;
-    }
-  });
-
-  return topArea;
-}
-
-function badge(value) {
-  const v = String(value).toLowerCase();
-  let cls = 'gray';
-
-  if (['active', 'healthy', 'on floor', 'done', 'completed', 'on time', 'above goal', 'ok', 'manual'].includes(v)) cls = 'green';
-  if (['queued', 'medium', 'counting', 'ocr'].includes(v)) cls = 'blue';
-  if (['pending', 'low', 'near goal'].includes(v)) cls = 'yellow';
-  if (['high', 'out', 'downtime', 'below goal', 'delayed', 'at risk'].includes(v)) cls = 'red';
-
-  return `<span class="badge ${cls}">${escapeHtml(value)}</span>`;
-}
-
-function secondsToClock(seconds) {
-  const hrs = Math.floor(seconds / 3600).toString().padStart(2, '0');
-  const mins = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-  const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
-  return `${hrs}:${mins}:${secs}`;
-}
-
-function formatDateTime(iso) {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleString();
-}
-
-function downloadTextFile(filename, content) {
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  return Object.entries(countsByArea).sort((a, b) => b[1] - a[1])[0][0];
 }
 
 function cryptoRandomId() {
-  return 'id-' + Math.random().toString(36).slice(2, 11);
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+}
+
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.classList.remove('hidden');
+
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => {
+    toast.classList.add('hidden');
+  }, 2200);
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+function minutesBetween(startIso, endIso) {
+  return (new Date(endIso) - new Date(startIso)) / 60000;
+}
+
+function formatDateTime(iso) {
+  return new Date(iso).toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function parseNullableNumber(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function round2(num) {
+  return Math.round(num * 100) / 100;
+}
+
+function csvEscape(value) {
+  const str = String(value ?? '');
+  if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+  return str;
+}
+
+function csvSafe(value) {
+  const text = String(value == null ? '' : value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function escapeAttribute(value) {
-  return escapeHtml(value);
+  return escapeHtml(value).replace(/"/g, '&quot;');
 }
-
-/* -------------------------------
-   WINDOW EXPORTS
--------------------------------- */
-window.saveNewAction = saveNewAction;
-window.saveTask = saveTask;
-window.toggleTaskStatus = toggleTaskStatus;
-window.deleteTask = deleteTask;
-window.saveCount = saveCount;
-window.saveTruck = saveTruck;
-window.stopTruckTimer = stopTruckTimer;
-window.restartTruckTimer = restartTruckTimer;
-window.editTruck = editTruck;
-window.saveTruckEdit = saveTruckEdit;
-window.deleteTruck = deleteTruck;
-window.saveIncident = saveIncident;
-window.processPutawayImage = processPutawayImage;
-window.savePutawayFromPreview = savePutawayFromPreview;
