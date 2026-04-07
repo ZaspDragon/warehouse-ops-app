@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside id="sidebar" class="sidebar">
       <div class="brand">
         <div class="brand-icon">W</div>
         <div>
@@ -42,12 +42,12 @@
       <header class="topbar">
         <div>
           <h1>Warehouse Control Center</h1>
-          <p>Run tasks, receiving, labor, counts, safety, reports, and put away logs in one place.</p>
+          <p id="topbarSubtitle">Run tasks, receiving, labor, counts, safety, reports, and put away logs in one place.</p>
         </div>
 
         <div class="topbar-actions">
           <input id="globalSearch" type="text" placeholder="Search people, bins, trucks, items..." />
-          <button id="newActionBtn" class="primary-btn">+ New Action</button>
+          <button id="newActionBtn" class="primary-btn" type="button">+ New Action</button>
 
           <div id="sessionBox" class="session-box hidden">
             <span id="sessionEmail"></span>
@@ -81,6 +81,7 @@
       </section>
 
       <div id="appView" class="hidden">
+        <!-- DASHBOARD -->
         <section id="dashboardView" class="view active">
           <div class="card-grid four">
             <div class="card stat-card">
@@ -167,6 +168,7 @@
           </div>
         </section>
 
+        <!-- OPERATIONS -->
         <section id="operationsView" class="view">
           <div class="section-head">
             <div>
@@ -198,11 +200,12 @@
           </div>
         </section>
 
+        <!-- INVENTORY + CYCLE COUNT -->
         <section id="inventoryView" class="view">
           <div class="section-head">
             <div>
               <h2>Inventory Control</h2>
-              <p>Track items, bins, counts, and shortage risk.</p>
+              <p>Track items, bins, counts, shortage risk, and full cycle count sessions.</p>
             </div>
             <div class="btn-row">
               <button id="filtersBtn" class="secondary-btn">Filters</button>
@@ -272,8 +275,140 @@
               </table>
             </div>
           </div>
+
+          <section class="card">
+            <div class="section-head">
+              <div>
+                <h2>Cycle Count Worksheet</h2>
+                <p>Embedded cycle count app for cycle_counter and leadership roles.</p>
+              </div>
+              <div class="btn-row">
+                <button id="ccExportSessionCsvBtn" class="secondary-btn">Export Session CSV</button>
+                <button id="ccExportAllJsonBtn" class="secondary-btn">Export All JSON</button>
+                <button id="ccClearSavedBtn" class="danger-btn">Clear Saved Data</button>
+              </div>
+            </div>
+
+            <div class="card inner-card">
+              <div class="section-head">
+                <h3>Session Setup</h3>
+                <span id="ccSessionBadge" class="badge muted">No active session</span>
+              </div>
+
+              <div class="form-grid two-up">
+                <div>
+                  <label for="ccCounterName">Counter Name</label>
+                  <input id="ccCounterName" type="text" placeholder="Kris" />
+                </div>
+
+                <div>
+                  <label for="ccStockCountId">Stock Count ID</label>
+                  <input id="ccStockCountId" type="text" placeholder="CC-001" />
+                </div>
+
+                <div>
+                  <label for="ccSiteId">Site ID</label>
+                  <input id="ccSiteId" type="text" placeholder="OHC" />
+                </div>
+
+                <div>
+                  <label for="ccStatus">Status</label>
+                  <select id="ccStatus">
+                    <option>Started</option>
+                    <option selected>In Progress</option>
+                    <option>Completed</option>
+                    <option>Reviewed</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="ccCountDate">Count Date</label>
+                  <input id="ccCountDate" type="date" />
+                </div>
+
+                <div>
+                  <label for="ccStartTime">Start Time</label>
+                  <input id="ccStartTime" type="time" />
+                </div>
+              </div>
+
+              <div class="btn-row mt-16">
+                <button id="ccStartSessionBtn" class="primary-btn">Start New Session</button>
+                <button id="ccSaveSessionBtn" class="secondary-btn">Save Session</button>
+                <button id="ccAddRowBtn" class="primary-btn">Add Row</button>
+              </div>
+            </div>
+
+            <div class="stats-grid five mt-16">
+              <div class="stat">
+                <span>Total Rows</span>
+                <strong id="ccTotalRows">0</strong>
+              </div>
+              <div class="stat">
+                <span>Done Rows</span>
+                <strong id="ccDoneRows">0</strong>
+              </div>
+              <div class="stat">
+                <span>Variance Rows</span>
+                <strong id="ccVarianceRows">0</strong>
+              </div>
+              <div class="stat">
+                <span>Count Events</span>
+                <strong id="ccActivityEvents">0</strong>
+              </div>
+              <div class="stat">
+                <span>Downtime Events</span>
+                <strong id="ccDowntimeEvents">0</strong>
+              </div>
+            </div>
+
+            <div class="table-wrap mt-16">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Site</th>
+                    <th>Bin</th>
+                    <th>Item #</th>
+                    <th>Description</th>
+                    <th>UOM</th>
+                    <th>On Hand</th>
+                    <th>Counted Qty</th>
+                    <th>Variance</th>
+                    <th>Reason Code</th>
+                    <th>Done</th>
+                    <th>Count Time</th>
+                    <th>Delete</th>
+                  </tr>
+                </thead>
+                <tbody id="ccWorksheetBody"></tbody>
+              </table>
+            </div>
+
+            <p class="helper">
+              Downtime is logged only when the gap between one counted item and the next counted item is over 25 minutes.
+            </p>
+
+            <div class="split-grid mt-16">
+              <div class="card inner-card">
+                <div class="section-head">
+                  <h3>Downtime Log</h3>
+                  <span class="badge">25+ min gap</span>
+                </div>
+                <div id="ccDowntimeLog" class="empty-state">No downtime events yet.</div>
+              </div>
+
+              <div class="card inner-card">
+                <div class="section-head">
+                  <h3>Saved Sessions</h3>
+                  <span class="badge muted">Local browser</span>
+                </div>
+                <div id="ccSavedSessions" class="empty-state">No saved sessions yet.</div>
+              </div>
+            </div>
+          </section>
         </section>
 
+        <!-- RECEIVING -->
         <section id="receivingView" class="view">
           <div class="section-head">
             <div>
@@ -390,6 +525,7 @@
           </div>
         </section>
 
+        <!-- PUTAWAY -->
         <section id="putawayView" class="view">
           <div class="section-head">
             <div>
@@ -424,6 +560,10 @@
                 <div class="stat-box">
                   <span class="stat-label">Total Qty</span>
                   <strong id="totalQty">0</strong>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-label">Available Lines</span>
+                  <strong>25</strong>
                 </div>
               </div>
 
@@ -508,6 +648,7 @@
           </section>
         </section>
 
+        <!-- LABOR -->
         <section id="laborView" class="view">
           <div class="section-head">
             <div>
@@ -562,6 +703,7 @@
           </div>
         </section>
 
+        <!-- QUALITY -->
         <section id="qualityView" class="view">
           <div class="section-head">
             <div>
@@ -610,6 +752,7 @@
           </div>
         </section>
 
+        <!-- REPORTS -->
         <section id="reportsView" class="view">
           <div class="section-head">
             <div>
@@ -646,13 +789,44 @@
     <div class="modal-card">
       <div class="modal-head">
         <h2 id="modalTitle">Modal</h2>
-        <button id="closeModalBtn" class="modal-close">&times;</button>
+        <button id="closeModalBtn" class="modal-close" type="button">&times;</button>
       </div>
       <div id="modalBody"></div>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
+
+  <template id="ccRowTemplate">
+    <tr>
+      <td><input data-field="site_id" placeholder="OHC" /></td>
+      <td><input data-field="bin" placeholder="A-10-1" /></td>
+      <td><input data-field="item_number" placeholder="607529" /></td>
+      <td><input data-field="description" placeholder="Item description" /></td>
+      <td><input data-field="uom" placeholder="EA" /></td>
+      <td><input data-field="on_hand_qty" type="number" placeholder="0" /></td>
+      <td><input data-field="counted_qty" type="number" placeholder="0" /></td>
+      <td><input data-field="variance" class="readonly" readonly /></td>
+      <td>
+        <select data-field="reason_code">
+          <option value="">—</option>
+          <option>Count Verified</option>
+          <option>Misplaced Inventory</option>
+          <option>Short Pick</option>
+          <option>Over Pick</option>
+          <option>Receiving Error</option>
+          <option>Putaway Error</option>
+          <option>Transfer Error</option>
+          <option>Damage</option>
+          <option>Count Error</option>
+          <option>Recount Required</option>
+        </select>
+      </td>
+      <td class="center"><input data-field="done" type="checkbox" /></td>
+      <td><span data-field="count_time" class="time-cell">—</span></td>
+      <td class="center"><button data-action="delete" class="icon-btn" type="button">✕</button></td>
+    </tr>
+  </template>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script type="module" src="app.js"></script>
