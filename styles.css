@@ -350,6 +350,10 @@ textarea {
   grid-template-columns: repeat(5, minmax(140px, 1fr));
 }
 
+.stats-grid.three {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
 .stat-box,
 .stat {
   background: #f7faff;
@@ -599,6 +603,38 @@ th {
   display: block;
 }
 
+/* picking */
+.pick-short-row {
+  background: #fff1f1;
+}
+
+.pick-done-row {
+  background: #eefaf2;
+}
+
+.pick-status-short {
+  color: #b42318;
+  font-weight: 700;
+}
+
+.pick-status-complete {
+  color: #157347;
+  font-weight: 700;
+}
+
+.pick-status-open {
+  color: #687b92;
+  font-weight: 700;
+}
+
+#pickingView table input[type="number"] {
+  min-width: 90px;
+}
+
+#pickingView .table-wrap table {
+  min-width: 860px;
+}
+
 @media (max-width: 1200px) {
   .card-grid.four,
   .card-grid.five,
@@ -630,6 +666,7 @@ th {
   .form-grid.two-up,
   .filter-grid,
   .stats-grid.five,
+  .stats-grid.three,
   .card-grid.four,
   .card-grid.five,
   .card-grid.three,
