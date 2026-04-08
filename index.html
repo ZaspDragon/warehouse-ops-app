@@ -32,6 +32,7 @@
         <button class="nav-btn" data-view="inventory">Inventory</button>
         <button class="nav-btn" data-view="receiving">Receiving</button>
         <button class="nav-btn" data-view="putaway">Put Away</button>
+        <button class="nav-btn" data-view="picking">Picking</button>
         <button class="nav-btn" data-view="labor">Labor</button>
         <button class="nav-btn" data-view="quality">Quality</button>
         <button class="nav-btn" data-view="reports">Reports</button>
@@ -298,17 +299,14 @@
               <div class="form-grid two-up">
                 <div>
                   <label for="ccCounterName">Counter Name</label>
-                  <input id="ccCounterName" type="text" placeholder="Kris" />
+                  <select id="ccCounterName">
+                    <option value="">Select counter</option>
+                  </select>
                 </div>
 
                 <div>
                   <label for="ccStockCountId">Stock Count ID</label>
                   <input id="ccStockCountId" type="text" placeholder="CC-001" />
-                </div>
-
-                <div>
-                  <label for="ccSiteId">Site ID</label>
-                  <input id="ccSiteId" type="text" placeholder="OHC" />
                 </div>
 
                 <div>
@@ -329,6 +327,11 @@
                 <div>
                   <label for="ccStartTime">Start Time</label>
                   <input id="ccStartTime" type="time" />
+                </div>
+
+                <div>
+                  <label for="ccUpload">Upload Count List (CSV)</label>
+                  <input id="ccUpload" type="file" accept=".csv" />
                 </div>
               </div>
 
@@ -366,7 +369,6 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Site</th>
                     <th>Bin</th>
                     <th>Item #</th>
                     <th>Description</th>
@@ -648,6 +650,79 @@
           </section>
         </section>
 
+        <!-- PICKING -->
+        <section id="pickingView" class="view">
+          <div class="section-head">
+            <div>
+              <h2>Picking</h2>
+              <p>Upload a pick list, consolidate lines, and track pulled quantity.</p>
+            </div>
+          </div>
+
+          <section class="card">
+            <div class="form-grid two-up">
+              <div>
+                <label for="pickerName">Picker Name</label>
+                <select id="pickerName">
+                  <option value="">Select picker</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="pickerDate">Date</label>
+                <input id="pickerDate" type="date" />
+              </div>
+            </div>
+
+            <div class="btn-row mt-16">
+              <div>
+                <label for="pickUpload">Upload Pick List (CSV)</label>
+                <input id="pickUpload" type="file" accept=".csv" />
+              </div>
+              <button id="clearPickListBtn" class="secondary-btn" type="button">Clear List</button>
+              <button id="exportPickCsvBtn" class="secondary-btn" type="button">Export Picks CSV</button>
+            </div>
+          </section>
+
+          <div class="stats-grid three mt-16">
+            <div class="stat">
+              <span>Total Pick Lines</span>
+              <strong id="pickTotalLines">0</strong>
+            </div>
+            <div class="stat">
+              <span>Completed Lines</span>
+              <strong id="pickDoneLines">0</strong>
+            </div>
+            <div class="stat">
+              <span>Short Lines</span>
+              <strong id="pickShortLines">0</strong>
+            </div>
+          </div>
+
+          <section class="card mt-16">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Location</th>
+                    <th>Item #</th>
+                    <th>Description</th>
+                    <th>Qty Needed</th>
+                    <th>Qty Picked</th>
+                    <th>Status</th>
+                    <th>Done</th>
+                  </tr>
+                </thead>
+                <tbody id="pickTableBody">
+                  <tr>
+                    <td colspan="7" class="empty">No pick list uploaded yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
         <!-- LABOR -->
         <section id="laborView" class="view">
           <div class="section-head">
@@ -799,11 +874,16 @@
 
   <template id="ccRowTemplate">
     <tr>
-      <td><input data-field="site_id" placeholder="OHC" /></td>
       <td><input data-field="bin" placeholder="A-10-1" /></td>
       <td><input data-field="item_number" placeholder="607529" /></td>
       <td><input data-field="description" placeholder="Item description" /></td>
-      <td><input data-field="uom" placeholder="EA" /></td>
+      <td>
+        <select data-field="uom">
+          <option value="EA">EA</option>
+          <option value="PCK">PCK</option>
+          <option value="CS">CS</option>
+        </select>
+      </td>
       <td><input data-field="on_hand_qty" type="number" placeholder="0" /></td>
       <td><input data-field="counted_qty" type="number" placeholder="0" /></td>
       <td><input data-field="variance" class="readonly" readonly /></td>
