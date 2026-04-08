@@ -40,10 +40,11 @@ const db = getFirestore(app);
    ROLE ACCESS
 -------------------------------- */
 const ROLE_ALLOWED_VIEWS = {
-  admin: ['dashboard', 'operations', 'inventory', 'receiving', 'putaway', 'labor', 'quality', 'reports'],
-  lead: ['dashboard', 'operations', 'inventory', 'receiving', 'putaway', 'labor', 'quality', 'reports'],
+  admin: ['dashboard', 'operations', 'inventory', 'receiving', 'putaway', 'picking', 'labor', 'quality', 'reports'],
+  lead: ['dashboard', 'operations', 'inventory', 'receiving', 'putaway', 'picking', 'labor', 'quality', 'reports'],
   stocker: ['putaway'],
   cycle_counter: ['inventory'],
+  picker: ['picking'],
 };
 
 const ROLE_HOME_VIEW = {
@@ -51,6 +52,7 @@ const ROLE_HOME_VIEW = {
   lead: 'dashboard',
   stocker: 'putaway',
   cycle_counter: 'inventory',
+  picker: 'picking',
 };
 
 function getAllowedViews(role) {
@@ -69,13 +71,14 @@ function roleCanAccess(role, view) {
    LOCAL STORAGE APP DATA
 -------------------------------- */
 const STORAGE_KEYS = {
-  tasks: 'warehouse_tasks_v5',
-  notes: 'warehouse_notes_v5',
-  inventory: 'warehouse_inventory_v5',
-  counts: 'warehouse_counts_v5',
-  trucks: 'warehouse_trucks_v5',
-  coaching: 'warehouse_coaching_v5',
-  quality: 'warehouse_quality_v5',
+  tasks: 'warehouse_tasks_v6',
+  notes: 'warehouse_notes_v6',
+  inventory: 'warehouse_inventory_v6',
+  counts: 'warehouse_counts_v6',
+  trucks: 'warehouse_trucks_v6',
+  coaching: 'warehouse_coaching_v6',
+  quality: 'warehouse_quality_v6',
+  picking: 'warehouse_picking_v1',
 };
 
 const defaultTasks = [
@@ -117,6 +120,7 @@ let counts = loadStorage(STORAGE_KEYS.counts, []);
 let trucks = loadStorage(STORAGE_KEYS.trucks, []);
 let coachingEntries = loadStorage(STORAGE_KEYS.coaching, []);
 let qualityData = loadStorage(STORAGE_KEYS.quality, defaultQualityData);
+let pickingRows = loadStorage(STORAGE_KEYS.picking, []);
 const laborData = defaultLaborData;
 
 let inventoryFiltersOpen = false;
@@ -134,7 +138,7 @@ let unsubs = [];
 /* -------------------------------
    CYCLE COUNT LOCAL STATE
 -------------------------------- */
-const CC_STORAGE_KEY = 'cycleCountPro_embedded_v1';
+const CC_STORAGE_KEY = 'cycleCountPro_embedded_v2';
 const CC_DOWNTIME_LIMIT_MINUTES = 25;
 const ccDefaultState = {
   currentSessionId: null,
@@ -154,6 +158,7 @@ const views = {
   inventory: document.getElementById('inventoryView'),
   receiving: document.getElementById('receivingView'),
   putaway: document.getElementById('putawayView'),
+  picking: document.getElementById('pickingView'),
   labor: document.getElementById('laborView'),
   quality: document.getElementById('qualityView'),
   reports: document.getElementById('reportsView'),
@@ -200,10 +205,10 @@ const employeeList = document.getElementById('employeeList');
 const ccEls = {
   counterName: document.getElementById('ccCounterName'),
   stockCountId: document.getElementById('ccStockCountId'),
-  siteId: document.getElementById('ccSiteId'),
   status: document.getElementById('ccStatus'),
   countDate: document.getElementById('ccCountDate'),
   startTime: document.getElementById('ccStartTime'),
+  upload: document.getElementById('ccUpload'),
   sessionBadge: document.getElementById('ccSessionBadge'),
   worksheetBody: document.getElementById('ccWorksheetBody'),
   downtimeLog: document.getElementById('ccDowntimeLog'),
@@ -217,15 +222,32 @@ const ccEls = {
 };
 
 /* -------------------------------
+   PICKING DOM
+-------------------------------- */
+const pickEls = {
+  pickerName: document.getElementById('pickerName'),
+  pickerDate: document.getElementById('pickerDate'),
+  pickUpload: document.getElementById('pickUpload'),
+  clearBtn: document.getElementById('clearPickListBtn'),
+  exportBtn: document.getElementById('exportPickCsvBtn'),
+  tableBody: document.getElementById('pickTableBody'),
+  totalLines: document.getElementById('pickTotalLines'),
+  doneLines: document.getElementById('pickDoneLines'),
+  shortLines: document.getElementById('pickShortLines'),
+};
+
+/* -------------------------------
    INIT
 -------------------------------- */
 document.addEventListener('DOMContentLoaded', () => {
   setupNav();
   setupButtons();
   setToday();
+  setPickerToday();
   buildLineRows(25);
   updateTotals();
   initCycleCount();
+  initPicking();
   renderAll();
 
   setInterval(() => {
@@ -316,14 +338,15 @@ function applyRoleAccess(role) {
     viewEl.classList.toggle('active', allowed && name === homeView);
   });
 
-  if (role === 'stocker' || role === 'cycle_counter') {
+  if (['stocker', 'cycle_counter', 'picker'].includes(role)) {
     sidebar.classList.add('hidden');
     appShell.classList.add('compact-role');
     newActionBtn.classList.add('hidden');
     globalSearch.classList.add('hidden');
-    topbarSubtitle.textContent = role === 'stocker'
-      ? 'Put away entry only.'
-      : 'Inventory and cycle count only.';
+
+    if (role === 'stocker') topbarSubtitle.textContent = 'Put away entry only.';
+    else if (role === 'cycle_counter') topbarSubtitle.textContent = 'Inventory and cycle count only.';
+    else topbarSubtitle.textContent = 'Picking only.';
   } else {
     sidebar.classList.remove('hidden');
     appShell.classList.remove('compact-role');
@@ -450,7 +473,7 @@ function watchEmployees() {
         .map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-      renderEmployeeDropdown();
+      renderEmployeeDropdowns();
       renderEmployeeList();
     },
     (error) => {
@@ -537,6 +560,10 @@ function setToday() {
   if (workDate) workDate.value = new Date().toISOString().slice(0, 10);
 }
 
+function setPickerToday() {
+  if (pickEls.pickerDate) pickEls.pickerDate.value = new Date().toISOString().slice(0, 10);
+}
+
 function setMessage(el, text = '', type = '') {
   if (!el) return;
   el.textContent = text;
@@ -595,20 +622,26 @@ function clearPutawayForm() {
   setMessage(formMsg);
 }
 
-function renderEmployeeDropdown() {
-  if (!workerName) return;
-  const current = workerName.value;
-  workerName.innerHTML = '<option value="">Select worker</option>';
+function renderEmployeeDropdowns() {
+  renderSelectOptions(workerName, 'Select worker');
+  renderSelectOptions(ccEls.counterName, 'Select counter');
+  renderSelectOptions(pickEls.pickerName, 'Select picker');
+}
+
+function renderSelectOptions(selectEl, defaultText) {
+  if (!selectEl) return;
+  const current = selectEl.value;
+  selectEl.innerHTML = `<option value="">${defaultText}</option>`;
 
   activeEmployees.forEach((emp) => {
     const opt = document.createElement('option');
     opt.value = emp.name;
     opt.textContent = emp.name;
-    workerName.appendChild(opt);
+    selectEl.appendChild(opt);
   });
 
-  if ([...workerName.options].some((o) => o.value === current)) {
-    workerName.value = current;
+  if ([...selectEl.options].some((o) => o.value === current)) {
+    selectEl.value = current;
   }
 }
 
@@ -832,13 +865,7 @@ function downloadPutawayCSV(rows) {
     });
   });
 
-  const blob = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `put-away-logs-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(csv.join('\n'), `put-away-logs-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8;');
 }
 
 /* -------------------------------
@@ -856,6 +883,7 @@ function renderAll() {
   renderCoaching();
   renderDashboardStats();
   renderPutawayLogTable();
+  renderPicking();
 }
 
 function renderDashboardStats() {
@@ -1718,6 +1746,7 @@ function generateReport(type) {
     coachingEntries,
     qualityData,
     putawayLogs,
+    pickingRows,
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' });
@@ -1749,10 +1778,11 @@ function initCycleCount() {
 
   document.getElementById('ccStartSessionBtn')?.addEventListener('click', ccStartSession);
   document.getElementById('ccSaveSessionBtn')?.addEventListener('click', ccSaveCurrentSession);
-  document.getElementById('ccAddRowBtn')?.addEventListener('click', ccOnAddRow);
+  document.getElementById('ccAddRowBtn')?.addEventListener('click', () => ccAddRow());
   document.getElementById('ccExportSessionCsvBtn')?.addEventListener('click', ccExportCurrentSessionCsv);
   document.getElementById('ccExportAllJsonBtn')?.addEventListener('click', ccExportAllJson);
   document.getElementById('ccClearSavedBtn')?.addEventListener('click', ccClearSavedData);
+  ccEls.upload?.addEventListener('change', ccHandleUpload);
 
   ccEls.worksheetBody?.addEventListener('input', ccHandleRowInput);
   ccEls.worksheetBody?.addEventListener('change', ccHandleRowInput);
@@ -1781,102 +1811,105 @@ function ccGenerateId() {
   return 'cc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
 }
 
-function ccStartSession() {
-  const id = ccGenerateId();
+function ccGetCurrentSession() {
+  const id = ccState.currentSessionId;
+  return id ? ccState.sessions[id] : null;
+}
 
-  const session = {
-    id,
-    counterName: (ccEls.counterName.value || '').trim() || 'Unknown Counter',
-    stockCountId: (ccEls.stockCountId.value || '').trim() || ('CC-' + new Date().toISOString().slice(0, 10)),
-    siteId: (ccEls.siteId.value || '').trim() || 'OHC',
+function ccCreateEmptySession() {
+  return {
+    id: ccGenerateId(),
+    counterName: ccEls.counterName.value || '',
+    stockCountId: ccEls.stockCountId.value.trim() || '',
     status: ccEls.status.value || 'In Progress',
     countDate: ccEls.countDate.value || new Date().toISOString().slice(0, 10),
     startTime: ccEls.startTime.value || new Date().toTimeString().slice(0, 5),
     rows: [],
     activityLog: [],
     downtimeLog: [],
-    lastCountTime: null,
-    createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+}
 
-  ccState.sessions[id] = session;
-  ccState.currentSessionId = id;
+function ccStartSession() {
+  const session = ccCreateEmptySession();
+  ccState.currentSessionId = session.id;
+  ccState.sessions[session.id] = session;
   ccSaveState();
   ccRenderAll();
   showToast('New cycle count session started.');
 }
 
-function ccEnsureSession() {
-  if (!ccState.currentSessionId || !ccState.sessions[ccState.currentSessionId]) {
-    ccStartSession();
-  }
-}
-
-function ccGetCurrentSession() {
-  if (!ccState.currentSessionId) return null;
-  return ccState.sessions[ccState.currentSessionId] || null;
-}
-
 function ccSaveCurrentSession() {
   const session = ccGetCurrentSession();
   if (!session) {
-    showToast('Start a cycle count session first.');
+    showToast('Start a session first.');
     return;
   }
 
-  session.counterName = (ccEls.counterName.value || '').trim() || session.counterName;
-  session.stockCountId = (ccEls.stockCountId.value || '').trim() || session.stockCountId;
-  session.siteId = (ccEls.siteId.value || '').trim() || session.siteId;
-  session.status = ccEls.status.value || session.status;
-  session.countDate = ccEls.countDate.value || session.countDate;
-  session.startTime = ccEls.startTime.value || session.startTime;
+  session.counterName = ccEls.counterName.value || '';
+  session.stockCountId = ccEls.stockCountId.value.trim() || '';
+  session.status = ccEls.status.value || 'In Progress';
+  session.countDate = ccEls.countDate.value || '';
+  session.startTime = ccEls.startTime.value || '';
   session.updatedAt = new Date().toISOString();
 
   ccSaveState();
-  ccRenderSessionInfo();
   ccRenderSavedSessions();
   showToast('Cycle count session saved.');
 }
 
-function ccOnAddRow() {
-  ccEnsureSession();
-  ccAddRow();
-  ccSaveState();
-  ccRenderWorksheet();
-  ccRenderStats();
-  ccRenderSavedSessions();
-}
-
-function ccAddRow(prefill = {}) {
-  const session = ccGetCurrentSession();
-  if (!session) return;
+function ccAddRow(rowData = {}) {
+  let session = ccGetCurrentSession();
+  if (!session) {
+    ccStartSession();
+    session = ccGetCurrentSession();
+  }
 
   session.rows.push({
     id: ccGenerateId(),
-    site_id: prefill.site_id || session.siteId || '',
-    bin: prefill.bin || '',
-    item_number: prefill.item_number || '',
-    description: prefill.description || '',
-    uom: prefill.uom || '',
-    on_hand_qty: prefill.on_hand_qty != null ? prefill.on_hand_qty : '',
-    counted_qty: prefill.counted_qty != null ? prefill.counted_qty : '',
-    variance: '',
-    reason_code: prefill.reason_code || '',
-    done: false,
-    count_time: '',
-    last_logged_count_time: null,
-    last_logged_count_value: null,
+    bin: rowData.bin || '',
+    item_number: rowData.item_number || '',
+    description: rowData.description || '',
+    uom: rowData.uom || 'EA',
+    on_hand_qty: Number(rowData.on_hand_qty || 0),
+    counted_qty: Number(rowData.counted_qty || 0),
+    variance: Number(rowData.counted_qty || 0) - Number(rowData.on_hand_qty || 0),
+    reason_code: rowData.reason_code || '',
+    done: Boolean(rowData.done || false),
+    count_time: rowData.count_time || '',
   });
 
   session.updatedAt = new Date().toISOString();
+  ccSaveState();
+  ccRenderAll();
+}
+
+function ccHandleUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseCSV(reader.result);
+    rows.forEach((row) => {
+      ccAddRow({
+        bin: row.Bin || row.bin || '',
+        item_number: row.ItemNumber || row['Item #'] || row.item_number || '',
+        description: row.Description || row.description || '',
+        uom: row.UOM || row.uom || 'EA',
+        on_hand_qty: Number(row.OnHand || row['On Hand'] || row.on_hand_qty || 0),
+      });
+    });
+    showToast('Count list uploaded.');
+    ccEls.upload.value = '';
+  };
+  reader.readAsText(file);
 }
 
 function ccHandleRowInput(event) {
-  const field = event.target.dataset.field;
-  if (!field) return;
-
-  const rowEl = event.target.closest('tr');
+  const target = event.target;
+  const rowEl = target.closest('tr');
   if (!rowEl) return;
 
   const rowId = rowEl.dataset.rowId;
@@ -1886,105 +1919,35 @@ function ccHandleRowInput(event) {
   const row = session.rows.find((r) => r.id === rowId);
   if (!row) return;
 
-  if (event.target.type === 'checkbox') {
-    row[field] = event.target.checked;
-  } else {
-    row[field] = event.target.value;
-  }
+  const field = target.dataset.field;
+  if (!field) return;
 
-  const onHand = parseNullableNumber(row.on_hand_qty);
-  const counted = parseNullableNumber(row.counted_qty);
-
-  if (onHand !== null && counted !== null) {
-    row.variance = String(counted - onHand);
-  } else {
-    row.variance = '';
-  }
-
-  const varianceInput = rowEl.querySelector('[data-field="variance"]');
-  if (varianceInput) {
-    varianceInput.value = row.variance;
-  }
-
-  const isCountEvent =
-    field === 'counted_qty' &&
-    row.counted_qty !== '' &&
-    row.counted_qty !== null &&
-    row.counted_qty !== undefined;
-
-  if (isCountEvent) {
-    const didLog = ccRecordCountEvent(row);
-
-    if (didLog) {
-      const countTimeSpan = rowEl.querySelector('[data-field="count_time"]');
-      if (countTimeSpan) {
-        countTimeSpan.textContent = row.count_time || '—';
-      }
+  if (field === 'done') {
+    row.done = target.checked;
+    if (row.done && !row.count_time) {
+      row.count_time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      ccRegisterCountEvent(session, row);
     }
+    if (!row.done) {
+      row.count_time = '';
+    }
+  } else if (field === 'on_hand_qty' || field === 'counted_qty') {
+    row[field] = Number(target.value || 0);
+  } else {
+    row[field] = target.value;
   }
 
+  row.variance = Number(row.counted_qty || 0) - Number(row.on_hand_qty || 0);
   session.updatedAt = new Date().toISOString();
   ccSaveState();
-
-  ccRenderStats();
-  ccRenderDowntime();
-  ccRenderSavedSessions();
-}
-
-function ccRecordCountEvent(row) {
-  const session = ccGetCurrentSession();
-  if (!session) return false;
-
-  const nowIso = new Date().toISOString();
-  const currentCountValue = String(row.counted_qty);
-
-  if (row.last_logged_count_value === currentCountValue) {
-    return false;
-  }
-
-  if (row.last_logged_count_time) {
-    const secondsSinceLastLog = (new Date(nowIso) - new Date(row.last_logged_count_time)) / 1000;
-    if (secondsSinceLastLog < 1) {
-      return false;
-    }
-  }
-
-  if (session.lastCountTime) {
-    const gapMin = minutesBetween(session.lastCountTime, nowIso);
-
-    if (gapMin > CC_DOWNTIME_LIMIT_MINUTES) {
-      session.downtimeLog.unshift({
-        id: ccGenerateId(),
-        previousCountTime: session.lastCountTime,
-        currentCountTime: nowIso,
-        gapMin: round2(gapMin),
-        bin: row.bin || '',
-        item_number: row.item_number || '',
-      });
-    }
-  }
-
-  row.count_time = formatDateTime(nowIso);
-  row.last_logged_count_time = nowIso;
-  row.last_logged_count_value = currentCountValue;
-
-  session.activityLog.unshift({
-    id: ccGenerateId(),
-    time: nowIso,
-    bin: row.bin || '',
-    item_number: row.item_number || '',
-    counted_qty: row.counted_qty || '',
-  });
-
-  session.lastCountTime = nowIso;
-  return true;
+  ccRenderAll();
 }
 
 function ccHandleRowClick(event) {
-  const action = event.target.dataset.action;
-  if (action !== 'delete') return;
+  const btn = event.target.closest('[data-action="delete"]');
+  if (!btn) return;
 
-  const rowEl = event.target.closest('tr');
+  const rowEl = btn.closest('tr');
   if (!rowEl) return;
 
   const rowId = rowEl.dataset.rowId;
@@ -1993,232 +1956,439 @@ function ccHandleRowClick(event) {
 
   session.rows = session.rows.filter((r) => r.id !== rowId);
   session.updatedAt = new Date().toISOString();
-
   ccSaveState();
   ccRenderAll();
 }
 
+function ccRegisterCountEvent(session, row) {
+  const nowIso = new Date().toISOString();
+  session.activityLog.push({
+    rowId: row.id,
+    item: row.item_number,
+    time: nowIso,
+  });
+
+  if (session.activityLog.length >= 2) {
+    const prev = session.activityLog[session.activityLog.length - 2];
+    const current = session.activityLog[session.activityLog.length - 1];
+    const diffMinutes = Math.floor((new Date(current.time) - new Date(prev.time)) / 60000);
+
+    if (diffMinutes > CC_DOWNTIME_LIMIT_MINUTES) {
+      session.downtimeLog.push({
+        fromItem: prev.item || 'Previous',
+        toItem: current.item || 'Next',
+        minutes: diffMinutes,
+        at: nowIso,
+      });
+    }
+  }
+}
+
 function ccRenderAll() {
-  ccRenderSessionInfo();
-  ccRenderWorksheet();
+  ccRenderFormFromSession();
+  ccRenderRows();
   ccRenderStats();
   ccRenderDowntime();
   ccRenderSavedSessions();
 }
 
-function ccRenderSessionInfo() {
+function ccRenderFormFromSession() {
   const session = ccGetCurrentSession();
 
   if (!session) {
     ccEls.sessionBadge.textContent = 'No active session';
-    ccEls.sessionBadge.className = 'badge muted';
     return;
   }
 
   ccEls.counterName.value = session.counterName || '';
   ccEls.stockCountId.value = session.stockCountId || '';
-  ccEls.siteId.value = session.siteId || '';
   ccEls.status.value = session.status || 'In Progress';
   ccEls.countDate.value = session.countDate || '';
   ccEls.startTime.value = session.startTime || '';
-
-  ccEls.sessionBadge.textContent = `${session.counterName} • ${session.stockCountId}`;
-  ccEls.sessionBadge.className = 'badge';
+  ccEls.sessionBadge.textContent = `${session.stockCountId || 'Unsaved Session'} • ${session.status}`;
 }
 
-function ccRenderWorksheet() {
-  const session = ccGetCurrentSession();
-  ccEls.worksheetBody.innerHTML = '';
+function ccRenderRows() {
+  const body = ccEls.worksheetBody;
+  body.innerHTML = '';
 
-  if (!session || !ccEls.rowTemplate) return;
+  const session = ccGetCurrentSession();
+  if (!session || !session.rows.length) {
+    body.innerHTML = '<tr><td colspan="11" class="empty">No rows yet.</td></tr>';
+    return;
+  }
 
   session.rows.forEach((row) => {
-    const clone = ccEls.rowTemplate.content.firstElementChild.cloneNode(true);
-    clone.dataset.rowId = row.id;
+    const fragment = ccEls.rowTemplate.content.cloneNode(true);
+    const tr = fragment.querySelector('tr');
+    tr.dataset.rowId = row.id;
 
-    clone.querySelectorAll('[data-field]').forEach((el) => {
+    tr.querySelectorAll('[data-field]').forEach((el) => {
       const field = el.dataset.field;
-
-      if (el.tagName === 'SPAN') {
-        el.textContent = row[field] || '—';
-      } else if (el.type === 'checkbox') {
-        el.checked = !!row[field];
-      } else {
-        el.value = row[field] != null ? row[field] : '';
-      }
+      if (field === 'done') el.checked = !!row[field];
+      else if (field === 'count_time') el.textContent = row[field] || '—';
+      else el.value = row[field] ?? '';
     });
 
-    ccEls.worksheetBody.appendChild(clone);
+    body.appendChild(fragment);
   });
 }
 
 function ccRenderStats() {
   const session = ccGetCurrentSession();
-  const rows = session ? session.rows : [];
 
-  ccEls.totalRows.textContent = rows.length;
-  ccEls.doneRows.textContent = rows.filter((r) => r.done).length;
-  ccEls.varianceRows.textContent = rows.filter((r) => String(r.variance) !== '' && Number(r.variance) !== 0).length;
-  ccEls.activityEvents.textContent = session ? session.activityLog.length : 0;
-  ccEls.downtimeEvents.textContent = session ? session.downtimeLog.length : 0;
+  if (!session) {
+    ccEls.totalRows.textContent = '0';
+    ccEls.doneRows.textContent = '0';
+    ccEls.varianceRows.textContent = '0';
+    ccEls.activityEvents.textContent = '0';
+    ccEls.downtimeEvents.textContent = '0';
+    return;
+  }
+
+  ccEls.totalRows.textContent = String(session.rows.length);
+  ccEls.doneRows.textContent = String(session.rows.filter((r) => r.done).length);
+  ccEls.varianceRows.textContent = String(session.rows.filter((r) => Number(r.variance) !== 0).length);
+  ccEls.activityEvents.textContent = String(session.activityLog.length);
+  ccEls.downtimeEvents.textContent = String(session.downtimeLog.length);
 }
 
 function ccRenderDowntime() {
   const session = ccGetCurrentSession();
+  ccEls.downtimeLog.innerHTML = '';
 
   if (!session || !session.downtimeLog.length) {
-    ccEls.downtimeLog.className = 'empty-state';
-    ccEls.downtimeLog.textContent = 'No downtime events yet.';
+    ccEls.downtimeLog.innerHTML = '<div class="empty-state">No downtime events yet.</div>';
     return;
   }
 
-  ccEls.downtimeLog.className = 'log-list';
-  ccEls.downtimeLog.innerHTML = session.downtimeLog.map((item) => `
-    <div class="log-item">
-      <strong>${item.gapMin} minute gap</strong>
-      <div>Previous count: ${formatDateTime(item.previousCountTime)}</div>
-      <div>Next count: ${formatDateTime(item.currentCountTime)}</div>
-      <div>Triggered by: Bin ${escapeHtml(item.bin || '—')} | Item ${escapeHtml(item.item_number || '—')}</div>
-    </div>
-  `).join('');
+  session.downtimeLog.forEach((entry) => {
+    ccEls.downtimeLog.insertAdjacentHTML('beforeend', `
+      <div class="log-item">
+        <strong>${entry.minutes} min gap</strong><br />
+        ${escapeHtml(entry.fromItem)} → ${escapeHtml(entry.toItem)}<br />
+        <span class="coach-date">${formatDateTime(entry.at)}</span>
+      </div>
+    `);
+  });
 }
 
 function ccRenderSavedSessions() {
+  ccEls.savedSessions.innerHTML = '';
+
   const sessions = Object.values(ccState.sessions).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
   if (!sessions.length) {
-    ccEls.savedSessions.className = 'empty-state';
-    ccEls.savedSessions.textContent = 'No saved sessions yet.';
+    ccEls.savedSessions.innerHTML = '<div class="empty-state">No saved sessions yet.</div>';
     return;
   }
 
-  ccEls.savedSessions.className = 'saved-session-list';
-  ccEls.savedSessions.innerHTML = sessions.map((session) => `
-    <div class="session-item">
-      <strong>${escapeHtml(session.counterName)} • ${escapeHtml(session.stockCountId)}</strong>
-      <div>${escapeHtml(session.siteId)} • ${escapeHtml(session.countDate)} • ${escapeHtml(session.status)}</div>
-      <div>${session.rows.length} rows • ${session.activityLog.length} counts • ${session.downtimeLog.length} downtime events</div>
-      <div class="actions">
-        <button class="secondary-btn cc-session-load-btn" data-session-id="${session.id}" type="button">Load</button>
-        <button class="danger-btn cc-session-delete-btn" data-session-id="${session.id}" type="button">Delete</button>
+  sessions.forEach((session) => {
+    const item = document.createElement('div');
+    item.className = 'session-item';
+    item.innerHTML = `
+      <div><strong>${escapeHtml(session.stockCountId || 'Untitled Session')}</strong></div>
+      <div class="coach-date">${escapeHtml(session.counterName || 'No counter')} • ${escapeHtml(session.countDate || '')}</div>
+      <div class="action-row mt-16">
+        <button class="small-btn" data-action="load">Load</button>
+        <button class="small-btn" data-action="delete">Delete</button>
       </div>
-    </div>
-  `).join('');
+    `;
 
-  document.querySelectorAll('.cc-session-load-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      ccState.currentSessionId = btn.dataset.sessionId;
+    item.querySelector('[data-action="load"]').addEventListener('click', () => {
+      ccState.currentSessionId = session.id;
       ccSaveState();
       ccRenderAll();
+      showToast('Cycle count session loaded.');
     });
-  });
 
-  document.querySelectorAll('.cc-session-delete-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.sessionId;
-      if (ccState.currentSessionId === id) {
-        ccState.currentSessionId = null;
-      }
-      delete ccState.sessions[id];
+    item.querySelector('[data-action="delete"]').addEventListener('click', () => {
+      delete ccState.sessions[session.id];
+      if (ccState.currentSessionId === session.id) ccState.currentSessionId = null;
       ccSaveState();
       ccRenderAll();
+      showToast('Cycle count session deleted.');
     });
+
+    ccEls.savedSessions.appendChild(item);
   });
 }
 
 function ccExportCurrentSessionCsv() {
   const session = ccGetCurrentSession();
+  if (!session) return showToast('No active session.');
 
-  if (!session) {
-    showToast('No active cycle count session to export.');
-    return;
-  }
+  const header = ['Bin', 'ItemNumber', 'Description', 'UOM', 'OnHand', 'CountedQty', 'Variance', 'ReasonCode', 'Done', 'CountTime'];
+  const csv = [header.join(',')];
 
-  const headers = [
-    'site_id',
-    'bin',
-    'item_number',
-    'description',
-    'uom',
-    'on_hand_qty',
-    'counted_qty',
-    'variance',
-    'reason_code',
-    'done',
-    'count_time',
-  ];
+  session.rows.forEach((row) => {
+    csv.push([
+      row.bin,
+      row.item_number,
+      row.description,
+      row.uom,
+      row.on_hand_qty,
+      row.counted_qty,
+      row.variance,
+      row.reason_code,
+      row.done ? 'Yes' : 'No',
+      row.count_time || '',
+    ].map(csvEscape).join(','));
+  });
 
-  const csv = [headers.join(',')]
-    .concat(
-      session.rows.map((row) => headers.map((h) => csvSafe(row[h])).join(','))
-    )
-    .join('\n');
-
-  downloadFile(csv, `${session.stockCountId || 'cycle-count'}-session.csv`, 'text/csv;charset=utf-8;');
+  downloadTextFile(csv.join('\n'), `cycle-count-${(session.stockCountId || 'session').replace(/\s+/g, '-')}.csv`, 'text/csv;charset=utf-8;');
 }
 
 function ccExportAllJson() {
-  downloadFile(JSON.stringify(ccState, null, 2), 'cycle-count-pro-data.json', 'application/json;charset=utf-8;');
+  downloadTextFile(JSON.stringify(ccState, null, 2), `cycle-count-all-${new Date().toISOString().slice(0, 10)}.json`, 'application/json;charset=utf-8;');
 }
 
 function ccClearSavedData() {
-  if (!confirm('Clear all saved cycle count data from this browser?')) return;
-
+  if (!confirm('Clear all saved cycle count data?')) return;
   ccState = deepClone(ccDefaultState);
   ccSaveState();
   ccRenderAll();
+  showToast('Cycle count saved data cleared.');
+}
+
+/* -------------------------------
+   PICKING
+-------------------------------- */
+function initPicking() {
+  pickEls.pickUpload?.addEventListener('change', handlePickUpload);
+  pickEls.clearBtn?.addEventListener('click', clearPickList);
+  pickEls.exportBtn?.addEventListener('click', exportPickingCsv);
+  renderPicking();
+}
+
+function handlePickUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rawRows = parseCSV(reader.result);
+    pickingRows = consolidatePickRows(rawRows);
+    saveStorage(STORAGE_KEYS.picking, pickingRows);
+    renderPicking();
+    showToast('Pick list uploaded.');
+    pickEls.pickUpload.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function consolidatePickRows(rawRows) {
+  const grouped = {};
+
+  rawRows.forEach((row) => {
+    const location = (row.Location || row.location || row.Bin || row.bin || '').trim().toUpperCase();
+    const itemNumber = (row.ItemNumber || row['Item #'] || row.item_number || '').trim();
+    const description = (row.Description || row.description || '').trim();
+    const qty = Number(row.Qty || row.QTY || row.Quantity || row.qty || 0);
+
+    if (!location || !itemNumber) return;
+
+    const key = `${location}|${itemNumber}`;
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        id: cryptoRandomId(),
+        location,
+        itemNumber,
+        description,
+        qtyNeeded: 0,
+        qtyPicked: 0,
+        done: false,
+      };
+    }
+
+    grouped[key].qtyNeeded += qty;
+  });
+
+  return Object.values(grouped).sort((a, b) => naturalBinSort(a.location, b.location));
+}
+
+function renderPicking() {
+  if (!pickEls.tableBody) return;
+
+  pickEls.tableBody.innerHTML = '';
+
+  if (!pickingRows.length) {
+    pickEls.tableBody.innerHTML = '<tr><td colspan="7" class="empty">No pick list uploaded yet.</td></tr>';
+    updatePickingStats();
+    return;
+  }
+
+  pickingRows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const isShort = Number(row.qtyPicked || 0) < Number(row.qtyNeeded || 0) && row.done;
+    const isComplete = Number(row.qtyPicked || 0) >= Number(row.qtyNeeded || 0) && row.done;
+
+    tr.classList.toggle('pick-short-row', isShort);
+    tr.classList.toggle('pick-done-row', isComplete);
+
+    tr.innerHTML = `
+      <td>${escapeHtml(row.location)}</td>
+      <td>${escapeHtml(row.itemNumber)}</td>
+      <td>${escapeHtml(row.description)}</td>
+      <td>${row.qtyNeeded}</td>
+      <td><input type="number" min="0" value="${row.qtyPicked || 0}" data-pick-id="${row.id}" data-action="qty" /></td>
+      <td class="${isShort ? 'pick-status-short' : isComplete ? 'pick-status-complete' : 'pick-status-open'}">
+        ${isShort ? 'Short' : isComplete ? 'Complete' : 'Open'}
+      </td>
+      <td class="center"><input type="checkbox" ${row.done ? 'checked' : ''} data-pick-id="${row.id}" data-action="done" /></td>
+    `;
+
+    pickEls.tableBody.appendChild(tr);
+  });
+
+  pickEls.tableBody.querySelectorAll('[data-action="qty"]').forEach((input) => {
+    input.addEventListener('input', (e) => {
+      const id = e.target.dataset.pickId;
+      const row = pickingRows.find((r) => r.id === id);
+      if (!row) return;
+      row.qtyPicked = Number(e.target.value || 0);
+      saveStorage(STORAGE_KEYS.picking, pickingRows);
+      renderPicking();
+    });
+  });
+
+  pickEls.tableBody.querySelectorAll('[data-action="done"]').forEach((input) => {
+    input.addEventListener('change', (e) => {
+      const id = e.target.dataset.pickId;
+      const row = pickingRows.find((r) => r.id === id);
+      if (!row) return;
+      row.done = e.target.checked;
+      saveStorage(STORAGE_KEYS.picking, pickingRows);
+      renderPicking();
+    });
+  });
+
+  updatePickingStats();
+}
+
+function updatePickingStats() {
+  const total = pickingRows.length;
+  const done = pickingRows.filter((r) => r.done).length;
+  const short = pickingRows.filter((r) => r.done && Number(r.qtyPicked || 0) < Number(r.qtyNeeded || 0)).length;
+
+  if (pickEls.totalLines) pickEls.totalLines.textContent = String(total);
+  if (pickEls.doneLines) pickEls.doneLines.textContent = String(done);
+  if (pickEls.shortLines) pickEls.shortLines.textContent = String(short);
+}
+
+function clearPickList() {
+  pickingRows = [];
+  saveStorage(STORAGE_KEYS.picking, pickingRows);
+  renderPicking();
+  showToast('Pick list cleared.');
+}
+
+function exportPickingCsv() {
+  if (!pickingRows.length) return showToast('No picking rows to export.');
+
+  const header = ['Location', 'ItemNumber', 'Description', 'QtyNeeded', 'QtyPicked', 'Done'];
+  const csv = [header.join(',')];
+
+  pickingRows.forEach((row) => {
+    csv.push([
+      row.location,
+      row.itemNumber,
+      row.description,
+      row.qtyNeeded,
+      row.qtyPicked,
+      row.done ? 'Yes' : 'No',
+    ].map(csvEscape).join(','));
+  });
+
+  downloadTextFile(csv.join('\n'), `picking-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8;');
 }
 
 /* -------------------------------
    HELPERS
 -------------------------------- */
-function badge(value) {
-  const label = String(value ?? '');
-  const cls = /high|delayed|out|pending/i.test(label)
-    ? 'red'
-    : /medium|low/i.test(label)
-    ? 'yellow'
-    : /healthy|active|done|completed|on time|ok/i.test(label)
-    ? 'green'
-    : '';
-  return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+
+  const headers = splitCsvLine(lines[0]).map((h) => h.trim());
+  return lines.slice(1).map((line) => {
+    const values = splitCsvLine(line);
+    const obj = {};
+    headers.forEach((header, index) => {
+      obj[header] = (values[index] || '').trim();
+    });
+    return obj;
+  });
+}
+
+function splitCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current);
+  return result;
+}
+
+function naturalBinSort(a, b) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 function getTaskAge(task) {
-  const minutes = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 60000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}h ${mins}m`;
+  const created = new Date(task.createdAt);
+  const diffMs = Date.now() - created.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 function isTaskAtRisk(task) {
-  const minutes = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 60000);
-  return minutes > 45 && task.status !== 'Done';
+  const created = new Date(task.createdAt);
+  const diffMins = Math.floor((Date.now() - created.getTime()) / 60000);
+  return diffMins > 30 && task.status !== 'Done';
 }
 
 function getTruckElapsedTime(truck) {
-  if (truck.status !== 'Active') {
-    return secondsToClock(truck.totalElapsedSeconds || 0);
-  }
-
+  if (truck.status !== 'Active') return secondsToClock(truck.totalElapsedSeconds || 0);
   const seconds = Math.floor((Date.now() - new Date(truck.startTime).getTime()) / 1000);
   return secondsToClock(seconds);
 }
 
 function isTruckDelayed(truck) {
-  const activeSeconds = truck.status === 'Active'
+  const seconds = truck.status === 'Active'
     ? Math.floor((Date.now() - new Date(truck.startTime).getTime()) / 1000)
-    : truck.totalElapsedSeconds || 0;
-  return activeSeconds > 2 * 60 * 60;
+    : Number(truck.totalElapsedSeconds || 0);
+
+  return seconds > 2 * 3600;
 }
 
 function secondsToClock(totalSeconds) {
-  const sec = Math.max(0, Number(totalSeconds) || 0);
-  const hours = String(Math.floor(sec / 3600)).padStart(2, '0');
-  const minutes = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
-  const seconds = String(sec % 60).padStart(2, '0');
-  return `${hours}:${minutes}:${seconds}`;
+  const seconds = Math.max(0, Number(totalSeconds || 0));
+  const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
+  const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+  const s = String(seconds % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
 }
 
 function getLaborStatusClass(productivity) {
@@ -2229,7 +2399,7 @@ function getLaborStatusClass(productivity) {
 
 function getLaborGoalLabel(productivity) {
   if (productivity >= 90) return 'Above Goal';
-  if (productivity >= 75) return 'Near Goal';
+  if (productivity >= 75) return 'On Track';
   return 'Below Goal';
 }
 
@@ -2242,80 +2412,63 @@ function getTopIssueArea() {
   return Object.entries(countsByArea).sort((a, b) => b[1] - a[1])[0][0];
 }
 
-function cryptoRandomId() {
-  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
-  return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
+}
+
+function badge(value) {
+  const text = escapeHtml(String(value || ''));
+  const lower = text.toLowerCase();
+
+  let cls = '';
+  if (['healthy', 'done', 'on floor', 'on time', 'active', 'complete'].includes(lower)) cls = 'green';
+  else if (['low', 'medium', 'queued', 'pending', 'started', 'in progress'].includes(lower)) cls = 'yellow';
+  else if (['out', 'high', 'delayed', 'downtime', 'short'].includes(lower)) cls = 'red';
+
+  return `<span class="badge ${cls}">${text}</span>`;
 }
 
 function showToast(message) {
   const toast = document.getElementById('toast');
+  if (!toast) return;
   toast.textContent = message;
   toast.classList.remove('hidden');
-
-  clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => {
-    toast.classList.add('hidden');
-  }, 2200);
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.add('hidden'), 2500);
 }
 
-function downloadFile(content, filename, mimeType) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  URL.revokeObjectURL(url);
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
-function minutesBetween(startIso, endIso) {
-  return (new Date(endIso) - new Date(startIso)) / 60000;
-}
-
-function formatDateTime(iso) {
-  return new Date(iso).toLocaleString([], {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function parseNullableNumber(value) {
-  if (value === '' || value === null || value === undefined) return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-}
-
-function round2(num) {
-  return Math.round(num * 100) / 100;
+function escapeAttribute(value) {
+  return escapeHtml(value);
 }
 
 function csvEscape(value) {
   const str = String(value ?? '');
-  if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+  if (/[",\n]/.test(str)) return `"${str.replaceAll('"', '""')}"`;
   return str;
 }
 
-function csvSafe(value) {
-  const text = String(value == null ? '' : value);
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+function downloadTextFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-function escapeHtml(value) {
-  return String(value == null ? '' : value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function escapeAttribute(value) {
-  return escapeHtml(value).replace(/"/g, '&quot;');
+function cryptoRandomId() {
+  return 'id-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
