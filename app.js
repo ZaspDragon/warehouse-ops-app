@@ -1937,10 +1937,14 @@ function ccHandleRowInput(event) {
     row[field] = target.value;
   }
 
-  row.variance = Number(row.counted_qty || 0) - Number(row.on_hand_qty || 0);
-  session.updatedAt = new Date().toISOString();
-  ccSaveState();
-  ccRenderAll();
+ row.variance = Number(row.counted_qty || 0) - Number(row.on_hand_qty || 0);
+session.updatedAt = new Date().toISOString();
+ccSaveState();
+
+const varianceInput = rowEl.querySelector('[data-field="variance"]');
+if (varianceInput) {
+  varianceInput.value = row.variance;
+}
 }
 
 function ccHandleRowClick(event) {
