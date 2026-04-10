@@ -2433,15 +2433,58 @@ function exportPickingCsv() {
    HELPERS
 -------------------------------- */
 function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/).filter(Boolean);
-  if (!lines.length) return [];
+  const rows = [];
+  let currentRow = [];
+  let currentValue = '';
+  let inQuotes = false;
 
-  const headers = splitCsvLine(lines[0]).map((h) => h.trim());
-  return lines.slice(1).map((line) => {
-    const values = splitCsvLine(line);
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        currentValue += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentValue.trim());
+      currentValue = '';
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') {
+        i += 1;
+      }
+
+      currentRow.push(currentValue.trim());
+      currentValue = '';
+
+      if (currentRow.some(cell => cell !== '')) {
+        rows.push(currentRow);
+      }
+
+      currentRow = [];
+    } else {
+      currentValue += char;
+    }
+  }
+
+  if (currentValue.length || currentRow.length) {
+    currentRow.push(currentValue.trim());
+    if (currentRow.some(cell => cell !== '')) {
+      rows.push(currentRow);
+    }
+  }
+
+  if (!rows.length) return [];
+
+  const headers = rows[0].map((h) => h.trim());
+
+  return rows.slice(1).map((row) => {
     const obj = {};
     headers.forEach((header, index) => {
-      obj[header] = (values[index] || '').trim();
+      obj[header] = (row[index] || '').trim();
     });
     return obj;
   });
