@@ -1790,57 +1790,123 @@ function initCycleCount() {
 
   ccRenderAll();
 }
+function initPicking() {
+  pickEls.pickUpload?.addEventListener('change', handlePickUpload);
+  pickEls.clearBtn?.addEventListener('click', clearPickList);
+  pickEls.exportBtn?.addEventListener('click', exportPickingCsv);
+  renderPicking();
+}
+
 async function handlePickUpload(event) {
-  const file = event.target.files[0];
+  const file = event.target.files?.[0];
   if (!file) return;
 
-  const text = await file.text();
-  const rows = text.split('\n').map(r => r.split(','));
+  try {
+    const text = await file.text();
+    const rawRows = parseCSV(text);
 
-  // remove header row
-  const data = rows.slice(1);
+    console.log('RAW PICK ROWS:', rawRows);
 
-  const formatted = data.map(r => {
-    return {
-      location: (r[0] || '').trim(),
-      item: (r[1] || '').trim(),
-      description: (r[2] || '').trim(),
-      qty_needed: Number(r[3] || 0),
-      qty_picked: 0,
-      status: 'Pending'
-    };
-  });
+    pickingRows = consolidatePickRows(rawRows);
 
-  window.pickData = formatted;
+    console.log('CONSOLIDATED PICK ROWS:', pickingRows);
 
-  renderPickTable();
-}
-  function renderPickTable() {
-  const table = document.querySelector('#pickTableBody');
-  if (!table) return;
+    if (!pickingRows.length) {
+      showToast('No valid pick rows found in file.');
+      return;
+    }
 
-  table.innerHTML = '';
-
-  if (!window.pickData || window.pickData.length === 0) {
-    table.innerHTML = `<tr><td colspan="7">No pick list uploaded yet.</td></tr>`;
-    return;
+    saveStorage(STORAGE_KEYS.picking, pickingRows);
+    renderPicking();
+    showToast(`Pick list uploaded: ${pickingRows.length} lines.`);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not read pick list file.');
+  } finally {
+    pickEls.pickUpload.value = '';
   }
+}
 
-  window.pickData.forEach(row => {
-    const tr = document.createElement('tr');
+function consolidatePickRows(rawRows) {
+  const grouped = {};
 
-    tr.innerHTML = `
-      <td>${row.location}</td>
-      <td>${row.item}</td>
-      <td>${row.description}</td>
-      <td>${row.qty_needed}</td>
-      <td><input type="number" value="${row.qty_picked}" /></td>
-      <td>${row.status}</td>
-      <td><input type="checkbox" /></td>
-    `;
+  rawRows.forEach((row) => {
+    const location = (
+      row.Fulfillment_Bin ||
+      row.Location ||
+      row.location ||
+      row.Bin ||
+      row.bin ||
+      row.Loc ||
+      row.LOC ||
+      row['Pick Bin'] ||
+      row['Bin Location'] ||
+      ''
+    ).toString().trim().toUpperCase();
 
-    table.appendChild(tr);
+    const itemNumber = (
+      row.ITEM_NUM ||
+      row.ItemNumber ||
+      row['Item #'] ||
+      row.item_number ||
+      row.Item ||
+      row.SKU ||
+      row.sku ||
+      row.sku2 ||
+      row['Product #'] ||
+      ''
+    ).toString().trim();
+
+    const description = (
+      row.ITEMDESC ||
+      row.Description ||
+      row.description ||
+      row.Desc ||
+      row['Item Description'] ||
+      row.Product ||
+      ''
+    ).toString().trim();
+
+    const qty = Number(
+      row.Bin_Quantity ||
+      row.Qty ||
+      row.QTY ||
+      row.Quantity ||
+      row.qty ||
+      row['Qty Needed'] ||
+      row['Order Qty'] ||
+      row['Requested Qty'] ||
+      0
+    );
+
+    const uom = (
+      row.UOFM ||
+      row.UOM ||
+      row.uom ||
+      'EA'
+    ).toString().trim();
+
+    if (!location || !itemNumber) return;
+
+    const key = `${location}|${itemNumber}`;
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        id: cryptoRandomId(),
+        location,
+        itemNumber,
+        description,
+        qtyNeeded: 0,
+        qtyPicked: 0,
+        done: false,
+        uom,
+      };
+    }
+
+    grouped[key].qtyNeeded += qty;
   });
+
+  return Object.values(grouped).sort((a, b) => naturalBinSort(a.location, b.location));
 }
 
   ccEls.worksheetBody?.addEventListener('input', ccHandleRowInput);
