@@ -1783,6 +1783,60 @@ function initCycleCount() {
   document.getElementById('ccExportAllJsonBtn')?.addEventListener('click', ccExportAllJson);
   document.getElementById('ccClearSavedBtn')?.addEventListener('click', ccClearSavedData);
   ccEls.upload?.addEventListener('change', ccHandleUpload);
+  ccEls.upload?.addEventListener('change', handlePickUpload);
+
+async function handlePickUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const text = await file.text();
+  const rows = text.split('\n').map(r => r.split(','));
+
+  // remove header row
+  const data = rows.slice(1);
+
+  const formatted = data.map(r => {
+    return {
+      location: (r[0] || '').trim(),
+      item: (r[1] || '').trim(),
+      description: (r[2] || '').trim(),
+      qty_needed: Number(r[3] || 0),
+      qty_picked: 0,
+      status: 'Pending'
+    };
+  });
+
+  window.pickData = formatted;
+
+  renderPickTable();
+}
+  function renderPickTable() {
+  const table = document.querySelector('#pickTableBody');
+  if (!table) return;
+
+  table.innerHTML = '';
+
+  if (!window.pickData || window.pickData.length === 0) {
+    table.innerHTML = `<tr><td colspan="7">No pick list uploaded yet.</td></tr>`;
+    return;
+  }
+
+  window.pickData.forEach(row => {
+    const tr = document.createElement('tr');
+
+    tr.innerHTML = `
+      <td>${row.location}</td>
+      <td>${row.item}</td>
+      <td>${row.description}</td>
+      <td>${row.qty_needed}</td>
+      <td><input type="number" value="${row.qty_picked}" /></td>
+      <td>${row.status}</td>
+      <td><input type="checkbox" /></td>
+    `;
+
+    table.appendChild(tr);
+  });
+}
 
   ccEls.worksheetBody?.addEventListener('input', ccHandleRowInput);
   ccEls.worksheetBody?.addEventListener('change', ccHandleRowInput);
