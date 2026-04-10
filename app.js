@@ -1790,6 +1790,7 @@ function initCycleCount() {
 
   ccRenderAll();
 }
+
 function initPicking() {
   pickEls.pickUpload?.addEventListener('change', handlePickUpload);
   pickEls.clearBtn?.addEventListener('click', clearPickList);
@@ -1823,7 +1824,9 @@ async function handlePickUpload(event) {
     console.error(err);
     showToast('Could not read pick list file.');
   } finally {
-    pickEls.pickUpload.value = '';
+    if (pickEls.pickUpload) {
+      pickEls.pickUpload.value = '';
+    }
   }
 }
 
@@ -1907,13 +1910,6 @@ function consolidatePickRows(rawRows) {
   });
 
   return Object.values(grouped).sort((a, b) => naturalBinSort(a.location, b.location));
-}
-
-  ccEls.worksheetBody?.addEventListener('input', ccHandleRowInput);
-  ccEls.worksheetBody?.addEventListener('change', ccHandleRowInput);
-  ccEls.worksheetBody?.addEventListener('click', ccHandleRowClick);
-
-  ccRenderAll();
 }
 
 function setCcDefaults() {
