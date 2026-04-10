@@ -1783,8 +1783,13 @@ function initCycleCount() {
   document.getElementById('ccExportAllJsonBtn')?.addEventListener('click', ccExportAllJson);
   document.getElementById('ccClearSavedBtn')?.addEventListener('click', ccClearSavedData);
   ccEls.upload?.addEventListener('change', ccHandleUpload);
-  ccEls.upload?.addEventListener('change', handlePickUpload);
 
+  ccEls.worksheetBody?.addEventListener('input', ccHandleRowInput);
+  ccEls.worksheetBody?.addEventListener('change', ccHandleRowInput);
+  ccEls.worksheetBody?.addEventListener('click', ccHandleRowClick);
+
+  ccRenderAll();
+}
 async function handlePickUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
