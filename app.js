@@ -1804,21 +1804,27 @@ async function handlePickUpload(event) {
 
   try {
     const text = await file.text();
-    const rawRows = parseCSV(text);
+    console.log('RAW FILE TEXT:', text);
 
+    const rawRows = parseCSV(text);
     console.log('RAW PICK ROWS:', rawRows);
 
     pickingRows = consolidatePickRows(rawRows);
-
     console.log('CONSOLIDATED PICK ROWS:', pickingRows);
 
+    if (!rawRows.length) {
+      showToast('File was read, but no CSV rows were parsed.');
+      return;
+    }
+
     if (!pickingRows.length) {
-      showToast('No valid pick rows found in file.');
+      showToast('Rows were parsed, but no valid pick lines matched your columns.');
       return;
     }
 
     saveStorage(STORAGE_KEYS.picking, pickingRows);
     renderPicking();
+    updatePickingStats();
     showToast(`Pick list uploaded: ${pickingRows.length} lines.`);
   } catch (err) {
     console.error(err);
@@ -1829,7 +1835,6 @@ async function handlePickUpload(event) {
     }
   }
 }
-
 function consolidatePickRows(rawRows) {
   const grouped = {};
 
