@@ -2,913 +2,502 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Warehouse Control Center</title>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+  <title>Warehouse KPI Logger</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <header class="topbar">
+    <div class="brand-wrap">
+      <button id="menuToggle" class="menu-btn" aria-label="Toggle Menu">☰</button>
+      <h1>Warehouse KPI Logger</h1>
+    </div>
+    <div class="topbar-actions">
+      <button id="loadDemoBtn" class="btn secondary">Load Demo Data</button>
+      <button id="exportCsvBtn" class="btn secondary">Export CSV</button>
+      <button id="clearAllBtn" class="btn danger">Clear All Data</button>
+    </div>
+  </header>
+
   <div class="app-shell">
     <aside id="sidebar" class="sidebar">
-      <div class="brand">
-        <div class="brand-icon">W</div>
-        <div>
-          <h2>WarehouseOS</h2>
-          <p>Command Center</p>
-        </div>
-      </div>
-
-      <div class="shift-box">
-        <label for="shiftSelect">Shift</label>
-        <select id="shiftSelect">
-          <option value="Day Shift">Day Shift</option>
-          <option value="Swing Shift">Swing Shift</option>
-          <option value="Night Shift">Night Shift</option>
-        </select>
-      </div>
-
-      <nav class="nav-menu">
-        <button class="nav-btn active" data-view="dashboard">Dashboard</button>
-        <button class="nav-btn" data-view="operations">Operations</button>
-        <button class="nav-btn" data-view="inventory">Inventory</button>
-        <button class="nav-btn" data-view="receiving">Receiving</button>
-        <button class="nav-btn" data-view="putaway">Put Away</button>
-        <button class="nav-btn" data-view="picking">Picking</button>
-        <button class="nav-btn" data-view="labor">Labor</button>
-        <button class="nav-btn" data-view="quality">Quality</button>
-        <button class="nav-btn" data-view="reports">Reports</button>
+      <nav class="nav">
+        <button class="nav-link active" data-view="dashboardView">Dashboard</button>
+        <button class="nav-link" data-view="entryView">Daily Entry</button>
+        <button class="nav-link" data-view="recordsView">Records</button>
+        <button class="nav-link" data-view="targetsView">KPI Targets</button>
+        <button class="nav-link" data-view="helpView">Help</button>
       </nav>
     </aside>
 
     <main class="main-content">
-      <header class="topbar">
-        <div>
-          <h1>Warehouse Control Center</h1>
-          <p id="topbarSubtitle">Run tasks, receiving, labor, counts, safety, reports, and put away logs in one place.</p>
+      <div id="messageBar" class="message-bar hidden"></div>
+
+      <!-- DASHBOARD -->
+      <section id="dashboardView" class="view active">
+        <div class="section-head">
+          <h2>Dashboard</h2>
+          <p>Live KPI summary from saved records.</p>
         </div>
 
-        <div class="topbar-actions">
-          <input id="globalSearch" type="text" placeholder="Search people, bins, trucks, items..." />
-          <button id="newActionBtn" class="primary-btn" type="button">+ New Action</button>
-
-          <div id="sessionBox" class="session-box hidden">
-            <span id="sessionEmail"></span>
-            <span id="sessionRole" class="badge"></span>
-            <button id="signOutBtn" class="primary-btn" type="button">Logout</button>
+        <div class="card">
+          <div class="filters-grid">
+            <div class="field">
+              <label for="filterStartDate">Start Date</label>
+              <input type="date" id="filterStartDate" />
+            </div>
+            <div class="field">
+              <label for="filterEndDate">End Date</label>
+              <input type="date" id="filterEndDate" />
+            </div>
+            <div class="field">
+              <label for="filterDepartment">Department</label>
+              <select id="filterDepartment">
+                <option value="">All Departments</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filterEmployee">Employee</label>
+              <select id="filterEmployee">
+                <option value="">All Employees</option>
+              </select>
+            </div>
+            <div class="field filter-actions">
+              <label>&nbsp;</label>
+              <button id="resetFiltersBtn" class="btn secondary">Reset Filters</button>
+            </div>
           </div>
         </div>
-      </header>
 
-      <section id="loginCard" class="card">
-        <h2>Login</h2>
-        <form id="loginForm">
-          <div class="form-grid two-up">
-            <div>
-              <label for="email">Email</label>
-              <input id="email" type="email" placeholder="Email" required />
+        <div class="kpi-grid">
+          <div class="kpi-card" id="cardLaborProductivity">
+            <div class="kpi-title">Labor Productivity</div>
+            <div id="laborProductivityValue" class="kpi-value">0.00</div>
+            <div class="kpi-sub">Units / hour</div>
+          </div>
+
+          <div class="kpi-card" id="cardReceivingAccuracy">
+            <div class="kpi-title">Receiving Accuracy</div>
+            <div id="receivingAccuracyValue" class="kpi-value">0%</div>
+            <div class="kpi-sub">Correct receipts / total receipts</div>
+          </div>
+
+          <div class="kpi-card" id="cardPutawayAccuracy">
+            <div class="kpi-title">Putaway Accuracy</div>
+            <div id="putawayAccuracyValue" class="kpi-value">0%</div>
+            <div class="kpi-sub">Correct putaways / total putaways</div>
+          </div>
+
+          <div class="kpi-card" id="cardPickAccuracy">
+            <div class="kpi-title">Pick Accuracy</div>
+            <div id="pickAccuracyValue" class="kpi-value">0%</div>
+            <div class="kpi-sub">Correct picks / total picks</div>
+          </div>
+
+          <div class="kpi-card" id="cardOnTimeShipmentRate">
+            <div class="kpi-title">On-Time Shipment Rate</div>
+            <div id="onTimeShipmentRateValue" class="kpi-value">0%</div>
+            <div class="kpi-sub">On-time shipments / shipments</div>
+          </div>
+
+          <div class="kpi-card" id="cardAvgDockToStock">
+            <div class="kpi-title">Avg Dock-to-Stock</div>
+            <div id="avgDockToStockValue" class="kpi-value">0 min</div>
+            <div class="kpi-sub">Average minutes</div>
+          </div>
+
+          <div class="kpi-card" id="cardInventoryAccuracy">
+            <div class="kpi-title">Inventory Accuracy</div>
+            <div id="inventoryAccuracyValue" class="kpi-value">0%</div>
+            <div class="kpi-sub">Physical vs system</div>
+          </div>
+
+          <div class="kpi-card" id="cardSpaceUtilization">
+            <div class="kpi-title">Space Utilization</div>
+            <div id="spaceUtilizationValue" class="kpi-value">0%</div>
+            <div class="kpi-sub">Storage used / capacity</div>
+          </div>
+
+          <div class="kpi-card" id="cardDamageFreeRate">
+            <div class="kpi-title">Damage-Free Rate</div>
+            <div id="damageFreeRateValue" class="kpi-value">0%</div>
+            <div class="kpi-sub">Damage-free shipments / shipments</div>
+          </div>
+
+          <div class="kpi-card" id="cardAvgMeanTimeToShip">
+            <div class="kpi-title">Avg Mean Time to Ship</div>
+            <div id="avgMeanTimeToShipValue" class="kpi-value">0 min</div>
+            <div class="kpi-sub">Average minutes</div>
+          </div>
+
+          <div class="kpi-card" id="cardEquipmentDowntime">
+            <div class="kpi-title">Equipment Downtime</div>
+            <div id="equipmentDowntimeValue" class="kpi-value">0 min</div>
+            <div class="kpi-sub">Total downtime</div>
+          </div>
+
+          <div class="kpi-card" id="cardIncidents">
+            <div class="kpi-title">Incident Count</div>
+            <div id="incidentCountValue" class="kpi-value">0</div>
+            <div class="kpi-sub">Total incidents in filtered records</div>
+          </div>
+        </div>
+
+        <div class="grid-two">
+          <div class="card">
+            <div class="card-head">
+              <h3>Department Summary</h3>
             </div>
-
-            <div>
-              <label for="password">Password</label>
-              <input id="password" type="password" placeholder="Password" required />
+            <div class="table-wrap">
+              <table id="departmentSummaryTable">
+                <thead>
+                  <tr>
+                    <th>Department</th>
+                    <th>Entries</th>
+                    <th>Units</th>
+                    <th>Hours</th>
+                    <th>Prod/Hr</th>
+                    <th>Errors</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
             </div>
           </div>
 
-          <div class="actions">
-            <button type="submit" class="primary-btn">Login</button>
+          <div class="card">
+            <div class="card-head">
+              <h3>Employee Leaderboard</h3>
+            </div>
+            <div class="table-wrap">
+              <table id="employeeLeaderboardTable">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Entries</th>
+                    <th>Units</th>
+                    <th>Hours</th>
+                    <th>Prod/Hr</th>
+                    <th>Errors</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>Daily Trend</h3>
+          </div>
+          <div class="table-wrap">
+            <table id="dailyTrendTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Entries</th>
+                  <th>Total Units</th>
+                  <th>Total Hours</th>
+                  <th>Prod/Hr</th>
+                  <th>Total Errors</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ENTRY -->
+      <section id="entryView" class="view">
+        <div class="section-head">
+          <h2>Daily KPI Entry</h2>
+          <p>Save daily activity by employee and department.</p>
+        </div>
+
+        <form id="entryForm" class="entry-form card">
+          <input type="hidden" id="editingId" />
+
+          <div class="form-grid">
+            <div class="field">
+              <label for="date">Date</label>
+              <input type="date" id="date" name="date" required />
+            </div>
+
+            <div class="field">
+              <label for="employeeName">Employee Name</label>
+              <input type="text" id="employeeName" name="employeeName" required />
+            </div>
+
+            <div class="field">
+              <label for="department">Department</label>
+              <select id="department" name="department" required>
+                <option value="">Select Department</option>
+                <option>Receiving</option>
+                <option>Putaway</option>
+                <option>Picking</option>
+                <option>Shipping</option>
+                <option>Inventory</option>
+                <option>Operations</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="hoursWorked">Hours Worked</label>
+              <input type="number" step="0.01" id="hoursWorked" name="hoursWorked" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="unitsProcessed">Units Processed</label>
+              <input type="number" id="unitsProcessed" name="unitsProcessed" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="errors">Errors</label>
+              <input type="number" id="errors" name="errors" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="dockToStock">Dock-to-Stock (min)</label>
+              <input type="number" id="dockToStock" name="dockToStock" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="totalReceipts">Total Receipts</label>
+              <input type="number" id="totalReceipts" name="totalReceipts" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="correctReceipts">Correct Receipts</label>
+              <input type="number" id="correctReceipts" name="correctReceipts" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="totalPutaways">Total Putaways</label>
+              <input type="number" id="totalPutaways" name="totalPutaways" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="correctPutaways">Correct Putaways</label>
+              <input type="number" id="correctPutaways" name="correctPutaways" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="putawayTime">Putaway Time (min)</label>
+              <input type="number" id="putawayTime" name="putawayTime" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="inventoryCount">Physical Inventory Count</label>
+              <input type="number" id="inventoryCount" name="inventoryCount" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="inventorySystemCount">System Inventory Count</label>
+              <input type="number" id="inventorySystemCount" name="inventorySystemCount" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="shrinkageQty">Shrinkage Qty</label>
+              <input type="number" id="shrinkageQty" name="shrinkageQty" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="storageUsed">Storage Used</label>
+              <input type="number" id="storageUsed" name="storageUsed" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="storageCapacity">Storage Capacity</label>
+              <input type="number" id="storageCapacity" name="storageCapacity" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="totalPicks">Total Picks</label>
+              <input type="number" id="totalPicks" name="totalPicks" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="correctPicks">Correct Picks</label>
+              <input type="number" id="correctPicks" name="correctPicks" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="pickLines">Pick Lines</label>
+              <input type="number" id="pickLines" name="pickLines" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="travelTimePercent">Travel Time %</label>
+              <input type="number" step="0.01" id="travelTimePercent" name="travelTimePercent" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="pickToShipTime">Pick-to-Ship Time (min)</label>
+              <input type="number" id="pickToShipTime" name="pickToShipTime" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="costPerPick">Cost per Pick</label>
+              <input type="number" step="0.01" id="costPerPick" name="costPerPick" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="shipments">Shipments</label>
+              <input type="number" id="shipments" name="shipments" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="onTimeShipments">On-Time Shipments</label>
+              <input type="number" id="onTimeShipments" name="onTimeShipments" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="damageFreeShipments">Damage-Free Shipments</label>
+              <input type="number" id="damageFreeShipments" name="damageFreeShipments" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="shippingCost">Shipping Cost</label>
+              <input type="number" step="0.01" id="shippingCost" name="shippingCost" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="meanTimeToShip">Mean Time to Ship (min)</label>
+              <input type="number" id="meanTimeToShip" name="meanTimeToShip" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="equipmentDowntime">Equipment Downtime (min)</label>
+              <input type="number" id="equipmentDowntime" name="equipmentDowntime" min="0" />
+            </div>
+
+            <div class="field">
+              <label for="incidentCount">Incident Count</label>
+              <input type="number" id="incidentCount" name="incidentCount" min="0" />
+            </div>
+
+            <div class="field full-width">
+              <label for="notes">Notes</label>
+              <textarea id="notes" name="notes" rows="3"></textarea>
+            </div>
           </div>
 
-          <p id="loginMsg" class="msg"></p>
+          <div class="form-actions">
+            <button type="submit" class="btn primary" id="saveEntryBtn">Save Entry</button>
+            <button type="button" class="btn secondary" id="resetFormBtn">Reset Form</button>
+          </div>
         </form>
       </section>
 
-      <div id="appView" class="hidden">
-        <!-- DASHBOARD -->
-        <section id="dashboardView" class="view active">
-          <div class="card-grid four">
-            <div class="card stat-card">
-              <h3>Orders Today</h3>
-              <div class="stat-value" id="dashboardOrders">438</div>
-              <p>Picked and packed</p>
-            </div>
+      <!-- RECORDS -->
+      <section id="recordsView" class="view">
+        <div class="section-head">
+          <h2>Records</h2>
+          <p>Edit or delete saved entries.</p>
+        </div>
 
-            <div class="card stat-card">
-              <h3>Receiving Trucks</h3>
-              <div class="stat-value" id="dashboardTruckCount">0</div>
-              <p>Trucks logged today</p>
-            </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table id="recordsTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Employee</th>
+                  <th>Department</th>
+                  <th>Units</th>
+                  <th>Hours</th>
+                  <th>Prod/Hr</th>
+                  <th>Errors</th>
+                  <th>Shipments</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
-            <div class="card stat-card">
-              <h3>Cycle Counts</h3>
-              <div class="stat-value" id="dashboardCountCount">0</div>
-              <p>Counts entered</p>
-            </div>
+      <!-- TARGETS -->
+      <section id="targetsView" class="view">
+        <div class="section-head">
+          <h2>KPI Targets</h2>
+          <p>Set your KPI thresholds for dashboard status colors.</p>
+        </div>
 
-            <div class="card stat-card">
-              <h3>Open Tasks</h3>
-              <div class="stat-value" id="dashboardTaskCount">0</div>
-              <p>Current task list</p>
+        <form id="targetsForm" class="card">
+          <div class="form-grid">
+            <div class="field">
+              <label for="targetLaborProductivity">Labor Productivity</label>
+              <input type="number" step="0.01" id="targetLaborProductivity" />
+            </div>
+            <div class="field">
+              <label for="targetReceivingAccuracy">Receiving Accuracy %</label>
+              <input type="number" step="0.01" id="targetReceivingAccuracy" />
+            </div>
+            <div class="field">
+              <label for="targetPutawayAccuracy">Putaway Accuracy %</label>
+              <input type="number" step="0.01" id="targetPutawayAccuracy" />
+            </div>
+            <div class="field">
+              <label for="targetPickAccuracy">Pick Accuracy %</label>
+              <input type="number" step="0.01" id="targetPickAccuracy" />
+            </div>
+            <div class="field">
+              <label for="targetOnTimeShipmentRate">On-Time Shipment Rate %</label>
+              <input type="number" step="0.01" id="targetOnTimeShipmentRate" />
+            </div>
+            <div class="field">
+              <label for="targetDamageFreeRate">Damage-Free Rate %</label>
+              <input type="number" step="0.01" id="targetDamageFreeRate" />
+            </div>
+            <div class="field">
+              <label for="targetDockToStock">Dock-to-Stock (min)</label>
+              <input type="number" step="0.01" id="targetDockToStock" />
+            </div>
+            <div class="field">
+              <label for="targetPutawayCycleTime">Putaway Time (min)</label>
+              <input type="number" step="0.01" id="targetPutawayCycleTime" />
+            </div>
+            <div class="field">
+              <label for="targetTravelTimePercent">Travel Time %</label>
+              <input type="number" step="0.01" id="targetTravelTimePercent" />
+            </div>
+            <div class="field">
+              <label for="targetEquipmentDowntime">Equipment Downtime (min)</label>
+              <input type="number" step="0.01" id="targetEquipmentDowntime" />
             </div>
           </div>
 
-          <div class="card-grid four">
-            <div class="card stat-card alert-card">
-              <h3>Tasks Behind</h3>
-              <div class="stat-value" id="tasksBehind">0</div>
-              <p>Queued / pending / aging tasks</p>
-            </div>
-
-            <div class="card stat-card alert-card">
-              <h3>Low Inventory</h3>
-              <div class="stat-value" id="lowInventory">0</div>
-              <p>Low or out items</p>
-            </div>
-
-            <div class="card stat-card alert-card">
-              <h3>Active Trucks</h3>
-              <div class="stat-value" id="activeTrucks">0</div>
-              <p>Still on dock</p>
-            </div>
-
-            <div class="card stat-card alert-card">
-              <h3>Labor Issues</h3>
-              <div class="stat-value" id="laborIssues">0</div>
-              <p>Under goal today</p>
-            </div>
+          <div class="form-actions">
+            <button type="submit" class="btn primary">Save Targets</button>
+            <button type="button" class="btn secondary" id="resetTargetsBtn">Reset Targets</button>
           </div>
-
-          <div class="split-grid">
-            <div class="card">
-              <div class="section-head">
-                <h2>Operations Snapshot</h2>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Task</th>
-                      <th>Owner</th>
-                      <th>Zone</th>
-                      <th>Priority</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="dashboardTaskTable"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="card">
-              <div class="section-head">
-                <h2>Supervisor Notes</h2>
-              </div>
-              <textarea id="dashboardNoteInput" placeholder="Add shift notes, delays, wins, pain points, handoff notes..."></textarea>
-              <button id="saveDashboardNoteBtn" class="primary-btn full">Save Note</button>
-              <div id="dashboardNotesList" class="stack-list mt-16"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- OPERATIONS -->
-        <section id="operationsView" class="view">
-          <div class="section-head">
-            <div>
-              <h2>Operations Command</h2>
-              <p>Manage tasks, timing, and floor execution.</p>
-            </div>
-            <button id="createTaskBtn" class="primary-btn">+ Create Task</button>
-          </div>
-
-          <div class="card">
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Task</th>
-                    <th>Owner</th>
-                    <th>Zone</th>
-                    <th>Priority</th>
-                    <th>Status</th>
-                    <th>Age</th>
-                    <th>Risk</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="operationsTaskTable"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <!-- INVENTORY + CYCLE COUNT -->
-        <section id="inventoryView" class="view">
-          <div class="section-head">
-            <div>
-              <h2>Inventory Control</h2>
-              <p>Track items, bins, counts, shortage risk, and full cycle count sessions.</p>
-            </div>
-            <div class="btn-row">
-              <button id="filtersBtn" class="secondary-btn">Filters</button>
-              <button id="newCountBtn" class="primary-btn">+ New Count</button>
-            </div>
-          </div>
-
-          <div id="inventoryFiltersPanel" class="card hidden">
-            <div class="filter-grid">
-              <div>
-                <label for="statusFilter">Status</label>
-                <select id="statusFilter">
-                  <option value="all">All</option>
-                  <option value="Healthy">Healthy</option>
-                  <option value="Low">Low</option>
-                  <option value="Out">Out</option>
-                </select>
-              </div>
-
-              <div>
-                <label for="binFilter">Bin Contains</label>
-                <input id="binFilter" type="text" placeholder="A-10 or K05..." />
-              </div>
-
-              <div class="filter-actions">
-                <button id="applyInventoryFiltersBtn" class="primary-btn">Apply Filters</button>
-                <button id="clearInventoryFiltersBtn" class="secondary-btn">Clear</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="card-grid three">
-            <div class="card stat-card">
-              <h3>Accuracy</h3>
-              <div class="stat-value">98.4%</div>
-              <p>Last 7 days</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Shortage Risk</h3>
-              <div class="stat-value" id="inventoryLowCount">0</div>
-              <p>Low or empty items</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Total Items</h3>
-              <div class="stat-value" id="inventoryTotalCount">0</div>
-              <p>Visible rows</p>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Description</th>
-                    <th>On Hand</th>
-                    <th>Primary</th>
-                    <th>Overstock</th>
-                    <th>Bin</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody id="inventoryTable"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <section class="card">
-            <div class="section-head">
-              <div>
-                <h2>Cycle Count Worksheet</h2>
-                <p>Embedded cycle count app for cycle_counter and leadership roles.</p>
-              </div>
-              <div class="btn-row">
-                <button id="ccExportSessionCsvBtn" class="secondary-btn">Export Session CSV</button>
-                <button id="ccExportAllJsonBtn" class="secondary-btn">Export All JSON</button>
-                <button id="ccClearSavedBtn" class="danger-btn">Clear Saved Data</button>
-              </div>
-            </div>
-
-            <div class="card inner-card">
-              <div class="section-head">
-                <h3>Session Setup</h3>
-                <span id="ccSessionBadge" class="badge muted">No active session</span>
-              </div>
-
-              <div class="form-grid two-up">
-                <div>
-                  <label for="ccCounterName">Counter Name</label>
-                  <select id="ccCounterName">
-                    <option value="">Select counter</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label for="ccStockCountId">Stock Count ID</label>
-                  <input id="ccStockCountId" type="text" placeholder="CC-001" />
-                </div>
-
-                <div>
-                  <label for="ccStatus">Status</label>
-                  <select id="ccStatus">
-                    <option>Started</option>
-                    <option selected>In Progress</option>
-                    <option>Completed</option>
-                    <option>Reviewed</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label for="ccCountDate">Count Date</label>
-                  <input id="ccCountDate" type="date" />
-                </div>
-
-                <div>
-                  <label for="ccStartTime">Start Time</label>
-                  <input id="ccStartTime" type="time" />
-                </div>
-
-                <div>
-                  <label for="ccUpload">Upload Count List (CSV)</label>
-                  <input id="ccUpload" type="file" accept=".csv" />
-                </div>
-              </div>
-
-              <div class="btn-row mt-16">
-                <button id="ccStartSessionBtn" class="primary-btn">Start New Session</button>
-                <button id="ccSaveSessionBtn" class="secondary-btn">Save Session</button>
-                <button id="ccAddRowBtn" class="primary-btn">Add Row</button>
-              </div>
-            </div>
-
-            <div class="stats-grid five mt-16">
-              <div class="stat">
-                <span>Total Rows</span>
-                <strong id="ccTotalRows">0</strong>
-              </div>
-              <div class="stat">
-                <span>Done Rows</span>
-                <strong id="ccDoneRows">0</strong>
-              </div>
-              <div class="stat">
-                <span>Variance Rows</span>
-                <strong id="ccVarianceRows">0</strong>
-              </div>
-              <div class="stat">
-                <span>Count Events</span>
-                <strong id="ccActivityEvents">0</strong>
-              </div>
-              <div class="stat">
-                <span>Downtime Events</span>
-                <strong id="ccDowntimeEvents">0</strong>
-              </div>
-            </div>
-
-            <div class="table-wrap mt-16">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Bin</th>
-                    <th>Item #</th>
-                    <th>Description</th>
-                    <th>UOM</th>
-                    <th>On Hand</th>
-                    <th>Counted Qty</th>
-                    <th>Variance</th>
-                    <th>Reason Code</th>
-                    <th>Done</th>
-                    <th>Count Time</th>
-                    <th>Delete</th>
-                  </tr>
-                </thead>
-                <tbody id="ccWorksheetBody"></tbody>
-              </table>
-            </div>
-
-            <p class="helper">
-              Downtime is logged only when the gap between one counted item and the next counted item is over 25 minutes.
-            </p>
-
-            <div class="split-grid mt-16">
-              <div class="card inner-card">
-                <div class="section-head">
-                  <h3>Downtime Log</h3>
-                  <span class="badge">25+ min gap</span>
-                </div>
-                <div id="ccDowntimeLog" class="empty-state">No downtime events yet.</div>
-              </div>
-
-              <div class="card inner-card">
-                <div class="section-head">
-                  <h3>Saved Sessions</h3>
-                  <span class="badge muted">Local browser</span>
-                </div>
-                <div id="ccSavedSessions" class="empty-state">No saved sessions yet.</div>
-              </div>
-            </div>
-          </section>
-        </section>
-
-        <!-- RECEIVING -->
-        <section id="receivingView" class="view">
-          <div class="section-head">
-            <div>
-              <h2>Receiving & Inbound</h2>
-              <p>Track trucks, containers, OSDs, live dock time, and put away logs.</p>
-            </div>
-            <div class="btn-row">
-              <button id="addTruckBtn" class="primary-btn">+ Add Truck</button>
-              <button id="uploadPutawayBtn" class="primary-btn">+ Upload Put Away Log</button>
-            </div>
-          </div>
-
-          <div class="card-grid five">
-            <div class="card stat-card">
-              <h3>Trucks Today</h3>
-              <div class="stat-value" id="receivingTruckTotal">0</div>
-              <p>Total trucks logged</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Total OSDs</h3>
-              <div class="stat-value" id="receivingOsdTotal">0</div>
-              <p>OSDs logged today</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Total Containers</h3>
-              <div class="stat-value" id="receivingContainerTotal">0</div>
-              <p>Containers handled</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Active Timers</h3>
-              <div class="stat-value" id="receivingActiveTimers">0</div>
-              <p>Still on dock</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Avg Dock Time</h3>
-              <div class="stat-value" id="receivingAverageDockTime">00:00:00</div>
-              <p>Completed trucks only</p>
-            </div>
-          </div>
-
-          <div class="card-grid three">
-            <div class="card stat-card">
-              <h3>Put Away Logs</h3>
-              <div class="stat-value" id="putawayLogTotal">0</div>
-              <p>Total captured entries</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Unique Locations</h3>
-              <div class="stat-value" id="putawayLocationTotal">0</div>
-              <p>Bins captured</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Last Upload Entries</h3>
-              <div class="stat-value" id="putawayLastUploadCount">0</div>
-              <p>Entries found in latest upload</p>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="section-head section-head-tight">
-              <div>
-                <h2>Inbound Truck Log</h2>
-                <p>Live timer and daily dock control.</p>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Truck #</th>
-                    <th>Carrier</th>
-                    <th>Dock Door</th>
-                    <th>Containers</th>
-                    <th>OSDs</th>
-                    <th>Started</th>
-                    <th>Dock Timer</th>
-                    <th>Status</th>
-                    <th>Delay</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="receivingTable"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="section-head section-head-tight">
-              <div>
-                <h2>Put Away Log Capture</h2>
-                <p>Upload a put away log image and save entries to the shared put away database.</p>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Item #</th>
-                    <th>Location</th>
-                    <th>Raw Line</th>
-                    <th>Source</th>
-                  </tr>
-                </thead>
-                <tbody id="putawayTable"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <!-- PUTAWAY -->
-        <section id="putawayView" class="view">
-          <div class="section-head">
-            <div>
-              <h2>Put Away Log</h2>
-              <p>Track put aways by worker, date, item, quantity, location, and notes.</p>
-            </div>
-          </div>
-
-          <section class="card">
-            <h2>Put Away Entry</h2>
-
-            <form id="putAwayForm">
-              <div class="form-grid two-up">
-                <div>
-                  <label for="workerName">Worker Name</label>
-                  <select id="workerName" required>
-                    <option value="">Select worker</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label for="workDate">Date</label>
-                  <input id="workDate" type="date" required />
-                </div>
-              </div>
-
-              <div class="stats-row">
-                <div class="stat-box">
-                  <span class="stat-label">Used Lines</span>
-                  <strong id="usedLines">0</strong>
-                </div>
-                <div class="stat-box">
-                  <span class="stat-label">Total Qty</span>
-                  <strong id="totalQty">0</strong>
-                </div>
-                <div class="stat-box">
-                  <span class="stat-label">Available Lines</span>
-                  <strong>25</strong>
-                </div>
-              </div>
-
-              <div class="table-wrap">
-                <table class="entry-table">
-                  <thead>
-                    <tr>
-                      <th>Line</th>
-                      <th>Item #</th>
-                      <th>Qty</th>
-                      <th>Location</th>
-                      <th>Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody id="lineItemsBody"></tbody>
-                </table>
-              </div>
-
-              <div class="actions">
-                <button type="submit" class="primary-btn">Submit Put Away</button>
-                <button id="clearBtn" type="button" class="secondary-btn">Clear Form</button>
-              </div>
-
-              <p id="formMsg" class="msg"></p>
-            </form>
-          </section>
-
-          <section class="card">
-            <div class="section-head">
-              <h2>Recent Put Away Logs</h2>
-              <div class="toolbar">
-                <input id="searchInput" type="text" placeholder="Search worker, item, location, notes..." />
-                <input id="filterDate" type="date" />
-                <button id="exportBtn" type="button" class="secondary-btn">Export CSV</button>
-              </div>
-            </div>
-
-            <div class="table-wrap">
-              <table class="log-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Worker</th>
-                    <th>Lines</th>
-                    <th>Total Qty</th>
-                    <th>Preview</th>
-                  </tr>
-                </thead>
-                <tbody id="logsTableBody">
-                  <tr>
-                    <td colspan="5" class="empty">No logs yet.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="adminSection" class="card hidden">
-            <h2>Admin / Lead Worker Management</h2>
-
-            <form id="employeeForm">
-              <div class="form-grid two-up">
-                <div>
-                  <label for="employeeName">Add Worker Name</label>
-                  <input id="employeeName" type="text" placeholder="Worker name" required />
-                </div>
-
-                <div class="align-end">
-                  <button type="submit" class="primary-btn">Add Worker</button>
-                </div>
-              </div>
-
-              <p id="employeeMsg" class="msg"></p>
-            </form>
-
-            <div class="employee-list-wrap">
-              <h3>Active Workers</h3>
-              <div id="employeeList" class="employee-list">
-                <div class="empty">No active workers yet.</div>
-              </div>
-            </div>
-          </section>
-        </section>
-
-        <!-- PICKING -->
-        <section id="pickingView" class="view">
-          <div class="section-head">
-            <div>
-              <h2>Picking</h2>
-              <p>Upload a pick list, consolidate lines, and track pulled quantity.</p>
-            </div>
-          </div>
-
-          <section class="card">
-            <div class="form-grid two-up">
-              <div>
-                <label for="pickerName">Picker Name</label>
-                <select id="pickerName">
-                  <option value="">Select picker</option>
-                </select>
-              </div>
-
-              <div>
-                <label for="pickerDate">Date</label>
-                <input id="pickerDate" type="date" />
-              </div>
-            </div>
-
-            <div class="btn-row mt-16">
-              <div>
-                <label for="pickUpload">Upload Pick List (CSV)</label>
-                <input id="pickUpload" type="file" accept=".csv" />
-              </div>
-              <button id="clearPickListBtn" class="secondary-btn" type="button">Clear List</button>
-              <button id="exportPickCsvBtn" class="secondary-btn" type="button">Export Picks CSV</button>
-            </div>
-          </section>
-
-          <div class="stats-grid three mt-16">
-            <div class="stat">
-              <span>Total Pick Lines</span>
-              <strong id="pickTotalLines">0</strong>
-            </div>
-            <div class="stat">
-              <span>Completed Lines</span>
-              <strong id="pickDoneLines">0</strong>
-            </div>
-            <div class="stat">
-              <span>Short Lines</span>
-              <strong id="pickShortLines">0</strong>
-            </div>
-          </div>
-
-          <section class="card mt-16">
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Location</th>
-                    <th>Item #</th>
-                    <th>Description</th>
-                    <th>Qty Needed</th>
-                    <th>Qty Picked</th>
-                    <th>Status</th>
-                    <th>Done</th>
-                  </tr>
-                </thead>
-                <tbody id="pickTableBody">
-                  <tr>
-                    <td colspan="7" class="empty">No pick list uploaded yet.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </section>
-
-        <!-- LABOR -->
-        <section id="laborView" class="view">
-          <div class="section-head">
-            <div>
-              <h2>Labor & Productivity</h2>
-              <p>Track performance and coaching.</p>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Role</th>
-                    <th>Department</th>
-                    <th>Productivity</th>
-                    <th>Goal Status</th>
-                    <th>Errors</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody id="laborTable"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card mt-16">
-            <div class="section-head section-head-tight">
-              <h2>Coaching Log</h2>
-            </div>
-
-            <div class="form-grid">
-              <div>
-                <label for="coachEmployee">Employee</label>
-                <input id="coachEmployee" type="text" placeholder="Employee name" />
-              </div>
-
-              <div>
-                <label for="coachTopic">Topic</label>
-                <input id="coachTopic" type="text" placeholder="Safety, productivity, errors..." />
-              </div>
-
-              <div class="full-span">
-                <label for="coachNotes">Notes</label>
-                <textarea id="coachNotes" placeholder="What happened and what was reviewed?"></textarea>
-              </div>
-            </div>
-
-            <button id="saveCoachingBtn" class="primary-btn">Save Coaching Entry</button>
-            <div id="coachingList" class="stack-list mt-16"></div>
-          </div>
-        </section>
-
-        <!-- QUALITY -->
-        <section id="qualityView" class="view">
-          <div class="section-head">
-            <div>
-              <h2>Quality & Safety</h2>
-              <p>Track incidents and warehouse issues.</p>
-            </div>
-            <button id="addIncidentBtn" class="primary-btn">+ Add Incident</button>
-          </div>
-
-          <div class="card-grid three">
-            <div class="card stat-card">
-              <h3>Total Incidents</h3>
-              <div class="stat-value" id="qualityTotalCount">0</div>
-              <p>Saved incidents</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>High Severity</h3>
-              <div class="stat-value" id="qualityHighCount">0</div>
-              <p>Immediate attention</p>
-            </div>
-
-            <div class="card stat-card">
-              <h3>Top Area</h3>
-              <div class="stat-value text-lg" id="qualityTopArea">None</div>
-              <p>Most repeated issue area</p>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>Area</th>
-                    <th>Severity</th>
-                    <th>Owner</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody id="qualityTable"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <!-- REPORTS -->
-        <section id="reportsView" class="view">
-          <div class="section-head">
-            <div>
-              <h2>Reports & Exports</h2>
-              <p>Download simple warehouse reports.</p>
-            </div>
-          </div>
-
-          <div class="report-grid">
-            <div class="card report-card">
-              <h3>Daily Supervisor Report</h3>
-              <p>Tasks, notes, trucks, counts, and coaching.</p>
-              <button class="primary-btn generate-report-btn" data-report="supervisor">Generate</button>
-            </div>
-
-            <div class="card report-card">
-              <h3>Receiving Report</h3>
-              <p>Truck totals, dock times, OSDs, containers, and put away logs.</p>
-              <button class="primary-btn generate-report-btn" data-report="receiving">Generate</button>
-            </div>
-
-            <div class="card report-card">
-              <h3>Inventory Report</h3>
-              <p>Visible inventory rows and count history.</p>
-              <button class="primary-btn generate-report-btn" data-report="inventory">Generate</button>
-            </div>
-          </div>
-        </section>
-      </div>
+        </form>
+      </section>
+
+      <!-- HELP -->
+      <section id="helpView" class="view">
+        <div class="section-head">
+          <h2>Help</h2>
+        </div>
+
+        <div class="card help-card">
+          <p><strong>Data storage:</strong> This app saves records in your browser using localStorage.</p>
+          <p><strong>GitHub Pages:</strong> Upload these files to your repo root and enable Pages.</p>
+          <p><strong>Editing:</strong> Go to Records and click Edit to load a record back into the form.</p>
+          <p><strong>Dashboard:</strong> Filters update the KPI cards and tables automatically.</p>
+          <p><strong>Heads up:</strong> localStorage stays on the device/browser being used.</p>
+        </div>
+      </section>
     </main>
   </div>
 
-  <div id="modalOverlay" class="modal-overlay hidden">
-    <div class="modal-card">
-      <div class="modal-head">
-        <h2 id="modalTitle">Modal</h2>
-        <button id="closeModalBtn" class="modal-close" type="button">&times;</button>
-      </div>
-      <div id="modalBody"></div>
-    </div>
-  </div>
-
-  <div id="toast" class="toast hidden"></div>
-
-  <template id="ccRowTemplate">
-    <tr>
-      <td><input data-field="bin" placeholder="A-10-1" /></td>
-      <td><input data-field="item_number" placeholder="607529" /></td>
-      <td><input data-field="description" placeholder="Item description" /></td>
-      <td>
-        <select data-field="uom">
-          <option value="EA">EA</option>
-          <option value="PCK">PCK</option>
-          <option value="CS">CS</option>
-        </select>
-      </td>
-      <td><input data-field="on_hand_qty" type="number" placeholder="0" /></td>
-      <td><input data-field="counted_qty" type="number" placeholder="0" /></td>
-      <td><input data-field="variance" class="readonly" readonly /></td>
-      <td>
-        <select data-field="reason_code">
-          <option value="">—</option>
-          <option>Count Verified</option>
-          <option>Misplaced Inventory</option>
-          <option>Short Pick</option>
-          <option>Over Pick</option>
-          <option>Receiving Error</option>
-          <option>Putaway Error</option>
-          <option>Transfer Error</option>
-          <option>Damage</option>
-          <option>Count Error</option>
-          <option>Recount Required</option>
-        </select>
-      </td>
-      <td class="center"><input data-field="done" type="checkbox" /></td>
-      <td><span data-field="count_time" class="time-cell">—</span></td>
-      <td class="center"><button data-action="delete" class="icon-btn" type="button">✕</button></td>
-    </tr>
-  </template>
-
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script type="module" src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
