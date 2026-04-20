@@ -6,148 +6,140 @@
 <title>Warehouse KPI Logger</title>
 
 <style>
-  body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #f4f7fb;
-  }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f7fb;
+}
 
-  /* TOP NAV */
-  .main-sidebar {
-    display: flex;
-    gap: 10px;
-    padding: 10px;
-    background: #0f2747;
-    color: white;
-    flex-wrap: wrap;
-  }
+/* NAV */
+.main-sidebar {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: #0f2747;
+  color: white;
+  flex-wrap: wrap;
+}
 
-  .nav-link {
-    padding: 10px 14px;
-    border-radius: 8px;
-    cursor: pointer;
-    background: #1c3a5f;
-    font-weight: bold;
-  }
+.nav-link {
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #1c3a5f;
+  font-weight: bold;
+}
 
-  .nav-link.active {
-    background: #1f6fff;
-  }
+.nav-link.active {
+  background: #1f6fff;
+}
 
-  /* DASHBOARD */
+/* DASHBOARD */
+.dashboard-wrapper {
+  display: none;
+  height: calc(100vh - 60px);
+}
+
+.dashboard-wrapper.active {
+  display: flex;
+}
+
+.dept-sidebar {
+  width: 200px;
+  background: #fff;
+  border-right: 1px solid #ddd;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dept-link {
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #eef2f7;
+  font-weight: bold;
+}
+
+.dept-link.active {
+  background: #1f6fff;
+  color: white;
+}
+
+.kpi-panel {
+  flex: 1;
+  padding: 20px;
+  overflow: auto;
+}
+
+/* KPI GRID */
+#kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.kpi-card {
+  background: white;
+  padding: 12px;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+/* TABLE */
+#recordsTable {
+  width: 100%;
+  margin-top: 15px;
+  border-collapse: collapse;
+  background: white;
+}
+
+#recordsTable th, #recordsTable td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  font-size: 13px;
+}
+
+#recordsTable th {
+  background: #f0f4ff;
+}
+
+/* OTHER VIEWS */
+.view {
+  display: none;
+  padding: 20px;
+}
+
+.view.active {
+  display: block;
+}
+
+#dashboardSummary {
+  margin-top: 10px;
+  background: white;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+/* MOBILE */
+@media (max-width: 768px) {
   .dashboard-wrapper {
-    display: none;
-    height: calc(100vh - 60px);
-  }
-
-  .dashboard-wrapper.active {
-    display: flex;
+    flex-direction: column;
   }
 
   .dept-sidebar {
-    width: 200px;
-    background: #ffffff;
-    border-right: 1px solid #ddd;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .dept-link {
-    padding: 10px;
-    border-radius: 8px;
-    cursor: pointer;
-    background: #eef2f7;
-    font-weight: bold;
-  }
-
-  .dept-link.active {
-    background: #1f6fff;
-    color: white;
-  }
-
-  .kpi-panel {
-    flex: 1;
-    padding: 20px;
-    overflow: auto;
-  }
-
-  /* IMPORTANT KPI AREA */
-  #kpiGrid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px;
-    margin-top: 10px;
-  }
-
-  .kpi-card {
-    background: white;
-    padding: 12px;
-    border-radius: 10px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-  }
-
-  /* TABLE AREA */
-  #recordsTable {
-    margin-top: 20px;
+    width: 100%;
+    flex-direction: row;
     overflow-x: auto;
   }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-  }
-
-  th, td {
-    padding: 8px;
-    border: 1px solid #ddd;
-    font-size: 13px;
-  }
-
-  th {
-    background: #f0f4ff;
-  }
-
-  /* OTHER VIEWS */
-  .view {
-    display: none;
-    padding: 20px;
-  }
-
-  .view.active {
-    display: block;
-  }
-
-  /* SUMMARY */
-  #dashboardSummary {
-    margin-top: 10px;
-    padding: 10px;
-    background: white;
-    border-radius: 8px;
-  }
-
-  /* MOBILE */
-  @media (max-width: 768px) {
-    .dashboard-wrapper {
-      flex-direction: column;
-    }
-
-    .dept-sidebar {
-      width: 100%;
-      flex-direction: row;
-      overflow-x: auto;
-      border-right: none;
-      border-bottom: 1px solid #ddd;
-    }
-  }
+}
 </style>
 </head>
 
 <body>
 
-<!-- NAV -->
 <div class="main-sidebar">
   <div class="nav-link active" data-view="dashboard">Dashboard</div>
   <div class="nav-link" data-view="entry">Daily Entry</div>
@@ -155,10 +147,8 @@
   <div class="nav-link" data-view="targets">KPI Targets</div>
 </div>
 
-<!-- DASHBOARD -->
 <div id="dashboard" class="dashboard-wrapper active">
 
-  <!-- DEPARTMENTS -->
   <div class="dept-sidebar">
     <div class="dept-link active" data-dept="receiving">Receiving</div>
     <div class="dept-link" data-dept="putaway">Putaway</div>
@@ -168,80 +158,32 @@
     <div class="dept-link" data-dept="operations">Operations</div>
   </div>
 
-  <!-- MAIN PANEL -->
   <div class="kpi-panel">
-
     <h2 id="deptTitle">Receiving</h2>
 
-    <!-- REQUIRED BY JS -->
+    <div id="kpiGrid"></div>
     <div id="dashboardSummary"></div>
 
-    <!-- KPI RENDER TARGET -->
-    <div id="kpiGrid"></div>
-
-    <!-- TABLE RENDER TARGET -->
-    <div id="recordsTable"></div>
+    <table id="recordsTable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Employee</th>
+          <th>Dept</th>
+          <th>Units</th>
+          <th>Hours</th>
+          <th>Rate</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
 
   </div>
 </div>
 
-<!-- ENTRY VIEW -->
-<div id="entry" class="view">
-  <h2>Daily Entry</h2>
-
-  <form id="entryForm">
-    <input id="date" type="date" />
-    <input id="employeeName" placeholder="Employee Name" />
-    <select id="department">
-      <option value="receiving">Receiving</option>
-      <option value="putaway">Putaway</option>
-      <option value="picking">Picking</option>
-      <option value="shipping">Shipping</option>
-      <option value="inventory">Inventory</option>
-      <option value="operations">Operations</option>
-    </select>
-
-    <input id="sku" placeholder="SKU" />
-    <input id="itemName" placeholder="Item Name" />
-    <input id="location" placeholder="Location" />
-
-    <input id="quantitySystem" type="number" placeholder="System Qty" />
-    <input id="quantityPhysical" type="number" placeholder="Physical Qty" />
-
-    <input id="poNumber" placeholder="PO Number" />
-    <input id="quantityReceived" type="number" placeholder="Received Qty" />
-
-    <input id="transferId" placeholder="Transfer ID" />
-    <input id="quantityPicked" type="number" placeholder="Picked Qty" />
-
-    <input id="shipmentId" placeholder="Shipment ID" />
-    <input id="quantityShipped" type="number" placeholder="Shipped Qty" />
-
-    <input id="startTime" type="datetime-local" />
-    <input id="endTime" type="datetime-local" />
-
-    <input id="totalOutput" type="number" placeholder="Total Output" />
-
-    <select id="status">
-      <option value="Pending">Pending</option>
-      <option value="Complete">Complete</option>
-      <option value="Error">Error</option>
-    </select>
-
-    <button type="submit">Save Entry</button>
-  </form>
-</div>
-
-<!-- RECORDS -->
-<div id="records" class="view">
-  <h2>Records</h2>
-</div>
-
-<!-- TARGETS -->
-<div id="targets" class="view">
-  <h2>KPI Targets</h2>
-  <form id="targetsForm"></form>
-</div>
+<div id="entry" class="view"><h2>Daily Entry</h2></div>
+<div id="records" class="view"><h2>Records</h2></div>
+<div id="targets" class="view"><h2>KPI Targets</h2></div>
 
 <script type="module" src="./app.js"></script>
 
