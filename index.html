@@ -3,189 +3,150 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Warehouse KPI Logger</title>
+<title>Warehouse KPI System</title>
 
 <style>
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
+  font-family: Arial;
   background: #f4f7fb;
 }
 
 /* NAV */
-.main-sidebar {
+.nav {
   display: flex;
   gap: 10px;
   padding: 10px;
   background: #0f2747;
   color: white;
-  flex-wrap: wrap;
 }
 
-.nav-link {
-  padding: 10px 14px;
-  border-radius: 8px;
+.nav button {
+  padding: 10px;
+  border: none;
   cursor: pointer;
   background: #1c3a5f;
+  color: white;
   font-weight: bold;
+  border-radius: 6px;
 }
 
-.nav-link.active {
+.nav button.active {
   background: #1f6fff;
 }
 
-/* DASHBOARD */
-.dashboard-wrapper {
+/* LAYOUT */
+.container {
   display: none;
-  height: calc(100vh - 60px);
+  padding: 15px;
 }
 
-.dashboard-wrapper.active {
+.container.active {
+  display: block;
+}
+
+.dashboard {
   display: flex;
+  gap: 10px;
 }
 
-.dept-sidebar {
+/* DEPARTMENTS */
+.depts {
   width: 200px;
-  background: #fff;
-  border-right: 1px solid #ddd;
+  background: white;
   padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
-.dept-link {
+.depts button {
+  display: block;
+  width: 100%;
+  margin-bottom: 5px;
   padding: 10px;
-  border-radius: 8px;
-  cursor: pointer;
+  border: none;
   background: #eef2f7;
-  font-weight: bold;
+  cursor: pointer;
+  border-radius: 6px;
 }
 
-.dept-link.active {
+.depts button.active {
   background: #1f6fff;
   color: white;
 }
 
-.kpi-panel {
+/* KPI */
+.kpis {
   flex: 1;
-  padding: 20px;
-  overflow: auto;
 }
 
-/* KPI GRID */
-#kpiGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.kpi-card {
+.card {
   background: white;
-  padding: 12px;
-  border-radius: 10px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 6px;
 }
 
 /* TABLE */
-#recordsTable {
+table {
   width: 100%;
-  margin-top: 15px;
-  border-collapse: collapse;
   background: white;
+  border-collapse: collapse;
 }
 
-#recordsTable th, #recordsTable td {
+th, td {
   border: 1px solid #ddd;
   padding: 8px;
-  font-size: 13px;
-}
-
-#recordsTable th {
-  background: #f0f4ff;
-}
-
-/* OTHER VIEWS */
-.view {
-  display: none;
-  padding: 20px;
-}
-
-.view.active {
-  display: block;
-}
-
-#dashboardSummary {
-  margin-top: 10px;
-  background: white;
-  padding: 10px;
-  border-radius: 8px;
-}
-
-/* MOBILE */
-@media (max-width: 768px) {
-  .dashboard-wrapper {
-    flex-direction: column;
-  }
-
-  .dept-sidebar {
-    width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
-  }
 }
 </style>
 </head>
 
 <body>
 
-<div class="main-sidebar">
-  <div class="nav-link active" data-view="dashboard">Dashboard</div>
-  <div class="nav-link" data-view="entry">Daily Entry</div>
-  <div class="nav-link" data-view="records">Records</div>
-  <div class="nav-link" data-view="targets">KPI Targets</div>
+<div class="nav">
+  <button data-view="dashboard" class="active">Dashboard</button>
+  <button data-view="entry">Entry</button>
+  <button data-view="records">Records</button>
 </div>
 
-<div id="dashboard" class="dashboard-wrapper active">
+<!-- DASHBOARD -->
+<div id="dashboard" class="container active">
+  <div class="dashboard">
 
-  <div class="dept-sidebar">
-    <div class="dept-link active" data-dept="receiving">Receiving</div>
-    <div class="dept-link" data-dept="putaway">Putaway</div>
-    <div class="dept-link" data-dept="picking">Picking</div>
-    <div class="dept-link" data-dept="shipping">Shipping</div>
-    <div class="dept-link" data-dept="inventory">Inventory</div>
-    <div class="dept-link" data-dept="operations">Operations</div>
-  </div>
+    <div class="depts">
+      <button class="dept active" data-dept="receiving">Receiving</button>
+      <button class="dept" data-dept="picking">Picking</button>
+      <button class="dept" data-dept="shipping">Shipping</button>
+      <button class="dept" data-dept="inventory">Inventory</button>
+      <button class="dept" data-dept="operations">Operations</button>
+    </div>
 
-  <div class="kpi-panel">
-    <h2 id="deptTitle">Receiving</h2>
-
-    <div id="kpiGrid"></div>
-    <div id="dashboardSummary"></div>
-
-    <table id="recordsTable">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Employee</th>
-          <th>Dept</th>
-          <th>Units</th>
-          <th>Hours</th>
-          <th>Rate</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+    <div class="kpis">
+      <h2 id="deptTitle">Receiving</h2>
+      <div id="kpiBox"></div>
+    </div>
 
   </div>
 </div>
 
-<div id="entry" class="view"><h2>Daily Entry</h2></div>
-<div id="records" class="view"><h2>Records</h2></div>
-<div id="targets" class="view"><h2>KPI Targets</h2></div>
+<!-- ENTRY -->
+<div id="entry" class="container">
+  <h2>Daily Entry</h2>
 
-<script type="module" src="./app.js"></script>
+  <input id="date" type="date"/>
+  <input id="employee" placeholder="Employee"/>
+  <input id="department" placeholder="Department"/>
+  <input id="units" type="number" placeholder="Units"/>
+  <input id="hours" type="number" placeholder="Hours"/>
+
+  <button id="saveBtn">Save</button>
+</div>
+
+<!-- RECORDS -->
+<div id="records" class="container">
+  <h2>Records</h2>
+  <div id="tableBox"></div>
+</div>
+
+<script src="app.js"></script>
 
 </body>
 </html>
