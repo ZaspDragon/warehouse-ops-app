@@ -1,144 +1,197 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Warehouse KPI Logger</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Warehouse KPI Logger</title>
 
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      display: flex;
-      height: 100vh;
-      background: #f4f7fb;
-    }
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fb;
+  }
 
-    .main-sidebar {
-      width: 220px;
-      background: #0f2747;
-      color: white;
-      padding: 15px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      flex-shrink: 0;
-    }
+  /* TOP NAV (mobile friendly main nav) */
+  .main-sidebar {
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    background: #0f2747;
+    color: white;
+    flex-wrap: wrap;
+  }
 
-    .nav-link {
-      padding: 12px;
-      border-radius: 10px;
-      cursor: pointer;
-      background: #1c3a5f;
-      font-weight: bold;
-      user-select: none;
-    }
+  .nav-link {
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #1c3a5f;
+    font-weight: bold;
+  }
 
-    .nav-link.active {
-      background: #1f6fff;
-    }
+  .nav-link.active {
+    background: #1f6fff;
+  }
 
+  /* DASHBOARD LAYOUT */
+  .dashboard-wrapper {
+    display: none;
+    height: calc(100vh - 60px);
+  }
+
+  .dashboard-wrapper.active {
+    display: flex;
+  }
+
+  .dept-sidebar {
+    width: 200px;
+    background: #ffffff;
+    border-right: 1px solid #ddd;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .dept-link {
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #eef2f7;
+    font-weight: bold;
+  }
+
+  .dept-link.active {
+    background: #1f6fff;
+    color: white;
+  }
+
+  .kpi-panel {
+    flex: 1;
+    padding: 20px;
+    overflow: auto;
+  }
+
+  /* OTHER VIEWS */
+  .view {
+    display: none;
+    padding: 20px;
+  }
+
+  .view.active {
+    display: block;
+  }
+
+  /* MOBILE */
+  @media (max-width: 768px) {
     .dashboard-wrapper {
-      display: none;
-      flex: 1;
-      min-width: 0;
-    }
-
-    .dashboard-wrapper.active {
-      display: flex;
-      flex: 1;
+      flex-direction: column;
     }
 
     .dept-sidebar {
-      width: 200px;
-      background: #ffffff;
-      border-right: 1px solid #ddd;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      flex-shrink: 0;
+      width: 100%;
+      flex-direction: row;
+      overflow-x: auto;
+      border-right: none;
+      border-bottom: 1px solid #ddd;
     }
-
-    .dept-link {
-      padding: 10px;
-      border-radius: 8px;
-      cursor: pointer;
-      background: #eef2f7;
-      font-weight: bold;
-      user-select: none;
-    }
-
-    .dept-link.active {
-      background: #1f6fff;
-      color: white;
-    }
-
-    .kpi-panel {
-      flex: 1;
-      padding: 20px;
-      overflow: auto;
-    }
-
-    .view {
-      display: none;
-      flex: 1;
-      padding: 20px;
-      overflow: auto;
-    }
-
-    .view.active {
-      display: block;
-    }
-  </style>
+  }
+</style>
 </head>
 
 <body>
-  <div class="main-sidebar">
-    <h2>Warehouse</h2>
 
-    <div class="nav-link active" data-view="dashboard">Dashboard</div>
-    <div class="nav-link" data-view="entry">Daily Entry</div>
-    <div class="nav-link" data-view="records">Records</div>
-    <div class="nav-link" data-view="targets">KPI Targets</div>
+<!-- MAIN NAV -->
+<div class="main-sidebar">
+  <div class="nav-link active" data-view="dashboard">Dashboard</div>
+  <div class="nav-link" data-view="entry">Daily Entry</div>
+  <div class="nav-link" data-view="records">Records</div>
+  <div class="nav-link" data-view="targets">KPI Targets</div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="dashboard-wrapper active">
+
+  <div class="dept-sidebar">
+    <div class="dept-link active" data-dept="receiving">Receiving</div>
+    <div class="dept-link" data-dept="putaway">Putaway</div>
+    <div class="dept-link" data-dept="picking">Picking</div>
+    <div class="dept-link" data-dept="shipping">Shipping</div>
+    <div class="dept-link" data-dept="inventory">Inventory</div>
+    <div class="dept-link" data-dept="operations">Operations</div>
   </div>
 
-  <div id="dashboard" class="dashboard-wrapper active">
-    <div class="dept-sidebar">
-      <h3>Departments</h3>
-
-      <div class="dept-link active" data-dept="receiving">Receiving</div>
-      <div class="dept-link" data-dept="putaway">Putaway</div>
-      <div class="dept-link" data-dept="picking">Picking</div>
-      <div class="dept-link" data-dept="shipping">Shipping</div>
-      <div class="dept-link" data-dept="inventory">Inventory</div>
-      <div class="dept-link" data-dept="operations">Operations</div>
+  <div class="kpi-panel">
+    <h2 id="deptTitle">Receiving</h2>
+    <div id="kpiContent">
+      <p>KPIs will show here for the selected department.</p>
     </div>
-
-    <div class="kpi-panel">
-      <h2 id="deptTitle">Receiving</h2>
-      <div id="kpiContent">
-        <p>Select a department to view KPIs.</p>
-      </div>
-    </div>
   </div>
 
-  <div id="entry" class="view">
-    <h2>Daily Entry</h2>
-    <!-- keep your existing entry form here -->
-  </div>
+</div>
 
-  <div id="records" class="view">
-    <h2>Records</h2>
-    <!-- keep your existing records table container here -->
-  </div>
+<!-- OTHER VIEWS -->
+<div id="entry" class="view">
+  <h2>Daily Entry</h2>
+  <p>Put your entry form here.</p>
+</div>
 
-  <div id="targets" class="view">
-    <h2>KPI Targets</h2>
-    <!-- keep your existing targets form here -->
-  </div>
+<div id="records" class="view">
+  <h2>Records</h2>
+  <p>Your records table goes here.</p>
+</div>
 
-  <script src="app.js" defer></script>
+<div id="targets" class="view">
+  <h2>KPI Targets</h2>
+  <p>Your KPI targets form goes here.</p>
+</div>
+
+<script>
+/* ---------- MAIN NAV SWITCH ---------- */
+const navLinks = document.querySelectorAll(".nav-link");
+const views = document.querySelectorAll(".view, .dashboard-wrapper");
+
+navLinks.forEach(btn => {
+  btn.addEventListener("click", () => {
+
+    navLinks.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    const view = btn.dataset.view;
+
+    views.forEach(v => v.classList.remove("active"));
+    document.getElementById(view).classList.add("active");
+  });
+});
+
+/* ---------- DEPARTMENT SWITCH ---------- */
+const deptLinks = document.querySelectorAll(".dept-link");
+const deptTitle = document.getElementById("deptTitle");
+const kpiContent = document.getElementById("kpiContent");
+
+const deptData = {
+  receiving: "Receiving KPIs: Accuracy, Unload Time, Damages",
+  putaway: "Putaway KPIs: Speed, Location Accuracy",
+  picking: "Picking KPIs: Units/Hour, Accuracy Rate",
+  shipping: "Shipping KPIs: On-Time Ship %, Error Rate",
+  inventory: "Inventory KPIs: Cycle Count Accuracy, Shrinkage",
+  operations: "Operations KPIs: Labor Efficiency, Downtime"
+};
+
+deptLinks.forEach(btn => {
+  btn.addEventListener("click", () => {
+
+    deptLinks.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    const dept = btn.dataset.dept;
+
+    deptTitle.textContent = btn.textContent;
+    kpiContent.innerHTML = `<p>${deptData[dept]}</p>`;
+  });
+});
+</script>
+
 </body>
-</html>
 </html>
