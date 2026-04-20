@@ -27,25 +27,18 @@ let records = loadRecords() || [];
 let targets = loadTargets() || DEFAULT_TARGETS;
 let activeDepartment = "receiving";
 
+let cachedKpis = null;
+
+/* ---------------- DEPARTMENT MAP ---------------- */
+
 const deptLabels = {
+  inventory: "Inventory",
   receiving: "Receiving",
   putaway: "Putaway",
-  picking: "Picking",
+  picking: "Transfers (Picking)",
   shipping: "Shipping",
-  inventory: "Inventory",
   operations: "Operations"
 };
-
-const deptOrder = [
-  "receiving",
-  "putaway",
-  "picking",
-  "shipping",
-  "inventory",
-  "operations"
-];
-
-let cachedKpis = null;
 
 /* ---------------- INIT ---------------- */
 
@@ -60,90 +53,66 @@ document.addEventListener("DOMContentLoaded", () => {
   renderAll(true);
 });
 
-/* ---------------- NAVIGATION ---------------- */
-
-function bindNavigation() {
-  const navLinks = document.querySelectorAll(".nav-link");
-  const views = document.querySelectorAll(".view");
-  const dashboard = document.getElementById("dashboard");
-
-  navLinks.forEach(btn => {
-    btn.addEventListener("click", () => {
-      navLinks.forEach(b => b.classList.remove("active"));
-      views.forEach(v => v.classList.remove("active"));
-      dashboard.classList.remove("active");
-
-      btn.classList.add("active");
-
-      const viewId = btn.dataset.view;
-      const view = document.getElementById(viewId);
-
-      if (viewId === "dashboard") {
-        dashboard.classList.add("active");
-      } else if (view) {
-        view.classList.add("active");
-      }
-    });
-  });
-}
-
-/* ---------------- DEPARTMENTS ---------------- */
-
-function bindDepartmentTabs() {
-  const deptButtons = document.querySelectorAll(".dept-link");
-
-  deptButtons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      deptButtons.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-
-      activeDepartment = btn.dataset.dept;
-
-      renderAll(true);
-    });
-  });
-}
-
-/* ---------------- FORMS ---------------- */
-
-function bindForms() {
-  document.getElementById("entryForm")?.addEventListener("submit", e => {
-    e.preventDefault();
-    saveEntry();
-  });
-
-  document.getElementById("targetsForm")?.addEventListener("submit", e => {
-    e.preventDefault();
-    saveTargetsFromForm();
-  });
-}
-
-/* ---------------- BUTTONS ---------------- */
-
-function bindButtons() {
-  document.getElementById("resetFormBtn")?.addEventListener("click", resetEntryForm);
-  document.getElementById("clearAllBtn")?.addEventListener("click", clearAllData);
-  document.getElementById("exportCsvBtn")?.addEventListener("click", exportCsv);
-}
-
-/* ---------------- SAVE ENTRY ---------------- */
+/* ---------------- ENTRY SAVE (ENHANCED DATA MODEL) ---------------- */
 
 function saveEntry() {
   const id = value("editingId");
 
   const entry = {
     id: id || makeId(),
+
+    /* CORE FIELDS (ALL DEPARTMENTS) */
     date: value("date"),
     employeeName: value("employeeName"),
     department: (value("department") || "").toLowerCase().trim(),
-    hoursWorked: numValue("hoursWorked"),
-    unitsProcessed: numValue("unitsProcessed"),
-    errors: numValue("errors"),
-    shipments: numValue("shipments"),
-    onTimeShipments: numValue("onTimeShipments"),
-    equipmentDowntime: numValue("equipmentDowntime")
+
+    /* ---------------- INVENTORY ---------------- */
+    sku: value("sku"),
+    itemName: value("itemName"),
+    location: value("location"),
+    quantitySystem: numValue("quantitySystem"),
+    quantityPhysical: numValue("quantityPhysical"),
+    variance: numValue("quantityPhysical") - numValue("quantitySystem"),
+
+    /* ---------------- RECEIVING ---------------- */
+    poNumber: value("poNumber"),
+    quantityExpected: numValue("quantityExpected"),
+    quantityReceived: numValue("quantityReceived"),
+    dockDoor: value("dockDoor"),
+    arrivalTime: value("arrivalTime"),
+    putawayStartTime: value("putawayStartTime"),
+    putawayEndTime: value("putawayEndTime"),
+
+    /* ---------------- TRANSFERS (PICKING) ---------------- */
+    transferId: value("transferId"),
+    orderId: value("orderId"),
+    quantityRequested: numValue("quantityRequested"),
+    quantityPicked: numValue("quantityPicked"),
+    pickStartTime: value("pickStartTime"),
+    pickEndTime: value("pickEndTime"),
+    zone: value("zone"),
+
+    /* ---------------- SHIPPING ---------------- */
+    shipmentId: value("shipmentId"),
+    carrier: value("carrier"),
+    quantityShipped: numValue("quantityShipped"),
+    shipTime: value("shipTime"),
+    deliveryDueDate: value("deliveryDueDate"),
+    deliveryActualDate: value("deliveryActualDate"),
+    errorType: value("errorType"),
+
+    /* ---------------- OPERATIONS ---------------- */
+    startTime: value("startTime"),
+    endTime: value("endTime"),
+    totalOutput: numValue("totalOutput"),
+    breakTimeMinutes: numValue("breakTimeMinutes"),
+    equipmentDowntime: numValue("equipmentDowntime"),
+
+    /* ---------------- STATUS ---------------- */
+    status: value("status") || "Pending"
   };
 
+  /* VALIDATION */
   if (!entry.date || !entry.employeeName || !entry.department) {
     showMessage("Missing required fields", "error");
     return;
@@ -156,64 +125,20 @@ function saveEntry() {
   }
 
   saveRecords(records);
-  populateFilterOptions(records);
-
-  resetCache();
-  renderAll(true);
-  resetEntryForm();
-
-  showMessage("Saved");
-}
-
-/* ---------------- RESET ---------------- */
-
-function resetEntryForm() {
-  document.getElementById("entryForm")?.reset();
-  setValue("editingId", "");
-  setTodayDefault();
-}
-
-/* ---------------- TARGETS ---------------- */
-
-function initTargetsForm() {
-  Object.entries(targets).forEach(([key, val]) => {
-    setValue(`target${capitalize(key)}`, val);
-  });
-}
-
-function saveTargetsFromForm() {
-  Object.keys(DEFAULT_TARGETS).forEach(key => {
-    targets[key] = numValue(`target${capitalize(key)}`);
-  });
-
-  saveTargets(targets);
-
-  resetCache();
-  renderAll(true);
-
-  showMessage("Targets saved");
-}
-
-/* ---------------- CLEAR ---------------- */
-
-function clearAllData() {
-  if (!confirm("Delete all records?")) return;
-
-  records = [];
-  saveRecords(records);
 
   populateFilterOptions(records);
-
   resetCache();
   renderAll(true);
 
-  showMessage("All records cleared");
+  showMessage("Entry saved");
 }
 
-/* ---------------- RENDER ---------------- */
+/* ---------------- KPI FILTER ---------------- */
 
 function renderAll(force = false) {
-  const deptRecords = getDepartmentRecords();
+  const deptRecords = records.filter(
+    r => (r.department || "").toLowerCase().trim() === activeDepartment
+  );
 
   if (!cachedKpis || force) {
     cachedKpis = calculateKpis(deptRecords || []);
@@ -221,31 +146,23 @@ function renderAll(force = false) {
 
   setText("deptTitle", deptLabels[activeDepartment] || activeDepartment);
 
-  safeRenderDashboard(cachedKpis, targets, activeDepartment);
+  renderDashboardSafe(cachedKpis, targets, activeDepartment);
   renderDepartmentSummary(deptRecords);
-  safeRenderTable(records);
+  renderRecordsTableSafe(records);
 }
 
-/* ---------------- SAFE HELPERS ---------------- */
+/* ---------------- SAFE RENDERERS ---------------- */
 
-function safeRenderDashboard(kpis, targets, dept) {
+function renderDashboardSafe(kpis, targets, dept) {
   if (typeof renderDashboard === "function") {
     renderDashboard(kpis, targets, dept);
   }
 }
 
-function safeRenderTable(data) {
+function renderRecordsTableSafe(data) {
   if (typeof renderRecordsTable === "function") {
     renderRecordsTable(data || []);
   }
-}
-
-/* ---------------- FILTERING ---------------- */
-
-function getDepartmentRecords() {
-  return records.filter(r =>
-    (r.department || "").toLowerCase().trim() === activeDepartment
-  );
 }
 
 /* ---------------- SUMMARY ---------------- */
@@ -253,43 +170,30 @@ function getDepartmentRecords() {
 function renderDepartmentSummary(deptRecords) {
   const total = deptRecords.length;
 
-  const hours = deptRecords.reduce((sum, r) => sum + (Number(r.hoursWorked) || 0), 0);
-  const units = deptRecords.reduce((sum, r) => sum + (Number(r.unitsProcessed) || 0), 0);
-  const errors = deptRecords.reduce((sum, r) => sum + (Number(r.errors) || 0), 0);
+  const output = deptRecords.reduce((sum, r) =>
+    sum + (Number(r.totalOutput || r.unitsProcessed) || 0), 0);
+
+  const hours = deptRecords.reduce((sum, r) => {
+    const start = new Date(r.startTime || r.pickStartTime || r.arrivalTime);
+    const end = new Date(r.endTime || r.pickEndTime || r.putawayEndTime);
+    if (!start || !end) return sum;
+    return sum + ((end - start) / 3600000 || 0);
+  }, 0);
 
   const el = document.getElementById("dashboardSummary");
   if (!el) return;
 
   el.innerHTML = `
     <p><strong>Records:</strong> ${total}</p>
-    <p><strong>Hours:</strong> ${hours}</p>
-    <p><strong>Units:</strong> ${units}</p>
-    <p><strong>Errors:</strong> ${errors}</p>
+    <p><strong>Total Output:</strong> ${output}</p>
+    <p><strong>Hours Worked:</strong> ${hours.toFixed(2)}</p>
   `;
 }
 
-/* ---------------- EXPORT ---------------- */
+/* ---------------- CACHE ---------------- */
 
-function exportCsv() {
-  if (!records.length) return showMessage("No data", "error");
-
-  const keys = Object.keys(records[0]);
-
-  const rows = records.map(r =>
-    keys.map(k => `"${String(r[k] ?? "").replaceAll('"', '""')}"`).join(",")
-  );
-
-  const csv = [keys.join(","), ...rows].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "warehouse-data.csv";
-  a.click();
-
-  URL.revokeObjectURL(url);
+function resetCache() {
+  cachedKpis = null;
 }
 
 /* ---------------- UTIL ---------------- */
@@ -299,12 +203,4 @@ function setTodayDefault() {
   if (el && !el.value) {
     el.value = new Date().toISOString().slice(0, 10);
   }
-}
-
-function resetCache() {
-  cachedKpis = null;
-}
-
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
 }
