@@ -342,3 +342,22 @@ function resetCache() {
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
+document.addEventListener("DOMContentLoaded", () => {
+  const navLinks = document.querySelectorAll(".nav-link");
+
+  function show(id) {
+    document.querySelectorAll(".view, .dashboard-wrapper")
+      .forEach(el => el.classList.remove("active"));
+
+    const target = document.getElementById(id);
+    if (target) target.classList.add("active");
+  }
+
+  navLinks.forEach(btn => {
+    btn.addEventListener("click", () => {
+      navLinks.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      show(btn.dataset.view);
+    });
+  });
+});
