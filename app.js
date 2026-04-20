@@ -1,363 +1,165 @@
-import {
-  loadRecords,
-  saveRecords,
-  loadTargets,
-  saveTargets,
-  DEFAULT_TARGETS
-} from "./storage.js";
 
-import { calculateKpis } from "./kpi.js";
-
-import {
-  setValue,
-  setText,
-  value,
-  numValue,
-  showMessage,
-  populateFilterOptions,
-  renderDashboard,
-  renderRecordsTable
-} from "./ui.js";
-
-import { makeId } from "./utils.js";
-
-/* ---------------- SAFE HELPERS ---------------- */
-
-const $ = (id) => document.getElementById(id);
-const exists = (id) => !!document.getElementById(id);
+/* =========================
+   WAREHOUSE KPI SYSTEM
+   SINGLE FILE VERSION
+   ========================= */
 
 /* ---------------- STATE ---------------- */
 
-let records = loadRecords() || [];
-let targets = loadTargets() || DEFAULT_TARGETS;
-let activeDepartment = "receiving";
-let cachedKpis = null;
-
-/* ---------------- DEPARTMENTS ---------------- */
-
-const deptLabels = {
-  inventory: "Inventory",
-  receiving: "Receiving",
-  putaway: "Putaway",
-  picking: "Transfers (Picking)",
-  shipping: "Shipping",
-  operations: "Operations"
+let records = JSON.parse(localStorage.getItem("warehouse")) || [];
+let targets = JSON.parse(localStorage.getItem("targets")) || {
+  laborProductivity: 25,
+  receivingAccuracy: 99,
+  pickAccuracy: 98,
+  onTimeShipment: 95,
+  inventoryAccuracy: 98
 };
+
+let activeDept = "receiving";
 
 /* ---------------- INIT ---------------- */
 
 document.addEventListener("DOMContentLoaded", () => {
   bindNavigation();
-  bindDepartmentTabs();
-  bindForms();
-  bindButtons();
-
-  initTargetsForm();
-  populateFilterOptions(records);
-
-  setTodayDefault();
-  renderAll(true);
+  bindDepartments();
+  bindEntry();
+  render();
 });
 
-/* ---------------- NAVIGATION ---------------- */
+/* ---------------- NAV ---------------- */
 
 function bindNavigation() {
-  const navLinks = document.querySelectorAll(".nav-link");
-
-  navLinks.forEach(btn => {
-    btn.addEventListener("click", () => {
-      navLinks.forEach(b => b.classList.remove("active"));
-
-      const views = document.querySelectorAll(".view");
-      const dashboard = $("dashboard");
-
-      views.forEach(v => v.classList.remove("active"));
-      if (dashboard) dashboard.classList.remove("active");
-
+  document.querySelectorAll(".nav button").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll(".nav button").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
 
-      const viewId = btn.dataset.view;
-      const view = $(viewId);
+      document.querySelectorAll(".container").forEach(c => c.classList.remove("active"));
+      document.getElementById(btn.dataset.view).classList.add("active");
 
-      if (viewId === "dashboard" && dashboard) {
-        dashboard.classList.add("active");
-      } else if (view) {
-        view.classList.add("active");
-      }
-    });
+      render();
+    };
   });
 }
 
 /* ---------------- DEPARTMENTS ---------------- */
 
-function bindDepartmentTabs() {
-  const deptButtons = document.querySelectorAll(".dept-link");
-
-  deptButtons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      deptButtons.forEach(b => b.classList.remove("active"));
+function bindDepartments() {
+  document.querySelectorAll(".dept").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll(".dept").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
 
-      activeDepartment = btn.dataset.dept;
-      renderAll(true);
-    });
+      activeDept = btn.dataset.dept;
+      render();
+    };
   });
 }
 
-/* ---------------- FORMS ---------------- */
+/* ---------------- ENTRY ---------------- */
 
-function bindForms() {
-  const entryForm = $("entryForm");
-  const targetsForm = $("targetsForm");
+function bindEntry() {
+  const saveBtn = document.getElementById("saveBtn");
 
-  if (entryForm) {
-    entryForm.addEventListener("submit", e => {
-      e.preventDefault();
-      saveEntry();
-    });
-  }
+  if (!saveBtn) return;
 
-  if (targetsForm) {
-    targetsForm.addEventListener("submit", e => {
-      e.preventDefault();
-      saveTargetsFromForm();
-    });
-  }
-}
+  saveBtn.onclick = () => {
+    const entry = {
+      id: Date.now(),
+      date: val("date"),
+      employee: val("employee"),
+      department: val("department"),
+      units: num("units"),
+      hours: num("hours"),
+      errors: num("errors") || 0,
+      shipments: num("shipments") || 0,
+      onTime: num("onTime") || 0,
+      inventoryCount: num("inventoryCount") || 0
+    };
 
-/* ---------------- BUTTONS ---------------- */
+    if (!entry.date || !entry.employee || !entry.department) {
+      alert("Missing fields");
+      return;
+    }
 
-function bindButtons() {
-  $("resetFormBtn")?.addEventListener("click", resetEntryForm);
-  $("clearAllBtn")?.addEventListener("click", clearAllData);
-  $("exportCsvBtn")?.addEventListener("click", exportCsv);
-}
-
-/* ---------------- SAVE ENTRY ---------------- */
-
-function saveEntry() {
-  const id = value("editingId");
-
-  const entry = {
-    id: id || makeId(),
-    date: value("date"),
-    employeeName: value("employeeName"),
-    department: (value("department") || "").toLowerCase().trim(),
-
-    sku: value("sku"),
-    itemName: value("itemName"),
-    location: value("location"),
-
-    quantitySystem: numValue("quantitySystem"),
-    quantityPhysical: numValue("quantityPhysical"),
-
-    variance:
-      numValue("quantityPhysical") - numValue("quantitySystem"),
-
-    poNumber: value("poNumber"),
-    quantityReceived: numValue("quantityReceived"),
-
-    transferId: value("transferId"),
-    quantityPicked: numValue("quantityPicked"),
-
-    shipmentId: value("shipmentId"),
-    quantityShipped: numValue("quantityShipped"),
-
-    startTime: value("startTime"),
-    endTime: value("endTime"),
-
-    totalOutput: numValue("totalOutput"),
-
-    status: value("status") || "Pending"
-  };
-
-  if (!entry.date || !entry.employeeName || !entry.department) {
-    showMessage("Missing required fields", "error");
-    return;
-  }
-
-  if (id) {
-    records = records.map(r => (r.id === id ? entry : r));
-  } else {
     records.unshift(entry);
-  }
-
-  saveRecords(records);
-
-  populateFilterOptions(records);
-
-  resetCache();
-  renderAll(true);
-
-  showMessage("Saved");
+    save();
+    render();
+  };
 }
 
-/* ---------------- RESET FORM ---------------- */
+/* ---------------- STORAGE ---------------- */
 
-function resetEntryForm() {
-  $("entryForm")?.reset();
-  setValue("editingId", "");
-  setTodayDefault();
+function save() {
+  localStorage.setItem("warehouse", JSON.stringify(records));
 }
 
-/* ---------------- TARGETS ---------------- */
+/* ---------------- RENDER ---------------- */
 
-function initTargetsForm() {
-  Object.entries(targets).forEach(([key, val]) => {
-    setValue(`target${capitalize(key)}`, val);
-  });
+function render() {
+  renderKPI();
+  renderTable();
+  renderDeptTitle();
 }
 
-function saveTargetsFromForm() {
-  Object.keys(DEFAULT_TARGETS).forEach(key => {
-    targets[key] = numValue(`target${capitalize(key)}`);
-  });
+/* ---------------- KPI ENGINE ---------------- */
 
-  saveTargets(targets);
+function renderKPI() {
+  const dept = records.filter(r => r.department === activeDept);
 
-  resetCache();
-  renderAll(true);
+  const units = sum(dept, "units");
+  const hours = sum(dept, "hours");
+  const errors = sum(dept, "errors");
 
-  showMessage("Targets saved");
-}
+  const rate = hours ? (units / hours).toFixed(2) : 0;
 
-/* ---------------- CLEAR DATA ---------------- */
+  const accuracy = units ? (((units - errors) / units) * 100).toFixed(2) : 0;
 
-function clearAllData() {
-  if (!confirm("Delete all records?")) return;
-
-  records = [];
-  saveRecords(records);
-
-  populateFilterOptions(records);
-
-  resetCache();
-  renderAll(true);
-
-  showMessage("All records cleared");
-}
-
-/* ---------------- RENDER CORE ---------------- */
-
-function renderAll(force = false) {
-  const deptRecords = getDeptRecords();
-
-  if (!cachedKpis || force) {
-    cachedKpis = calculateKpis(deptRecords || []);
-  }
-
-  const title = $("deptTitle");
-  if (title) {
-    title.textContent =
-      deptLabels[activeDepartment] || activeDepartment;
-  }
-
-  if (typeof renderDashboard === "function") {
-    renderDashboard(cachedKpis, targets, activeDepartment);
-  }
-
-  renderSummary(deptRecords);
-
-  if (typeof renderRecordsTable === "function") {
-    renderRecordsTable(records || []);
-  }
-}
-
-/* ---------------- FILTER ---------------- */
-
-function getDeptRecords() {
-  return records.filter(r =>
-    (r.department || "").toLowerCase().trim() === activeDepartment
-  );
-}
-
-/* ---------------- SUMMARY ---------------- */
-
-function renderSummary(deptRecords) {
-  const el = $("dashboardSummary");
+  const el = document.getElementById("kpiBox");
   if (!el) return;
 
-  const total = deptRecords.length;
-
-  const output = deptRecords.reduce(
-    (sum, r) => sum + (Number(r.totalOutput || r.quantityPicked || 0)),
-    0
-  );
-
-  let hours = 0;
-
-  deptRecords.forEach(r => {
-    const start = r.startTime ? new Date(r.startTime) : null;
-    const end = r.endTime ? new Date(r.endTime) : null;
-
-    if (start && end && !isNaN(start) && !isNaN(end)) {
-      hours += (end - start) / 3600000;
-    }
-  });
-
   el.innerHTML = `
-    <p><strong>Records:</strong> ${total}</p>
-    <p><strong>Total Output:</strong> ${output}</p>
-    <p><strong>Hours:</strong> ${hours.toFixed(2)}</p>
+    <div class="card">Units: ${units}</div>
+    <div class="card">Hours: ${hours}</div>
+    <div class="card">Rate: ${rate}</div>
+    <div class="card">Accuracy: ${accuracy}%</div>
   `;
 }
 
-/* ---------------- EXPORT ---------------- */
+/* ---------------- TABLE ---------------- */
 
-function exportCsv() {
-  if (!records.length) return showMessage("No data", "error");
+function renderTable() {
+  const el = document.querySelector("#recordsTable tbody");
+  if (!el) return;
 
-  const keys = Object.keys(records[0]);
-
-  const rows = records.map(r =>
-    keys.map(k => `"${String(r[k] ?? "").replaceAll('"', '""')}"`).join(",")
-  );
-
-  const csv = [keys.join(","), ...rows].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "warehouse-data.csv";
-  a.click();
-
-  URL.revokeObjectURL(url);
+  el.innerHTML = records.map(r => `
+    <tr>
+      <td>${r.date}</td>
+      <td>${r.employee}</td>
+      <td>${r.department}</td>
+      <td>${r.units}</td>
+      <td>${r.hours}</td>
+    </tr>
+  `).join("");
 }
 
-/* ---------------- UTIL ---------------- */
+/* ---------------- TITLE ---------------- */
 
-function setTodayDefault() {
-  const el = $("date");
-  if (el && !el.value) {
-    el.value = new Date().toISOString().slice(0, 10);
-  }
+function renderDeptTitle() {
+  const el = document.getElementById("deptTitle");
+  if (el) el.innerText = activeDept.toUpperCase();
 }
 
-function resetCache() {
-  cachedKpis = null;
+/* ---------------- HELPERS ---------------- */
+
+function val(id) {
+  return document.getElementById(id)?.value || "";
 }
 
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
+function num(id) {
+  return Number(document.getElementById(id)?.value || 0);
 }
-document.addEventListener("DOMContentLoaded", () => {
-  const navLinks = document.querySelectorAll(".nav-link");
 
-  function show(id) {
-    document.querySelectorAll(".view, .dashboard-wrapper")
-      .forEach(el => el.classList.remove("active"));
-
-    const target = document.getElementById(id);
-    if (target) target.classList.add("active");
-  }
-
-  navLinks.forEach(btn => {
-    btn.addEventListener("click", () => {
-      navLinks.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      show(btn.dataset.view);
-    });
-  });
-});
+function sum(arr, key) {
+  return arr.reduce((t, r) => t + Number(r[key] || 0), 0);
+}
