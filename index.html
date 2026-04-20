@@ -1,161 +1,189 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Warehouse KPI System</title>
-  <link rel="stylesheet" href="styles.css"/>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Warehouse KPI Logger</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  display: flex;
+  height: 100vh;
+  background: #f4f7fb;
+}
+
+/* LEFT MAIN NAV */
+.main-sidebar {
+  width: 220px;
+  background: #0f2747;
+  color: white;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nav-btn {
+  padding: 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  background: #1c3a5f;
+  font-weight: bold;
+}
+
+.nav-btn.active {
+  background: #1f6fff;
+}
+
+/* DASHBOARD LAYOUT */
+.dashboard-wrapper {
+  display: none;
+  flex: 1;
+}
+
+.dashboard-wrapper.active {
+  display: flex;
+}
+
+/* DEPARTMENT SIDEBAR */
+.dept-sidebar {
+  width: 200px;
+  background: #ffffff;
+  border-right: 1px solid #ddd;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dept-btn {
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #eef2f7;
+  font-weight: bold;
+}
+
+.dept-btn.active {
+  background: #1f6fff;
+  color: white;
+}
+
+/* KPI AREA */
+.kpi-panel {
+  flex: 1;
+  padding: 20px;
+}
+
+/* OTHER VIEWS */
+.view {
+  display: none;
+  flex: 1;
+  padding: 20px;
+}
+
+.view.active {
+  display: block;
+}
+</style>
 </head>
 
 <body>
 
-<header class="topbar">
-  <h1>Warehouse KPI Control Center</h1>
-</header>
+<!-- MAIN NAV -->
+<div class="main-sidebar">
+  <h2>Warehouse</h2>
 
-<!-- ================= MAIN WRAPPER ================= -->
-<div class="app-shell">
-
-  <!-- SIDEBAR NAV -->
-  <aside class="sidebar">
-    <button class="nav-link active" data-view="dashboard">Dashboard</button>
-    <button class="nav-link" data-view="entry">Daily Entry</button>
-    <button class="nav-link" data-view="records">Records</button>
-    <button class="nav-link" data-view="targets">Targets</button>
-  </aside>
-
-  <!-- ================= MAIN CONTENT ================= -->
-  <main class="main-content">
-
-    <!-- =====================================================
-         DASHBOARD (DEPARTMENT TABS)
-    ====================================================== -->
-    <section id="dashboard" class="view active">
-
-      <h2>Department Performance Dashboard</h2>
-
-      <!-- DEPARTMENT TABS -->
-      <div class="dept-tabs">
-        <button class="dept-tab active" data-dept="all">All</button>
-        <button class="dept-tab" data-dept="Receiving">Receiving</button>
-        <button class="dept-tab" data-dept="Putaway">Putaway</button>
-        <button class="dept-tab" data-dept="Picking">Picking</button>
-        <button class="dept-tab" data-dept="Shipping">Shipping</button>
-        <button class="dept-tab" data-dept="Inventory">Inventory</button>
-        <button class="dept-tab" data-dept="Operations">Ops</button>
-      </div>
-
-      <!-- KPI GRID -->
-      <div class="kpi-grid">
-
-        <div class="kpi-card">
-          <h3>Productivity</h3>
-          <div id="kpiProductivity">0</div>
-        </div>
-
-        <div class="kpi-card">
-          <h3>Accuracy</h3>
-          <div id="kpiAccuracy">0%</div>
-        </div>
-
-        <div class="kpi-card">
-          <h3>Speed</h3>
-          <div id="kpiSpeed">0</div>
-        </div>
-
-        <div class="kpi-card">
-          <h3>Errors</h3>
-          <div id="kpiErrors">0</div>
-        </div>
-
-        <div class="kpi-card">
-          <h3>Efficiency Score</h3>
-          <div id="kpiEfficiency">0</div>
-        </div>
-
-      </div>
-
-      <!-- CHART SECTION (future hook) -->
-      <div class="card">
-        <h3>Efficiency Trend</h3>
-        <canvas id="efficiencyChart"></canvas>
-      </div>
-
-    </section>
-
-    <!-- =====================================================
-         DAILY ENTRY
-    ====================================================== -->
-    <section id="entry" class="view">
-
-      <h2>Daily Entry</h2>
-
-      <form id="entryForm" class="form">
-
-        <input type="date" id="date" required />
-        <input type="text" id="employeeName" placeholder="Employee Name" required />
-
-        <select id="department">
-          <option value="">Department</option>
-          <option>Receiving</option>
-          <option>Putaway</option>
-          <option>Picking</option>
-          <option>Shipping</option>
-          <option>Inventory</option>
-          <option>Operations</option>
-        </select>
-
-        <input type="number" id="unitsProcessed" placeholder="Units" />
-        <input type="number" id="hoursWorked" placeholder="Hours" />
-        <input type="number" id="errors" placeholder="Errors" />
-
-        <button type="submit">Save Entry</button>
-      </form>
-
-    </section>
-
-    <!-- =====================================================
-         RECORDS
-    ====================================================== -->
-    <section id="records" class="view">
-
-      <h2>Records</h2>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Employee</th>
-            <th>Dept</th>
-            <th>Units</th>
-            <th>Hours</th>
-            <th>Errors</th>
-          </tr>
-        </thead>
-        <tbody id="recordsTable"></tbody>
-      </table>
-
-    </section>
-
-    <!-- =====================================================
-         TARGETS
-    ====================================================== -->
-    <section id="targets" class="view">
-
-      <h2>KPI Targets</h2>
-
-      <input type="number" id="targetProductivity" placeholder="Productivity Target"/>
-      <input type="number" id="targetAccuracy" placeholder="Accuracy Target"/>
-      <input type="number" id="targetErrors" placeholder="Max Errors"/>
-
-      <button id="saveTargetsBtn">Save Targets</button>
-
-    </section>
-
-  </main>
+  <div class="nav-btn active" data-view="dashboard">Dashboard</div>
+  <div class="nav-btn" data-view="entry">Daily Entry</div>
+  <div class="nav-btn" data-view="records">Records</div>
+  <div class="nav-btn" data-view="targets">KPI Targets</div>
 </div>
 
-<script type="module" src="./src/app.js"></script>
+<!-- DASHBOARD (2 COLUMN LAYOUT) -->
+<div id="dashboard" class="dashboard-wrapper active">
+
+  <!-- DEPARTMENTS (LEFT INSIDE DASHBOARD) -->
+  <div class="dept-sidebar">
+    <h3>Departments</h3>
+
+    <div class="dept-btn active" data-dept="receiving">Receiving</div>
+    <div class="dept-btn" data-dept="putaway">Putaway</div>
+    <div class="dept-btn" data-dept="picking">Picking</div>
+    <div class="dept-btn" data-dept="shipping">Shipping</div>
+    <div class="dept-btn" data-dept="inventory">Inventory</div>
+    <div class="dept-btn" data-dept="operations">Operations</div>
+  </div>
+
+  <!-- KPI DISPLAY (RIGHT SIDE) -->
+  <div class="kpi-panel">
+    <h2 id="deptTitle">Receiving</h2>
+
+    <div id="kpiContent">
+      <p>Select a department to view KPIs.</p>
+    </div>
+  </div>
+</div>
+
+<!-- OTHER VIEWS -->
+<div id="entry" class="view">
+  <h2>Daily Entry</h2>
+</div>
+
+<div id="records" class="view">
+  <h2>Records</h2>
+</div>
+
+<div id="targets" class="view">
+  <h2>KPI Targets</h2>
+</div>
+
+<script>
+/* MAIN NAV */
+document.querySelectorAll(".nav-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+
+    document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.querySelectorAll(".dashboard-wrapper").forEach(d => d.classList.remove("active"));
+
+    btn.classList.add("active");
+
+    const view = btn.dataset.view;
+    document.getElementById(view).classList.add("active");
+  });
+});
+
+/* DEPARTMENT SWITCHER */
+const deptContent = {
+  receiving: "Receiving KPIs: accuracy, dock-to-stock, receipts",
+  putaway: "Putaway KPIs: speed, accuracy, cycle time",
+  picking: "Picking KPIs: pick rate, accuracy, travel time",
+  shipping: "Shipping KPIs: on-time %, damage-free rate",
+  inventory: "Inventory KPIs: accuracy, shrinkage, space usage",
+  operations: "Operations KPIs: downtime, incidents"
+};
+
+document.querySelectorAll(".dept-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+
+    document.querySelectorAll(".dept-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    const dept = btn.dataset.dept;
+
+    document.getElementById("deptTitle").textContent =
+      dept.charAt(0).toUpperCase() + dept.slice(1);
+
+    document.getElementById("kpiContent").innerHTML =
+      `<p>${deptContent[dept]}</p>`;
+  });
+});
+</script>
+
+<script src="app.js"></script>
 
 </body>
 </html>
