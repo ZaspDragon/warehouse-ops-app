@@ -12,7 +12,7 @@
     background: #f4f7fb;
   }
 
-  /* TOP NAV (mobile friendly main nav) */
+  /* TOP NAV */
   .main-sidebar {
     display: flex;
     gap: 10px;
@@ -34,7 +34,7 @@
     background: #1f6fff;
   }
 
-  /* DASHBOARD LAYOUT */
+  /* DASHBOARD */
   .dashboard-wrapper {
     display: none;
     height: calc(100vh - 60px);
@@ -73,6 +73,43 @@
     overflow: auto;
   }
 
+  /* IMPORTANT KPI AREA */
+  #kpiGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .kpi-card {
+    background: white;
+    padding: 12px;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+
+  /* TABLE AREA */
+  #recordsTable {
+    margin-top: 20px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+  }
+
+  th, td {
+    padding: 8px;
+    border: 1px solid #ddd;
+    font-size: 13px;
+  }
+
+  th {
+    background: #f0f4ff;
+  }
+
   /* OTHER VIEWS */
   .view {
     display: none;
@@ -81,6 +118,14 @@
 
   .view.active {
     display: block;
+  }
+
+  /* SUMMARY */
+  #dashboardSummary {
+    margin-top: 10px;
+    padding: 10px;
+    background: white;
+    border-radius: 8px;
   }
 
   /* MOBILE */
@@ -102,7 +147,7 @@
 
 <body>
 
-<!-- MAIN NAV -->
+<!-- NAV -->
 <div class="main-sidebar">
   <div class="nav-link active" data-view="dashboard">Dashboard</div>
   <div class="nav-link" data-view="entry">Daily Entry</div>
@@ -113,6 +158,7 @@
 <!-- DASHBOARD -->
 <div id="dashboard" class="dashboard-wrapper active">
 
+  <!-- DEPARTMENTS -->
   <div class="dept-sidebar">
     <div class="dept-link active" data-dept="receiving">Receiving</div>
     <div class="dept-link" data-dept="putaway">Putaway</div>
@@ -122,76 +168,82 @@
     <div class="dept-link" data-dept="operations">Operations</div>
   </div>
 
+  <!-- MAIN PANEL -->
   <div class="kpi-panel">
-    <h2 id="deptTitle">Receiving</h2>
-    <div id="kpiContent">
-      <p>KPIs will show here for the selected department.</p>
-    </div>
-  </div>
 
+    <h2 id="deptTitle">Receiving</h2>
+
+    <!-- REQUIRED BY JS -->
+    <div id="dashboardSummary"></div>
+
+    <!-- KPI RENDER TARGET -->
+    <div id="kpiGrid"></div>
+
+    <!-- TABLE RENDER TARGET -->
+    <div id="recordsTable"></div>
+
+  </div>
 </div>
 
-<!-- OTHER VIEWS -->
+<!-- ENTRY VIEW -->
 <div id="entry" class="view">
   <h2>Daily Entry</h2>
-  <p>Put your entry form here.</p>
+
+  <form id="entryForm">
+    <input id="date" type="date" />
+    <input id="employeeName" placeholder="Employee Name" />
+    <select id="department">
+      <option value="receiving">Receiving</option>
+      <option value="putaway">Putaway</option>
+      <option value="picking">Picking</option>
+      <option value="shipping">Shipping</option>
+      <option value="inventory">Inventory</option>
+      <option value="operations">Operations</option>
+    </select>
+
+    <input id="sku" placeholder="SKU" />
+    <input id="itemName" placeholder="Item Name" />
+    <input id="location" placeholder="Location" />
+
+    <input id="quantitySystem" type="number" placeholder="System Qty" />
+    <input id="quantityPhysical" type="number" placeholder="Physical Qty" />
+
+    <input id="poNumber" placeholder="PO Number" />
+    <input id="quantityReceived" type="number" placeholder="Received Qty" />
+
+    <input id="transferId" placeholder="Transfer ID" />
+    <input id="quantityPicked" type="number" placeholder="Picked Qty" />
+
+    <input id="shipmentId" placeholder="Shipment ID" />
+    <input id="quantityShipped" type="number" placeholder="Shipped Qty" />
+
+    <input id="startTime" type="datetime-local" />
+    <input id="endTime" type="datetime-local" />
+
+    <input id="totalOutput" type="number" placeholder="Total Output" />
+
+    <select id="status">
+      <option value="Pending">Pending</option>
+      <option value="Complete">Complete</option>
+      <option value="Error">Error</option>
+    </select>
+
+    <button type="submit">Save Entry</button>
+  </form>
 </div>
 
+<!-- RECORDS -->
 <div id="records" class="view">
   <h2>Records</h2>
-  <p>Your records table goes here.</p>
 </div>
 
+<!-- TARGETS -->
 <div id="targets" class="view">
   <h2>KPI Targets</h2>
-  <p>Your KPI targets form goes here.</p>
+  <form id="targetsForm"></form>
 </div>
 
-<script>
-/* ---------- MAIN NAV SWITCH ---------- */
-const navLinks = document.querySelectorAll(".nav-link");
-const views = document.querySelectorAll(".view, .dashboard-wrapper");
-
-navLinks.forEach(btn => {
-  btn.addEventListener("click", () => {
-
-    navLinks.forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-
-    const view = btn.dataset.view;
-
-    views.forEach(v => v.classList.remove("active"));
-    document.getElementById(view).classList.add("active");
-  });
-});
-
-/* ---------- DEPARTMENT SWITCH ---------- */
-const deptLinks = document.querySelectorAll(".dept-link");
-const deptTitle = document.getElementById("deptTitle");
-const kpiContent = document.getElementById("kpiContent");
-
-const deptData = {
-  receiving: "Receiving KPIs: Accuracy, Unload Time, Damages",
-  putaway: "Putaway KPIs: Speed, Location Accuracy",
-  picking: "Picking KPIs: Units/Hour, Accuracy Rate",
-  shipping: "Shipping KPIs: On-Time Ship %, Error Rate",
-  inventory: "Inventory KPIs: Cycle Count Accuracy, Shrinkage",
-  operations: "Operations KPIs: Labor Efficiency, Downtime"
-};
-
-deptLinks.forEach(btn => {
-  btn.addEventListener("click", () => {
-
-    deptLinks.forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-
-    const dept = btn.dataset.dept;
-
-    deptTitle.textContent = btn.textContent;
-    kpiContent.innerHTML = `<p>${deptData[dept]}</p>`;
-  });
-});
-</script>
+<script type="module" src="./app.js"></script>
 
 </body>
 </html>
