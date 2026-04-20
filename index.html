@@ -2,502 +2,160 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  />
-  <title>Warehouse KPI Logger</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Warehouse KPI System</title>
+  <link rel="stylesheet" href="styles.css"/>
 </head>
+
 <body>
-  <header class="topbar">
-    <div class="brand-wrap">
-      <button id="menuToggle" class="menu-btn" aria-label="Toggle Menu">☰</button>
-      <h1>Warehouse KPI Logger</h1>
-    </div>
-    <div class="topbar-actions">
-      <button id="loadDemoBtn" class="btn secondary">Load Demo Data</button>
-      <button id="exportCsvBtn" class="btn secondary">Export CSV</button>
-      <button id="clearAllBtn" class="btn danger">Clear All Data</button>
-    </div>
-  </header>
 
-  <div class="app-shell">
-    <aside id="sidebar" class="sidebar">
-      <nav class="nav">
-        <button class="nav-link active" data-view="dashboardView">Dashboard</button>
-        <button class="nav-link" data-view="entryView">Daily Entry</button>
-        <button class="nav-link" data-view="recordsView">Records</button>
-        <button class="nav-link" data-view="targetsView">KPI Targets</button>
-        <button class="nav-link" data-view="helpView">Help</button>
-      </nav>
-    </aside>
+<header class="topbar">
+  <h1>Warehouse KPI Control Center</h1>
+</header>
 
-    <main class="main-content">
-      <div id="messageBar" class="message-bar hidden"></div>
+<!-- ================= MAIN WRAPPER ================= -->
+<div class="app-shell">
 
-      <!-- DASHBOARD -->
-      <section id="dashboardView" class="view active">
-        <div class="section-head">
-          <h2>Dashboard</h2>
-          <p>Live KPI summary from saved records.</p>
+  <!-- SIDEBAR NAV -->
+  <aside class="sidebar">
+    <button class="nav-link active" data-view="dashboard">Dashboard</button>
+    <button class="nav-link" data-view="entry">Daily Entry</button>
+    <button class="nav-link" data-view="records">Records</button>
+    <button class="nav-link" data-view="targets">Targets</button>
+  </aside>
+
+  <!-- ================= MAIN CONTENT ================= -->
+  <main class="main-content">
+
+    <!-- =====================================================
+         DASHBOARD (DEPARTMENT TABS)
+    ====================================================== -->
+    <section id="dashboard" class="view active">
+
+      <h2>Department Performance Dashboard</h2>
+
+      <!-- DEPARTMENT TABS -->
+      <div class="dept-tabs">
+        <button class="dept-tab active" data-dept="all">All</button>
+        <button class="dept-tab" data-dept="Receiving">Receiving</button>
+        <button class="dept-tab" data-dept="Putaway">Putaway</button>
+        <button class="dept-tab" data-dept="Picking">Picking</button>
+        <button class="dept-tab" data-dept="Shipping">Shipping</button>
+        <button class="dept-tab" data-dept="Inventory">Inventory</button>
+        <button class="dept-tab" data-dept="Operations">Ops</button>
+      </div>
+
+      <!-- KPI GRID -->
+      <div class="kpi-grid">
+
+        <div class="kpi-card">
+          <h3>Productivity</h3>
+          <div id="kpiProductivity">0</div>
         </div>
 
-        <div class="card">
-          <div class="filters-grid">
-            <div class="field">
-              <label for="filterStartDate">Start Date</label>
-              <input type="date" id="filterStartDate" />
-            </div>
-            <div class="field">
-              <label for="filterEndDate">End Date</label>
-              <input type="date" id="filterEndDate" />
-            </div>
-            <div class="field">
-              <label for="filterDepartment">Department</label>
-              <select id="filterDepartment">
-                <option value="">All Departments</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="filterEmployee">Employee</label>
-              <select id="filterEmployee">
-                <option value="">All Employees</option>
-              </select>
-            </div>
-            <div class="field filter-actions">
-              <label>&nbsp;</label>
-              <button id="resetFiltersBtn" class="btn secondary">Reset Filters</button>
-            </div>
-          </div>
+        <div class="kpi-card">
+          <h3>Accuracy</h3>
+          <div id="kpiAccuracy">0%</div>
         </div>
 
-        <div class="kpi-grid">
-          <div class="kpi-card" id="cardLaborProductivity">
-            <div class="kpi-title">Labor Productivity</div>
-            <div id="laborProductivityValue" class="kpi-value">0.00</div>
-            <div class="kpi-sub">Units / hour</div>
-          </div>
-
-          <div class="kpi-card" id="cardReceivingAccuracy">
-            <div class="kpi-title">Receiving Accuracy</div>
-            <div id="receivingAccuracyValue" class="kpi-value">0%</div>
-            <div class="kpi-sub">Correct receipts / total receipts</div>
-          </div>
-
-          <div class="kpi-card" id="cardPutawayAccuracy">
-            <div class="kpi-title">Putaway Accuracy</div>
-            <div id="putawayAccuracyValue" class="kpi-value">0%</div>
-            <div class="kpi-sub">Correct putaways / total putaways</div>
-          </div>
-
-          <div class="kpi-card" id="cardPickAccuracy">
-            <div class="kpi-title">Pick Accuracy</div>
-            <div id="pickAccuracyValue" class="kpi-value">0%</div>
-            <div class="kpi-sub">Correct picks / total picks</div>
-          </div>
-
-          <div class="kpi-card" id="cardOnTimeShipmentRate">
-            <div class="kpi-title">On-Time Shipment Rate</div>
-            <div id="onTimeShipmentRateValue" class="kpi-value">0%</div>
-            <div class="kpi-sub">On-time shipments / shipments</div>
-          </div>
-
-          <div class="kpi-card" id="cardAvgDockToStock">
-            <div class="kpi-title">Avg Dock-to-Stock</div>
-            <div id="avgDockToStockValue" class="kpi-value">0 min</div>
-            <div class="kpi-sub">Average minutes</div>
-          </div>
-
-          <div class="kpi-card" id="cardInventoryAccuracy">
-            <div class="kpi-title">Inventory Accuracy</div>
-            <div id="inventoryAccuracyValue" class="kpi-value">0%</div>
-            <div class="kpi-sub">Physical vs system</div>
-          </div>
-
-          <div class="kpi-card" id="cardSpaceUtilization">
-            <div class="kpi-title">Space Utilization</div>
-            <div id="spaceUtilizationValue" class="kpi-value">0%</div>
-            <div class="kpi-sub">Storage used / capacity</div>
-          </div>
-
-          <div class="kpi-card" id="cardDamageFreeRate">
-            <div class="kpi-title">Damage-Free Rate</div>
-            <div id="damageFreeRateValue" class="kpi-value">0%</div>
-            <div class="kpi-sub">Damage-free shipments / shipments</div>
-          </div>
-
-          <div class="kpi-card" id="cardAvgMeanTimeToShip">
-            <div class="kpi-title">Avg Mean Time to Ship</div>
-            <div id="avgMeanTimeToShipValue" class="kpi-value">0 min</div>
-            <div class="kpi-sub">Average minutes</div>
-          </div>
-
-          <div class="kpi-card" id="cardEquipmentDowntime">
-            <div class="kpi-title">Equipment Downtime</div>
-            <div id="equipmentDowntimeValue" class="kpi-value">0 min</div>
-            <div class="kpi-sub">Total downtime</div>
-          </div>
-
-          <div class="kpi-card" id="cardIncidents">
-            <div class="kpi-title">Incident Count</div>
-            <div id="incidentCountValue" class="kpi-value">0</div>
-            <div class="kpi-sub">Total incidents in filtered records</div>
-          </div>
+        <div class="kpi-card">
+          <h3>Speed</h3>
+          <div id="kpiSpeed">0</div>
         </div>
 
-        <div class="grid-two">
-          <div class="card">
-            <div class="card-head">
-              <h3>Department Summary</h3>
-            </div>
-            <div class="table-wrap">
-              <table id="departmentSummaryTable">
-                <thead>
-                  <tr>
-                    <th>Department</th>
-                    <th>Entries</th>
-                    <th>Units</th>
-                    <th>Hours</th>
-                    <th>Prod/Hr</th>
-                    <th>Errors</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head">
-              <h3>Employee Leaderboard</h3>
-            </div>
-            <div class="table-wrap">
-              <table id="employeeLeaderboardTable">
-                <thead>
-                  <tr>
-                    <th>Employee</th>
-                    <th>Entries</th>
-                    <th>Units</th>
-                    <th>Hours</th>
-                    <th>Prod/Hr</th>
-                    <th>Errors</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </div>
+        <div class="kpi-card">
+          <h3>Errors</h3>
+          <div id="kpiErrors">0</div>
         </div>
 
-        <div class="card">
-          <div class="card-head">
-            <h3>Daily Trend</h3>
-          </div>
-          <div class="table-wrap">
-            <table id="dailyTrendTable">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Entries</th>
-                  <th>Total Units</th>
-                  <th>Total Hours</th>
-                  <th>Prod/Hr</th>
-                  <th>Total Errors</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ENTRY -->
-      <section id="entryView" class="view">
-        <div class="section-head">
-          <h2>Daily KPI Entry</h2>
-          <p>Save daily activity by employee and department.</p>
+        <div class="kpi-card">
+          <h3>Efficiency Score</h3>
+          <div id="kpiEfficiency">0</div>
         </div>
 
-        <form id="entryForm" class="entry-form card">
-          <input type="hidden" id="editingId" />
+      </div>
 
-          <div class="form-grid">
-            <div class="field">
-              <label for="date">Date</label>
-              <input type="date" id="date" name="date" required />
-            </div>
+      <!-- CHART SECTION (future hook) -->
+      <div class="card">
+        <h3>Efficiency Trend</h3>
+        <canvas id="efficiencyChart"></canvas>
+      </div>
 
-            <div class="field">
-              <label for="employeeName">Employee Name</label>
-              <input type="text" id="employeeName" name="employeeName" required />
-            </div>
+    </section>
 
-            <div class="field">
-              <label for="department">Department</label>
-              <select id="department" name="department" required>
-                <option value="">Select Department</option>
-                <option>Receiving</option>
-                <option>Putaway</option>
-                <option>Picking</option>
-                <option>Shipping</option>
-                <option>Inventory</option>
-                <option>Operations</option>
-              </select>
-            </div>
+    <!-- =====================================================
+         DAILY ENTRY
+    ====================================================== -->
+    <section id="entry" class="view">
 
-            <div class="field">
-              <label for="hoursWorked">Hours Worked</label>
-              <input type="number" step="0.01" id="hoursWorked" name="hoursWorked" min="0" />
-            </div>
+      <h2>Daily Entry</h2>
 
-            <div class="field">
-              <label for="unitsProcessed">Units Processed</label>
-              <input type="number" id="unitsProcessed" name="unitsProcessed" min="0" />
-            </div>
+      <form id="entryForm" class="form">
 
-            <div class="field">
-              <label for="errors">Errors</label>
-              <input type="number" id="errors" name="errors" min="0" />
-            </div>
+        <input type="date" id="date" required />
+        <input type="text" id="employeeName" placeholder="Employee Name" required />
 
-            <div class="field">
-              <label for="dockToStock">Dock-to-Stock (min)</label>
-              <input type="number" id="dockToStock" name="dockToStock" min="0" />
-            </div>
+        <select id="department">
+          <option value="">Department</option>
+          <option>Receiving</option>
+          <option>Putaway</option>
+          <option>Picking</option>
+          <option>Shipping</option>
+          <option>Inventory</option>
+          <option>Operations</option>
+        </select>
 
-            <div class="field">
-              <label for="totalReceipts">Total Receipts</label>
-              <input type="number" id="totalReceipts" name="totalReceipts" min="0" />
-            </div>
+        <input type="number" id="unitsProcessed" placeholder="Units" />
+        <input type="number" id="hoursWorked" placeholder="Hours" />
+        <input type="number" id="errors" placeholder="Errors" />
 
-            <div class="field">
-              <label for="correctReceipts">Correct Receipts</label>
-              <input type="number" id="correctReceipts" name="correctReceipts" min="0" />
-            </div>
+        <button type="submit">Save Entry</button>
+      </form>
 
-            <div class="field">
-              <label for="totalPutaways">Total Putaways</label>
-              <input type="number" id="totalPutaways" name="totalPutaways" min="0" />
-            </div>
+    </section>
 
-            <div class="field">
-              <label for="correctPutaways">Correct Putaways</label>
-              <input type="number" id="correctPutaways" name="correctPutaways" min="0" />
-            </div>
+    <!-- =====================================================
+         RECORDS
+    ====================================================== -->
+    <section id="records" class="view">
 
-            <div class="field">
-              <label for="putawayTime">Putaway Time (min)</label>
-              <input type="number" id="putawayTime" name="putawayTime" min="0" />
-            </div>
+      <h2>Records</h2>
 
-            <div class="field">
-              <label for="inventoryCount">Physical Inventory Count</label>
-              <input type="number" id="inventoryCount" name="inventoryCount" min="0" />
-            </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Employee</th>
+            <th>Dept</th>
+            <th>Units</th>
+            <th>Hours</th>
+            <th>Errors</th>
+          </tr>
+        </thead>
+        <tbody id="recordsTable"></tbody>
+      </table>
 
-            <div class="field">
-              <label for="inventorySystemCount">System Inventory Count</label>
-              <input type="number" id="inventorySystemCount" name="inventorySystemCount" min="0" />
-            </div>
+    </section>
 
-            <div class="field">
-              <label for="shrinkageQty">Shrinkage Qty</label>
-              <input type="number" id="shrinkageQty" name="shrinkageQty" min="0" />
-            </div>
+    <!-- =====================================================
+         TARGETS
+    ====================================================== -->
+    <section id="targets" class="view">
 
-            <div class="field">
-              <label for="storageUsed">Storage Used</label>
-              <input type="number" id="storageUsed" name="storageUsed" min="0" />
-            </div>
+      <h2>KPI Targets</h2>
 
-            <div class="field">
-              <label for="storageCapacity">Storage Capacity</label>
-              <input type="number" id="storageCapacity" name="storageCapacity" min="0" />
-            </div>
+      <input type="number" id="targetProductivity" placeholder="Productivity Target"/>
+      <input type="number" id="targetAccuracy" placeholder="Accuracy Target"/>
+      <input type="number" id="targetErrors" placeholder="Max Errors"/>
 
-            <div class="field">
-              <label for="totalPicks">Total Picks</label>
-              <input type="number" id="totalPicks" name="totalPicks" min="0" />
-            </div>
+      <button id="saveTargetsBtn">Save Targets</button>
 
-            <div class="field">
-              <label for="correctPicks">Correct Picks</label>
-              <input type="number" id="correctPicks" name="correctPicks" min="0" />
-            </div>
+    </section>
 
-            <div class="field">
-              <label for="pickLines">Pick Lines</label>
-              <input type="number" id="pickLines" name="pickLines" min="0" />
-            </div>
+  </main>
+</div>
 
-            <div class="field">
-              <label for="travelTimePercent">Travel Time %</label>
-              <input type="number" step="0.01" id="travelTimePercent" name="travelTimePercent" min="0" />
-            </div>
+<script type="module" src="./src/app.js"></script>
 
-            <div class="field">
-              <label for="pickToShipTime">Pick-to-Ship Time (min)</label>
-              <input type="number" id="pickToShipTime" name="pickToShipTime" min="0" />
-            </div>
-
-            <div class="field">
-              <label for="costPerPick">Cost per Pick</label>
-              <input type="number" step="0.01" id="costPerPick" name="costPerPick" min="0" />
-            </div>
-
-            <div class="field">
-              <label for="shipments">Shipments</label>
-              <input type="number" id="shipments" name="shipments" min="0" />
-            </div>
-
-            <div class="field">
-              <label for="onTimeShipments">On-Time Shipments</label>
-              <input type="number" id="onTimeShipments" name="onTimeShipments" min="0" />
-            </div>
-
-            <div class="field">
-              <label for="damageFreeShipments">Damage-Free Shipments</label>
-              <input type="number" id="damageFreeShipments" name="damageFreeShipments" min="0" />
-            </div>
-
-            <div class="field">
-              <label for="shippingCost">Shipping Cost</label>
-              <input type="number" step="0.01" id="shippingCost" name="shippingCost" min="0" />
-            </div>
-
-            <div class="field">
-              <label for="meanTimeToShip">Mean Time to Ship (min)</label>
-              <input type="number" id="meanTimeToShip" name="meanTimeToShip" min="0" />
-            </div>
-
-            <div class="field">
-              <label for="equipmentDowntime">Equipment Downtime (min)</label>
-              <input type="number" id="equipmentDowntime" name="equipmentDowntime" min="0" />
-            </div>
-
-            <div class="field">
-              <label for="incidentCount">Incident Count</label>
-              <input type="number" id="incidentCount" name="incidentCount" min="0" />
-            </div>
-
-            <div class="field full-width">
-              <label for="notes">Notes</label>
-              <textarea id="notes" name="notes" rows="3"></textarea>
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button type="submit" class="btn primary" id="saveEntryBtn">Save Entry</button>
-            <button type="button" class="btn secondary" id="resetFormBtn">Reset Form</button>
-          </div>
-        </form>
-      </section>
-
-      <!-- RECORDS -->
-      <section id="recordsView" class="view">
-        <div class="section-head">
-          <h2>Records</h2>
-          <p>Edit or delete saved entries.</p>
-        </div>
-
-        <div class="card">
-          <div class="table-wrap">
-            <table id="recordsTable">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Employee</th>
-                  <th>Department</th>
-                  <th>Units</th>
-                  <th>Hours</th>
-                  <th>Prod/Hr</th>
-                  <th>Errors</th>
-                  <th>Shipments</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- TARGETS -->
-      <section id="targetsView" class="view">
-        <div class="section-head">
-          <h2>KPI Targets</h2>
-          <p>Set your KPI thresholds for dashboard status colors.</p>
-        </div>
-
-        <form id="targetsForm" class="card">
-          <div class="form-grid">
-            <div class="field">
-              <label for="targetLaborProductivity">Labor Productivity</label>
-              <input type="number" step="0.01" id="targetLaborProductivity" />
-            </div>
-            <div class="field">
-              <label for="targetReceivingAccuracy">Receiving Accuracy %</label>
-              <input type="number" step="0.01" id="targetReceivingAccuracy" />
-            </div>
-            <div class="field">
-              <label for="targetPutawayAccuracy">Putaway Accuracy %</label>
-              <input type="number" step="0.01" id="targetPutawayAccuracy" />
-            </div>
-            <div class="field">
-              <label for="targetPickAccuracy">Pick Accuracy %</label>
-              <input type="number" step="0.01" id="targetPickAccuracy" />
-            </div>
-            <div class="field">
-              <label for="targetOnTimeShipmentRate">On-Time Shipment Rate %</label>
-              <input type="number" step="0.01" id="targetOnTimeShipmentRate" />
-            </div>
-            <div class="field">
-              <label for="targetDamageFreeRate">Damage-Free Rate %</label>
-              <input type="number" step="0.01" id="targetDamageFreeRate" />
-            </div>
-            <div class="field">
-              <label for="targetDockToStock">Dock-to-Stock (min)</label>
-              <input type="number" step="0.01" id="targetDockToStock" />
-            </div>
-            <div class="field">
-              <label for="targetPutawayCycleTime">Putaway Time (min)</label>
-              <input type="number" step="0.01" id="targetPutawayCycleTime" />
-            </div>
-            <div class="field">
-              <label for="targetTravelTimePercent">Travel Time %</label>
-              <input type="number" step="0.01" id="targetTravelTimePercent" />
-            </div>
-            <div class="field">
-              <label for="targetEquipmentDowntime">Equipment Downtime (min)</label>
-              <input type="number" step="0.01" id="targetEquipmentDowntime" />
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button type="submit" class="btn primary">Save Targets</button>
-            <button type="button" class="btn secondary" id="resetTargetsBtn">Reset Targets</button>
-          </div>
-        </form>
-      </section>
-
-      <!-- HELP -->
-      <section id="helpView" class="view">
-        <div class="section-head">
-          <h2>Help</h2>
-        </div>
-
-        <div class="card help-card">
-          <p><strong>Data storage:</strong> This app saves records in your browser using localStorage.</p>
-          <p><strong>GitHub Pages:</strong> Upload these files to your repo root and enable Pages.</p>
-          <p><strong>Editing:</strong> Go to Records and click Edit to load a record back into the form.</p>
-          <p><strong>Dashboard:</strong> Filters update the KPI cards and tables automatically.</p>
-          <p><strong>Heads up:</strong> localStorage stays on the device/browser being used.</p>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <script src="app.js"></script>
 </body>
 </html>
