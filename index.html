@@ -1,152 +1,517 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Warehouse KPI System</title>
-
-<style>
-body {
-  margin: 0;
-  font-family: Arial;
-  background: #f4f7fb;
-}
-
-/* NAV */
-.nav {
-  display: flex;
-  gap: 10px;
-  padding: 10px;
-  background: #0f2747;
-  color: white;
-}
-
-.nav button {
-  padding: 10px;
-  border: none;
-  cursor: pointer;
-  background: #1c3a5f;
-  color: white;
-  font-weight: bold;
-  border-radius: 6px;
-}
-
-.nav button.active {
-  background: #1f6fff;
-}
-
-/* LAYOUT */
-.container {
-  display: none;
-  padding: 15px;
-}
-
-.container.active {
-  display: block;
-}
-
-.dashboard {
-  display: flex;
-  gap: 10px;
-}
-
-/* DEPARTMENTS */
-.depts {
-  width: 200px;
-  background: white;
-  padding: 10px;
-}
-
-.depts button {
-  display: block;
-  width: 100%;
-  margin-bottom: 5px;
-  padding: 10px;
-  border: none;
-  background: #eef2f7;
-  cursor: pointer;
-  border-radius: 6px;
-}
-
-.depts button.active {
-  background: #1f6fff;
-  color: white;
-}
-
-/* KPI */
-.kpis {
-  flex: 1;
-}
-
-.card {
-  background: white;
-  padding: 10px;
-  margin-bottom: 10px;
-  border-radius: 6px;
-}
-
-/* TABLE */
-table {
-  width: 100%;
-  background: white;
-  border-collapse: collapse;
-}
-
-th, td {
-  border: 1px solid #ddd;
-  padding: 8px;
-}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Warehouse Control Center</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-
 <body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">W</div>
+        <div>
+          <h2>WarehouseOS</h2>
+          <p>Command Center</p>
+        </div>
+      </div>
 
-<div class="nav">
-  <button data-view="dashboard" class="active">Dashboard</button>
-  <button data-view="entry">Entry</button>
-  <button data-view="records">Records</button>
-</div>
+      <div class="shift-box">
+        <label for="shiftSelect">Shift</label>
+        <select id="shiftSelect">
+          <option value="Day Shift">Day Shift</option>
+          <option value="Swing Shift">Swing Shift</option>
+          <option value="Night Shift">Night Shift</option>
+        </select>
+      </div>
 
-<!-- DASHBOARD -->
-<div id="dashboard" class="container active">
-  <div class="dashboard">
+      <nav class="nav-menu">
+        <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+        <button class="nav-btn" data-view="operations">Operations</button>
+        <button class="nav-btn" data-view="inventory">Inventory</button>
+        <button class="nav-btn" data-view="receiving">Receiving</button>
+        <button class="nav-btn" data-view="labor">Labor</button>
+        <button class="nav-btn" data-view="quality">Quality</button>
+        <button class="nav-btn" data-view="reports">Reports</button>
+      </nav>
+    </aside>
 
-    <div class="depts">
-      <button class="dept active" data-dept="receiving">Receiving</button>
-      <button class="dept" data-dept="picking">Picking</button>
-      <button class="dept" data-dept="shipping">Shipping</button>
-      <button class="dept" data-dept="inventory">Inventory</button>
-      <button class="dept" data-dept="operations">Operations</button>
-    </div>
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <h1>Warehouse Control Center</h1>
+          <p>Run tasks, receiving, labor, counts, safety, and reports in one place.</p>
+        </div>
 
-    <div class="kpis">
-      <h2 id="deptTitle">Receiving</h2>
-      <div id="kpiBox"></div>
-    </div>
+        <div class="topbar-actions">
+          <input id="globalSearch" type="text" placeholder="Search people, bins, trucks, items..." />
+          <button id="newActionBtn" class="primary-btn">+ New Action</button>
+        </div>
+      </header>
 
+      <!-- DASHBOARD -->
+      <section id="dashboardView" class="view active">
+        <div class="card-grid four">
+          <div class="card stat-card">
+            <h3>Orders Today</h3>
+            <div class="stat-value" id="dashboardOrders">438</div>
+            <p>Picked and packed</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Receiving Trucks</h3>
+            <div class="stat-value" id="dashboardTruckCount">0</div>
+            <p>Trucks logged today</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Cycle Counts</h3>
+            <div class="stat-value" id="dashboardCountCount">0</div>
+            <p>Counts entered</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Open Tasks</h3>
+            <div class="stat-value" id="dashboardTaskCount">0</div>
+            <p>Current task list</p>
+          </div>
+        </div>
+
+        <div class="card-grid four">
+          <div class="card stat-card alert-card">
+            <h3>Tasks Behind</h3>
+            <div class="stat-value" id="tasksBehind">0</div>
+            <p>Queued / pending / aging tasks</p>
+          </div>
+
+          <div class="card stat-card alert-card">
+            <h3>Low Inventory</h3>
+            <div class="stat-value" id="lowInventory">0</div>
+            <p>Low or out items</p>
+          </div>
+
+          <div class="card stat-card alert-card">
+            <h3>Active Trucks</h3>
+            <div class="stat-value" id="activeTrucks">0</div>
+            <p>Still on dock</p>
+          </div>
+
+          <div class="card stat-card alert-card">
+            <h3>Labor Issues</h3>
+            <div class="stat-value" id="laborIssues">0</div>
+            <p>Under goal today</p>
+          </div>
+        </div>
+
+        <div class="split-grid">
+          <div class="card">
+            <div class="section-head">
+              <h2>Operations Snapshot</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Task</th>
+                    <th>Owner</th>
+                    <th>Zone</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardTaskTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>Supervisor Notes</h2>
+            </div>
+            <textarea id="dashboardNoteInput" placeholder="Add shift notes, delays, wins, pain points, handoff notes..."></textarea>
+            <button id="saveDashboardNoteBtn" class="primary-btn full">Save Note</button>
+            <div id="dashboardNotesList" class="stack-list mt-16"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- OPERATIONS -->
+      <section id="operationsView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>Operations Command</h2>
+            <p>Manage tasks, timing, and floor execution.</p>
+          </div>
+          <button id="createTaskBtn" class="primary-btn">+ Create Task</button>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Task</th>
+                  <th>Owner</th>
+                  <th>Zone</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Age</th>
+                  <th>Risk</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="operationsTaskTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- INVENTORY -->
+      <section id="inventoryView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>Inventory Control</h2>
+            <p>Track items, bins, counts, and shortage risk.</p>
+          </div>
+          <div class="btn-row">
+            <button id="filtersBtn" class="secondary-btn">Filters</button>
+            <button id="newCountBtn" class="primary-btn">+ New Count</button>
+          </div>
+        </div>
+
+        <div id="inventoryFiltersPanel" class="card hidden">
+          <div class="filter-grid">
+            <div>
+              <label for="statusFilter">Status</label>
+              <select id="statusFilter">
+                <option value="all">All</option>
+                <option value="Healthy">Healthy</option>
+                <option value="Low">Low</option>
+                <option value="Out">Out</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="binFilter">Bin Contains</label>
+              <input id="binFilter" type="text" placeholder="A-10 or K05..." />
+            </div>
+
+            <div class="filter-actions">
+              <button id="applyInventoryFiltersBtn" class="primary-btn">Apply Filters</button>
+              <button id="clearInventoryFiltersBtn" class="secondary-btn">Clear</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-grid three">
+          <div class="card stat-card">
+            <h3>Accuracy</h3>
+            <div class="stat-value">98.4%</div>
+            <p>Last 7 days</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Shortage Risk</h3>
+            <div class="stat-value" id="inventoryLowCount">0</div>
+            <p>Low or empty items</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Total Items</h3>
+            <div class="stat-value" id="inventoryTotalCount">0</div>
+            <p>Visible rows</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Description</th>
+                  <th>On Hand</th>
+                  <th>Primary</th>
+                  <th>Overstock</th>
+                  <th>Bin</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- RECEIVING -->
+      <section id="receivingView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>Receiving & Inbound</h2>
+            <p>Track trucks, containers, OSDs, live dock time, and put away logs.</p>
+          </div>
+          <div class="btn-row">
+            <button id="addTruckBtn" class="primary-btn">+ Add Truck</button>
+            <button id="uploadPutawayBtn" class="primary-btn">+ Upload Put Away Log</button>
+          </div>
+        </div>
+
+        <div class="card-grid five">
+          <div class="card stat-card">
+            <h3>Trucks Today</h3>
+            <div class="stat-value" id="receivingTruckTotal">0</div>
+            <p>Total trucks logged</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Total OSDs</h3>
+            <div class="stat-value" id="receivingOsdTotal">0</div>
+            <p>OSDs logged today</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Total Containers</h3>
+            <div class="stat-value" id="receivingContainerTotal">0</div>
+            <p>Containers handled</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Active Timers</h3>
+            <div class="stat-value" id="receivingActiveTimers">0</div>
+            <p>Still on dock</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Avg Dock Time</h3>
+            <div class="stat-value" id="receivingAverageDockTime">00:00:00</div>
+            <p>Completed trucks only</p>
+          </div>
+        </div>
+
+        <div class="card-grid three">
+          <div class="card stat-card">
+            <h3>Put Away Logs</h3>
+            <div class="stat-value" id="putawayLogTotal">0</div>
+            <p>Total captured entries</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Unique Locations</h3>
+            <div class="stat-value" id="putawayLocationTotal">0</div>
+            <p>Bins captured</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Last Upload Entries</h3>
+            <div class="stat-value" id="putawayLastUploadCount">0</div>
+            <p>Entries found in latest image</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-head section-head-tight">
+            <div>
+              <h2>Inbound Truck Log</h2>
+              <p>Live timer and daily dock control.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Truck #</th>
+                  <th>Carrier</th>
+                  <th>Dock Door</th>
+                  <th>Containers</th>
+                  <th>OSDs</th>
+                  <th>Started</th>
+                  <th>Dock Timer</th>
+                  <th>Status</th>
+                  <th>Delay</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="receivingTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-head section-head-tight">
+            <div>
+              <h2>Put Away Log Capture</h2>
+              <p>Upload a put away log photo, count entries, and save location data.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Log / Item #</th>
+                  <th>Location</th>
+                  <th>Raw Line</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="putawayTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- LABOR -->
+      <section id="laborView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>Labor & Productivity</h2>
+            <p>Track performance and coaching.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Department</th>
+                  <th>Productivity</th>
+                  <th>Goal Status</th>
+                  <th>Errors</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="laborTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card mt-16">
+          <div class="section-head section-head-tight">
+            <h2>Coaching Log</h2>
+          </div>
+
+          <div class="form-grid">
+            <div>
+              <label for="coachEmployee">Employee</label>
+              <input id="coachEmployee" type="text" placeholder="Employee name" />
+            </div>
+
+            <div>
+              <label for="coachTopic">Topic</label>
+              <input id="coachTopic" type="text" placeholder="Safety, productivity, errors..." />
+            </div>
+
+            <div class="full-span">
+              <label for="coachNotes">Notes</label>
+              <textarea id="coachNotes" placeholder="What happened and what was reviewed?"></textarea>
+            </div>
+          </div>
+
+          <button id="saveCoachingBtn" class="primary-btn">Save Coaching Entry</button>
+          <div id="coachingList" class="stack-list mt-16"></div>
+        </div>
+      </section>
+
+      <!-- QUALITY -->
+      <section id="qualityView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>Quality & Safety</h2>
+            <p>Track incidents and warehouse issues.</p>
+          </div>
+          <button id="addIncidentBtn" class="primary-btn">+ Add Incident</button>
+        </div>
+
+        <div class="card-grid three">
+          <div class="card stat-card">
+            <h3>Total Incidents</h3>
+            <div class="stat-value" id="qualityTotalCount">0</div>
+            <p>Saved incidents</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>High Severity</h3>
+            <div class="stat-value" id="qualityHighCount">0</div>
+            <p>Immediate attention</p>
+          </div>
+
+          <div class="card stat-card">
+            <h3>Top Area</h3>
+            <div class="stat-value text-lg" id="qualityTopArea">None</div>
+            <p>Most repeated issue area</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Area</th>
+                  <th>Severity</th>
+                  <th>Owner</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="qualityTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- REPORTS -->
+      <section id="reportsView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>Reports & Exports</h2>
+            <p>Download simple warehouse reports.</p>
+          </div>
+        </div>
+
+        <div class="report-grid">
+          <div class="card report-card">
+            <h3>Daily Supervisor Report</h3>
+            <p>Tasks, notes, trucks, counts, and coaching.</p>
+            <button class="primary-btn generate-report-btn" data-report="supervisor">Generate</button>
+          </div>
+
+          <div class="card report-card">
+            <h3>Receiving Report</h3>
+            <p>Truck totals, dock times, OSDs, containers, and put away logs.</p>
+            <button class="primary-btn generate-report-btn" data-report="receiving">Generate</button>
+          </div>
+
+          <div class="card report-card">
+            <h3>Inventory Report</h3>
+            <p>Visible inventory rows and count history.</p>
+            <button class="primary-btn generate-report-btn" data-report="inventory">Generate</button>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
-</div>
 
-<!-- ENTRY -->
-<div id="entry" class="container">
-  <h2>Daily Entry</h2>
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="modalTitle">Modal</h2>
+        <button id="closeModalBtn" class="modal-close">&times;</button>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
 
-  <input id="date" type="date"/>
-  <input id="employee" placeholder="Employee"/>
-  <input id="department" placeholder="Department"/>
-  <input id="units" type="number" placeholder="Units"/>
-  <input id="hours" type="number" placeholder="Hours"/>
+  <div id="toast" class="toast hidden"></div>
 
-  <button id="saveBtn">Save</button>
-</div>
-
-<!-- RECORDS -->
-<div id="records" class="container">
-  <h2>Records</h2>
-  <div id="tableBox"></div>
-</div>
-
-<script src="app.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
