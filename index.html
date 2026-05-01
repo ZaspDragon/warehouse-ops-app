@@ -1,658 +1,511 @@
-import React, { useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import {
-  LayoutDashboard,
-  Package,
-  ClipboardList,
-  Truck,
-  ScanLine,
-  AlertTriangle,
-  Users,
-  BarChart3,
-  Search,
-  Plus,
-  CheckCircle2,
-  Clock3,
-  Target,
-  FileText,
-  Filter,
-  ArrowUpRight,
-  MapPinned,
-  Shield,
-  Wrench,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Warehouse Ops App</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
 
-const mockKpis = {
-  ordersToday: 438,
-  linesPicked: 2871,
-  receivingToday: 126,
-  cycleCounts: 184,
-  openIssues: 9,
-  onTimeRate: 96,
-  inventoryAccuracy: 98.4,
-  laborUtilization: 87,
-};
+<div class="app-shell">
 
-const mockEmployees = [
-  { name: "Kris", role: "Lift Driver", department: "Putaway", productivity: 94, errors: 1, status: "On Floor" },
-  { name: "Henry", role: "Lift Driver", department: "Replenishment", productivity: 88, errors: 2, status: "On Floor" },
-  { name: "Dawitt", role: "Inventory", department: "Cycle Count", productivity: 91, errors: 0, status: "Counting" },
-  { name: "Yussif", role: "Lift Driver", department: "Putaway", productivity: 79, errors: 3, status: "Downtime" },
-  { name: "Alicia", role: "Receiving Lead", department: "Receiving", productivity: 97, errors: 0, status: "Supervising" },
-];
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">W</div>
+      <div>
+        <h2>Warehouse Ops</h2>
+        <p>Operations Dashboard</p>
+      </div>
+    </div>
 
-const mockTasks = [
-  { id: "T-1042", task: "Putaway pallet", priority: "High", owner: "Kris", zone: "A-10-3", status: "Active" },
-  { id: "T-1043", task: "Replenish primary", priority: "High", owner: "Henry", zone: "K05-2", status: "Queued" },
-  { id: "T-1044", task: "Cycle count", priority: "Medium", owner: "Dawitt", zone: "L4-2", status: "Active" },
-  { id: "T-1045", task: "Damage review", priority: "Low", owner: "Alicia", zone: "QC", status: "Pending" },
-];
+    <div class="shift-box">
+      <label>Shift</label>
+      <select>
+        <option>1st Shift — Day</option>
+        <option>2nd Shift — Swing</option>
+        <option>3rd Shift — Night</option>
+      </select>
+    </div>
 
-const mockInventory = [
-  { item: "607529", desc: "Valve Assembly", onHand: 42, primary: 8, overstock: 34, bin: "A-10-3", status: "Healthy" },
-  { item: "581220", desc: "PVC Fitting", onHand: 11, primary: 1, overstock: 10, bin: "B-04-1", status: "Low" },
-  { item: "775981", desc: "Drain Kit", onHand: 0, primary: 0, overstock: 0, bin: "C-12-2", status: "Out" },
-  { item: "431006", desc: "Copper Elbow", onHand: 76, primary: 12, overstock: 64, bin: "F-02-1", status: "Healthy" },
-];
+    <nav class="nav-menu">
+      <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+      <button class="nav-btn" data-view="operations">Operations</button>
+      <button class="nav-btn" data-view="inventory">Inventory</button>
+      <button class="nav-btn" data-view="receiving">Receiving</button>
+      <button class="nav-btn" data-view="labor">Labor &amp; Coaching</button>
+      <button class="nav-btn" data-view="quality">Quality &amp; Safety</button>
+      <button class="nav-btn" data-view="reports">Reports</button>
+    </nav>
+  </aside>
 
-const mockIncidents = [
-  { date: "2026-04-02", type: "Near Miss", area: "Receiving", severity: "Medium", owner: "Alicia" },
-  { date: "2026-04-02", type: "Inventory Variance", area: "Aisle K", severity: "High", owner: "Henry" },
-  { date: "2026-04-01", type: "Damaged Product", area: "Aisle A", severity: "Low", owner: "Kris" },
-];
+  <!-- MAIN CONTENT -->
+  <div class="main-content">
 
-const navItems = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "operations", label: "Operations", icon: ClipboardList },
-  { key: "inventory", label: "Inventory", icon: Package },
-  { key: "receiving", label: "Receiving", icon: Truck },
-  { key: "labor", label: "Labor", icon: Users },
-  { key: "quality", label: "Quality", icon: Shield },
-  { key: "maintenance", label: "Maintenance", icon: Wrench },
-  { key: "reports", label: "Reports", icon: BarChart3 },
-];
+    <!-- TOP BAR -->
+    <div class="topbar">
+      <div>
+        <h1>Warehouse Ops</h1>
+        <p>Real-time warehouse operations control panel</p>
+      </div>
+      <div class="topbar-actions">
+        <input id="globalSearch" type="text" placeholder="Search everything…" style="width:220px;border-radius:12px;padding:10px 12px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#fff;" />
+        <button id="newActionBtn" class="primary-btn">+ New Action</button>
+      </div>
+    </div>
 
-function KpiCard({ title, value, sub, icon: Icon }) {
-  return (
-    <Card className="rounded-2xl border-slate-200 shadow-sm">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm text-slate-500">{title}</p>
-            <div className="mt-2 text-3xl font-semibold text-slate-900">{value}</div>
-            <p className="mt-1 text-xs text-slate-500">{sub}</p>
-          </div>
-          <div className="rounded-2xl bg-blue-50 p-3 text-blue-700">
-            <Icon className="h-5 w-5" />
+    <!-- ===================== DASHBOARD ===================== -->
+    <div id="dashboardView" class="view active">
+
+      <div class="section-head">
+        <div>
+          <h2>Dashboard</h2>
+          <p>Shift overview — key metrics at a glance</p>
+        </div>
+      </div>
+
+      <div class="card-grid four">
+        <div class="card stat-card">
+          <h3>Open Tasks</h3>
+          <div class="stat-value" id="dashboardTaskCount">0</div>
+          <p>Active work items</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Tasks Behind</h3>
+          <div class="stat-value" id="tasksBehind">0</div>
+          <p>Queued / pending / at risk</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Trucks</h3>
+          <div class="stat-value" id="dashboardTruckCount">0</div>
+          <p>Receiving dock trucks</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Cycle Counts</h3>
+          <div class="stat-value" id="dashboardCountCount">0</div>
+          <p>Counts logged today</p>
+        </div>
+      </div>
+
+      <div class="card-grid four">
+        <div class="card stat-card">
+          <h3>Low Inventory</h3>
+          <div class="stat-value" id="lowInventory">0</div>
+          <p>Low or out-of-stock SKUs</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Active Timers</h3>
+          <div class="stat-value" id="activeTrucks">0</div>
+          <p>Trucks currently unloading</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Labor Issues</h3>
+          <div class="stat-value" id="laborIssues">0</div>
+          <p>Below productivity goal</p>
+        </div>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <h3>Task Summary</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Task</th>
+                  <th>Owner</th>
+                  <th>Zone</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardTaskTable"></tbody>
+            </table>
           </div>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
 
-function StatusBadge({ value }) {
-  const styles = {
-    Healthy: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    Low: "bg-amber-50 text-amber-700 border-amber-200",
-    Out: "bg-red-50 text-red-700 border-red-200",
-    Active: "bg-blue-50 text-blue-700 border-blue-200",
-    Queued: "bg-violet-50 text-violet-700 border-violet-200",
-    Pending: "bg-slate-100 text-slate-700 border-slate-200",
-    "On Floor": "bg-emerald-50 text-emerald-700 border-emerald-200",
-    Counting: "bg-blue-50 text-blue-700 border-blue-200",
-    Downtime: "bg-red-50 text-red-700 border-red-200",
-    Supervising: "bg-violet-50 text-violet-700 border-violet-200",
-    High: "bg-red-50 text-red-700 border-red-200",
-    Medium: "bg-amber-50 text-amber-700 border-amber-200",
-    LowPriority: "bg-slate-100 text-slate-700 border-slate-200",
-  };
-
-  return <Badge variant="outline" className={styles[value] || "bg-slate-50 text-slate-700 border-slate-200"}>{value}</Badge>;
-}
-
-function SectionTitle({ title, subtitle, action }) {
-  return (
-    <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
-        <p className="text-sm text-slate-500">{subtitle}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-export default function WarehouseOSApp() {
-  const [active, setActive] = useState("dashboard");
-  const [search, setSearch] = useState("");
-  const [shift, setShift] = useState("day");
-  const [newNote, setNewNote] = useState("");
-  const [notes, setNotes] = useState([
-    "Primary replenishment is running behind in A and K aisles.",
-    "Cycle count variance found on item 581220.",
-  ]);
-
-  const filteredEmployees = useMemo(() => {
-    return mockEmployees.filter((e) =>
-      `${e.name} ${e.role} ${e.department}`.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [search]);
-
-  const filteredInventory = useMemo(() => {
-    return mockInventory.filter((i) =>
-      `${i.item} ${i.desc} ${i.bin} ${i.status}`.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [search]);
-
-  const addNote = () => {
-    if (!newNote.trim()) return;
-    setNotes([newNote.trim(), ...notes]);
-    setNewNote("");
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[260px_1fr]">
-        <aside className="border-r border-slate-200 bg-white p-4 lg:p-5">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm">
-              <Package className="h-5 w-5" />
+        <div>
+          <div class="card">
+            <h3>Supervisor Notes</h3>
+            <div style="display:flex;gap:10px;margin-bottom:12px;">
+              <input id="dashboardNoteInput" type="text" placeholder="Add a note…" />
+              <button id="saveDashboardNoteBtn" class="primary-btn" style="white-space:nowrap;">Save</button>
             </div>
-            <div>
-              <div className="text-lg font-semibold">WarehouseOS</div>
-              <div className="text-xs text-slate-500">All-in-one operations hub</div>
-            </div>
+            <div id="dashboardNotesList" class="stack-list"></div>
           </div>
-
-          <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-slate-500">Shift</Label>
-            <Select value={shift} onValueChange={setShift}>
-              <SelectTrigger className="rounded-xl bg-white">
-                <SelectValue placeholder="Select shift" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="day">Day Shift</SelectItem>
-                <SelectItem value="swing">Swing Shift</SelectItem>
-                <SelectItem value="night">Night Shift</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <nav className="space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = active === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setActive(item.key)}
-                  className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${
-                    isActive ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  <Icon className="h-5 w-5" />
-                  <span className="text-sm font-medium">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          <Card className="mt-6 rounded-2xl border-slate-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Live Targets</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div>
-                <div className="mb-2 flex justify-between"><span>Order SLA</span><span>96%</span></div>
-                <Progress value={96} className="h-2" />
-              </div>
-              <div>
-                <div className="mb-2 flex justify-between"><span>Inventory Accuracy</span><span>98.4%</span></div>
-                <Progress value={98.4} className="h-2" />
-              </div>
-              <div>
-                <div className="mb-2 flex justify-between"><span>Labor Utilization</span><span>87%</span></div>
-                <Progress value={87} className="h-2" />
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
-
-        <main className="p-4 md:p-6 lg:p-8">
-          <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">Warehouse Control Center</h1>
-              <p className="mt-1 text-sm text-slate-500">Run inventory, labor, tasks, safety, receiving, and reporting from one place.</p>
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="relative min-w-[260px]">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search people, bins, items, tasks..."
-                  className="rounded-2xl border-slate-200 bg-white pl-9"
-                />
-              </div>
-              <Button className="rounded-2xl bg-blue-600 hover:bg-blue-700">
-                <Plus className="mr-2 h-4 w-4" />
-                New Action
-              </Button>
-            </div>
-          </div>
-
-          {active === "dashboard" && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <KpiCard title="Orders Today" value={mockKpis.ordersToday} sub="Picked and packed so far" icon={ClipboardList} />
-                <KpiCard title="Receiving" value={mockKpis.receivingToday} sub="Pallets/loads received" icon={Truck} />
-                <KpiCard title="Cycle Counts" value={mockKpis.cycleCounts} sub="Completed this shift" icon={ScanLine} />
-                <KpiCard title="Open Issues" value={mockKpis.openIssues} sub="Needs action or review" icon={AlertTriangle} />
-              </div>
-
-              <div className="grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
-                <Card className="rounded-3xl border-slate-200 shadow-sm">
-                  <CardHeader>
-                    <CardTitle>Operations Snapshot</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div className="rounded-2xl border border-slate-200 p-4">
-                        <div className="mb-2 flex items-center gap-2 text-sm text-slate-500"><Target className="h-4 w-4" /> On-Time Rate</div>
-                        <div className="text-3xl font-semibold">{mockKpis.onTimeRate}%</div>
-                        <p className="mt-1 text-xs text-slate-500">Current shipping performance</p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 p-4">
-                        <div className="mb-2 flex items-center gap-2 text-sm text-slate-500"><CheckCircle2 className="h-4 w-4" /> Inventory Accuracy</div>
-                        <div className="text-3xl font-semibold">{mockKpis.inventoryAccuracy}%</div>
-                        <p className="mt-1 text-xs text-slate-500">Based on recent counts</p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 p-4">
-                        <div className="mb-2 flex items-center gap-2 text-sm text-slate-500"><Clock3 className="h-4 w-4" /> Labor Utilization</div>
-                        <div className="text-3xl font-semibold">{mockKpis.laborUtilization}%</div>
-                        <p className="mt-1 text-xs text-slate-500">Tracked active work time</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Task</TableHead>
-                            <TableHead>Owner</TableHead>
-                            <TableHead>Zone</TableHead>
-                            <TableHead>Priority</TableHead>
-                            <TableHead>Status</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {mockTasks.map((task) => (
-                            <TableRow key={task.id}>
-                              <TableCell className="font-medium">{task.task}</TableCell>
-                              <TableCell>{task.owner}</TableCell>
-                              <TableCell>{task.zone}</TableCell>
-                              <TableCell><StatusBadge value={task.priority === "Low" ? "LowPriority" : task.priority} /></TableCell>
-                              <TableCell><StatusBadge value={task.status} /></TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="rounded-3xl border-slate-200 shadow-sm">
-                  <CardHeader>
-                    <CardTitle>Supervisor Notes</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <Textarea
-                        value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
-                        placeholder="Add shift notes, pain points, handoff info, delays, or coaching notes..."
-                        className="min-h-[110px] rounded-2xl border-slate-200"
-                      />
-                      <Button onClick={addNote} className="w-full rounded-2xl bg-blue-600 hover:bg-blue-700">Save Note</Button>
-                    </div>
-                    <div className="mt-5 space-y-3">
-                      {notes.map((note, idx) => (
-                        <div key={idx} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                          {note}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </motion.div>
-          )}
-
-          {active === "operations" && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-              <SectionTitle
-                title="Operations Command"
-                subtitle="Control tasks, pick flow, replenishment, and floor execution."
-                action={<Button className="rounded-2xl bg-blue-600 hover:bg-blue-700"><Plus className="mr-2 h-4 w-4" />Create Task</Button>}
-              />
-              <Card className="rounded-3xl border-slate-200 shadow-sm">
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>ID</TableHead>
-                        <TableHead>Task</TableHead>
-                        <TableHead>Owner</TableHead>
-                        <TableHead>Zone</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {mockTasks.map((task) => (
-                        <TableRow key={task.id}>
-                          <TableCell className="font-medium">{task.id}</TableCell>
-                          <TableCell>{task.task}</TableCell>
-                          <TableCell>{task.owner}</TableCell>
-                          <TableCell>{task.zone}</TableCell>
-                          <TableCell><StatusBadge value={task.priority === "Low" ? "LowPriority" : task.priority} /></TableCell>
-                          <TableCell><StatusBadge value={task.status} /></TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {active === "inventory" && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <SectionTitle
-                title="Inventory Control"
-                subtitle="Track items, primaries, overstock, shortages, and bin health."
-                action={
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="rounded-2xl"><Filter className="mr-2 h-4 w-4" />Filters</Button>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button className="rounded-2xl bg-blue-600 hover:bg-blue-700"><Plus className="mr-2 h-4 w-4" />New Count</Button>
-                      </DialogTrigger>
-                      <DialogContent className="rounded-3xl">
-                        <DialogHeader>
-                          <DialogTitle>Quick Inventory Entry</DialogTitle>
-                        </DialogHeader>
-                        <div className="grid gap-4">
-                          <div className="grid gap-2">
-                            <Label>Item Number</Label>
-                            <Input placeholder="607529" />
-                          </div>
-                          <div className="grid gap-2">
-                            <Label>Bin</Label>
-                            <Input placeholder="A-10-3" />
-                          </div>
-                          <div className="grid gap-2">
-                            <Label>Counted Quantity</Label>
-                            <Input type="number" placeholder="12" />
-                          </div>
-                          <Button className="rounded-2xl bg-blue-600 hover:bg-blue-700">Save Entry</Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                }
-              />
-
-              <div className="grid gap-4 md:grid-cols-3">
-                <KpiCard title="Accuracy" value="98.4%" sub="Last 7 days" icon={CheckCircle2} />
-                <KpiCard title="Short Picks Risk" value="12" sub="Items below primary min" icon={AlertTriangle} />
-                <KpiCard title="Open Variances" value="7" sub="Need recount or audit" icon={BarChart3} />
-              </div>
-
-              <Card className="rounded-3xl border-slate-200 shadow-sm">
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>On Hand</TableHead>
-                        <TableHead>Primary</TableHead>
-                        <TableHead>Overstock</TableHead>
-                        <TableHead>Bin</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredInventory.map((row) => (
-                        <TableRow key={row.item}>
-                          <TableCell className="font-medium">{row.item}</TableCell>
-                          <TableCell>{row.desc}</TableCell>
-                          <TableCell>{row.onHand}</TableCell>
-                          <TableCell>{row.primary}</TableCell>
-                          <TableCell>{row.overstock}</TableCell>
-                          <TableCell>{row.bin}</TableCell>
-                          <TableCell><StatusBadge value={row.status} /></TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {active === "receiving" && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <SectionTitle title="Receiving & Inbound" subtitle="Manage arrivals, unloads, damages, dock status, and receiving throughput." />
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <KpiCard title="Inbound Loads" value="18" sub="Scheduled today" icon={Truck} />
-                <KpiCard title="Received" value="126" sub="Pallets processed" icon={Package} />
-                <KpiCard title="Dock Utilization" value="82%" sub="Current dock usage" icon={MapPinned} />
-                <KpiCard title="Exceptions" value="5" sub="Damages or shortages" icon={AlertTriangle} />
-              </div>
-              <Card className="rounded-3xl border-slate-200 shadow-sm">
-                <CardHeader><CardTitle>Inbound Workflow</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    {[
-                      ["Check in trailer", "Verify appointment, PO, and dock door assignment"],
-                      ["Receive & inspect", "Count pallets, inspect damages, verify labels and paperwork"],
-                      ["Stage & release", "Assign putaway staging and hand off to floor team"],
-                    ].map(([title, desc]) => (
-                      <div key={title} className="rounded-2xl border border-slate-200 p-4">
-                        <div className="font-semibold">{title}</div>
-                        <p className="mt-2 text-sm text-slate-500">{desc}</p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {active === "labor" && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <SectionTitle title="Labor & Productivity" subtitle="Track employee output, downtime, coaching, and errors by shift or department." />
-              <Tabs defaultValue="people" className="space-y-4">
-                <TabsList className="rounded-2xl bg-white border border-slate-200 p-1">
-                  <TabsTrigger value="people" className="rounded-xl">People</TabsTrigger>
-                  <TabsTrigger value="leaderboard" className="rounded-xl">Leaderboard</TabsTrigger>
-                  <TabsTrigger value="coaching" className="rounded-xl">Coaching</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="people">
-                  <Card className="rounded-3xl border-slate-200 shadow-sm">
-                    <CardContent className="p-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Role</TableHead>
-                            <TableHead>Department</TableHead>
-                            <TableHead>Productivity</TableHead>
-                            <TableHead>Errors</TableHead>
-                            <TableHead>Status</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredEmployees.map((emp) => (
-                            <TableRow key={emp.name}>
-                              <TableCell className="font-medium">{emp.name}</TableCell>
-                              <TableCell>{emp.role}</TableCell>
-                              <TableCell>{emp.department}</TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <div className="w-24"><Progress value={emp.productivity} className="h-2" /></div>
-                                  <span className="text-sm font-medium">{emp.productivity}%</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>{emp.errors}</TableCell>
-                              <TableCell><StatusBadge value={emp.status} /></TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-
-                <TabsContent value="leaderboard">
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {[...mockEmployees].sort((a, b) => b.productivity - a.productivity).map((emp, idx) => (
-                      <Card key={emp.name} className="rounded-3xl border-slate-200 shadow-sm">
-                        <CardContent className="p-5">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <div className="text-sm text-slate-500">Rank #{idx + 1}</div>
-                              <div className="mt-1 text-xl font-semibold">{emp.name}</div>
-                              <div className="text-sm text-slate-500">{emp.department}</div>
-                            </div>
-                            <div className="rounded-2xl bg-blue-50 p-3 text-blue-700"><ArrowUpRight className="h-5 w-5" /></div>
-                          </div>
-                          <div className="mt-4 text-3xl font-semibold">{emp.productivity}%</div>
-                          <p className="mt-1 text-sm text-slate-500">Errors: {emp.errors}</p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="coaching">
-                  <Card className="rounded-3xl border-slate-200 shadow-sm">
-                    <CardHeader><CardTitle>Coaching Log</CardTitle></CardHeader>
-                    <CardContent>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="grid gap-2">
-                          <Label>Employee</Label>
-                          <Input placeholder="Select or type employee name" />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Topic</Label>
-                          <Input placeholder="Safety, productivity, scan compliance..." />
-                        </div>
-                        <div className="md:col-span-2 grid gap-2">
-                          <Label>Coaching Notes</Label>
-                          <Textarea className="min-h-[120px] rounded-2xl" placeholder="What happened, what was reviewed, and what is the next expectation?" />
-                        </div>
-                      </div>
-                      <Button className="mt-4 rounded-2xl bg-blue-600 hover:bg-blue-700">Save Coaching Entry</Button>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-            </motion.div>
-          )}
-
-          {active === "quality" && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <SectionTitle title="Quality & Safety" subtitle="Track incidents, near misses, variances, damages, and corrective actions." />
-              <Card className="rounded-3xl border-slate-200 shadow-sm">
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Area</TableHead>
-                        <TableHead>Severity</TableHead>
-                        <TableHead>Owner</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {mockIncidents.map((incident, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>{incident.date}</TableCell>
-                          <TableCell>{incident.type}</TableCell>
-                          <TableCell>{incident.area}</TableCell>
-                          <TableCell><StatusBadge value={incident.severity} /></TableCell>
-                          <TableCell>{incident.owner}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {active === "maintenance" && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <SectionTitle title="Equipment & Maintenance" subtitle="Monitor forklift status, chargers, repairs, PM schedules, and out-of-service units." />
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <KpiCard title="Active Equipment" value="24" sub="Ready for use" icon={Wrench} />
-                <KpiCard title="PM Due" value="4" sub="Preventive maintenance due" icon={Clock3} />
-                <KpiCard title="Out of Service" value="2" sub="Currently unavailable" icon={AlertTriangle} />
-                <KpiCard title="Battery Issues" value="1" sub="Needs immediate attention" icon={Shield} />
-              </div>
-            </motion.div>
-          )}
-
-          {active === "reports" && (
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <SectionTitle title="Reports & Exports" subtitle="Generate daily reports, weekly summaries, productivity rollups, and leadership handoff documents." />
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {[
-                  ["Daily Supervisor Report", "Labor, issues, wins, and shift handoff"],
-                  ["Inventory Variance Report", "Count errors, adjustments, and root causes"],
-                  ["Receiving Throughput Report", "Loads, pallets, dock time, and damages"],
-                  ["Employee Productivity Report", "Output, downtime, and error trends"],
-                  ["Safety Incident Log", "Near misses, damage, and corrective actions"],
-                  ["Equipment Status Report", "Forklift uptime, PM, and battery health"],
-                ].map(([title, desc]) => (
-                  <Card key={title} className="rounded-3xl border-slate-200 shadow-sm">
-                    <CardContent className="p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-lg font-semibold">{title}</div>
-                          <p className="mt-2 text-sm text-slate-500">{desc}</p>
-                        </div>
-                        <div className="rounded-2xl bg-blue-50 p-3 text-blue-700">
-                          <FileText className="h-5 w-5" />
-                        </div>
-                      </div>
-                      <Button className="mt-4 w-full rounded-2xl bg-blue-600 hover:bg-blue-700">Generate</Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </main>
+        </div>
       </div>
     </div>
-  );
-}
+
+    <!-- ===================== OPERATIONS ===================== -->
+    <div id="operationsView" class="view">
+
+      <div class="section-head">
+        <div>
+          <h2>Operations</h2>
+          <p>Create, manage, and advance work tasks</p>
+        </div>
+        <div class="btn-row">
+          <button id="createTaskBtn" class="primary-btn">+ Create Task</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Task</th>
+                <th>Owner</th>
+                <th>Zone</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Age</th>
+                <th>Risk</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="operationsTaskTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== INVENTORY ===================== -->
+    <div id="inventoryView" class="view">
+
+      <div class="section-head">
+        <div>
+          <h2>Inventory</h2>
+          <p>Stock levels, cycle counts, and variance tracking</p>
+        </div>
+        <div class="btn-row">
+          <button id="filtersBtn" class="secondary-btn">Filters</button>
+          <button id="newCountBtn" class="primary-btn">+ New Count</button>
+        </div>
+      </div>
+
+      <div id="inventoryFiltersPanel" class="card hidden">
+        <div class="filter-grid">
+          <div>
+            <label>Status</label>
+            <select id="statusFilter">
+              <option value="all">All</option>
+              <option value="Healthy">Healthy</option>
+              <option value="Low">Low</option>
+              <option value="Out">Out</option>
+            </select>
+          </div>
+          <div>
+            <label>Bin</label>
+            <input id="binFilter" type="text" placeholder="e.g. A-10" />
+          </div>
+          <div class="btn-row" style="gap:8px;">
+            <button id="applyInventoryFiltersBtn" class="primary-btn">Apply</button>
+            <button id="clearInventoryFiltersBtn" class="secondary-btn">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-grid three">
+        <div class="card stat-card">
+          <h3>Total SKUs</h3>
+          <div class="stat-value" id="inventoryTotalCount">0</div>
+          <p>In current filter</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Low / Out</h3>
+          <div class="stat-value" id="inventoryLowCount">0</div>
+          <p>Need attention</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Description</th>
+                <th>On Hand</th>
+                <th>Primary</th>
+                <th>Overstock</th>
+                <th>Bin</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="inventoryTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== RECEIVING ===================== -->
+    <div id="receivingView" class="view">
+
+      <div class="section-head">
+        <div>
+          <h2>Receiving &amp; Dock</h2>
+          <p>Inbound trucks, dock timers, and put-away logs</p>
+        </div>
+        <div class="btn-row">
+          <button id="addTruckBtn" class="primary-btn">+ Add Truck</button>
+        </div>
+      </div>
+
+      <div class="card-grid five">
+        <div class="card stat-card">
+          <h3>Trucks</h3>
+          <div class="stat-value" id="receivingTruckTotal">0</div>
+          <p>Total logged</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Containers</h3>
+          <div class="stat-value" id="receivingContainerTotal">0</div>
+          <p>Total containers</p>
+        </div>
+        <div class="card stat-card">
+          <h3>OS&amp;Ds</h3>
+          <div class="stat-value" id="receivingOsdTotal">0</div>
+          <p>Overages, shortages, damages</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Active Timers</h3>
+          <div class="stat-value" id="receivingActiveTimers">0</div>
+          <p>Currently unloading</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Avg Dock Time</h3>
+          <div class="stat-value" id="receivingAverageDockTime">00:00:00</div>
+          <p>Completed trucks</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Truck Log</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Truck #</th>
+                <th>Carrier</th>
+                <th>Dock Door</th>
+                <th>Containers</th>
+                <th>OS&amp;Ds</th>
+                <th>Start Time</th>
+                <th>Elapsed</th>
+                <th>Status</th>
+                <th>Delay</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="receivingTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section-head" style="margin-top:24px;">
+        <div>
+          <h2>Put-Away Logs</h2>
+          <p>OCR-scanned put-away entries from label images</p>
+        </div>
+        <div class="btn-row">
+          <button id="uploadPutawayBtn" class="primary-btn">Upload Image</button>
+        </div>
+      </div>
+
+      <div class="card-grid three">
+        <div class="card stat-card">
+          <h3>Total Logs</h3>
+          <div class="stat-value" id="putawayLogTotal">0</div>
+          <p>Put-away entries</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Unique Locations</h3>
+          <div class="stat-value" id="putawayLocationTotal">0</div>
+          <p>Distinct bins/locations</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Last Upload</h3>
+          <div class="stat-value" id="putawayLastUploadCount">0</div>
+          <p>Lines parsed last</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Log #</th>
+                <th>Location</th>
+                <th>Raw Line</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="putawayTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== LABOR ===================== -->
+    <div id="laborView" class="view">
+
+      <div class="section-head">
+        <div>
+          <h2>Labor &amp; Productivity</h2>
+          <p>Employee performance, coaching, and status tracking</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Employee Performance</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Department</th>
+                <th>Productivity</th>
+                <th>Goal</th>
+                <th>Errors</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="laborTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>Coaching Log</h3>
+        <div class="form-grid">
+          <div>
+            <label>Employee</label>
+            <input id="coachEmployee" type="text" placeholder="Employee name" />
+          </div>
+          <div>
+            <label>Topic</label>
+            <input id="coachTopic" type="text" placeholder="Safety, productivity…" />
+          </div>
+          <div class="full-span">
+            <label>Notes</label>
+            <textarea id="coachNotes" placeholder="What was discussed and next steps?"></textarea>
+          </div>
+        </div>
+        <div class="mt-16">
+          <button id="saveCoachingBtn" class="primary-btn">Save Coaching Entry</button>
+        </div>
+      </div>
+
+      <div id="coachingList" class="stack-list" style="margin-top:16px;"></div>
+    </div>
+
+    <!-- ===================== QUALITY ===================== -->
+    <div id="qualityView" class="view">
+
+      <div class="section-head">
+        <div>
+          <h2>Quality &amp; Safety</h2>
+          <p>Track incidents, near misses, and corrective actions</p>
+        </div>
+        <div class="btn-row">
+          <button id="addIncidentBtn" class="primary-btn">+ Add Incident</button>
+        </div>
+      </div>
+
+      <div class="card-grid three">
+        <div class="card stat-card">
+          <h3>Total Incidents</h3>
+          <div class="stat-value" id="qualityTotalCount">0</div>
+          <p>All recorded</p>
+        </div>
+        <div class="card stat-card">
+          <h3>High Severity</h3>
+          <div class="stat-value" id="qualityHighCount">0</div>
+          <p>Need immediate attention</p>
+        </div>
+        <div class="card stat-card">
+          <h3>Top Issue Area</h3>
+          <div class="stat-value" id="qualityTopArea" style="font-size:1.2rem;">None</div>
+          <p>Most frequent area</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Area</th>
+                <th>Severity</th>
+                <th>Owner</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="qualityTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== REPORTS ===================== -->
+    <div id="reportsView" class="view">
+
+      <div class="section-head">
+        <div>
+          <h2>Reports &amp; Exports</h2>
+          <p>Generate and download shift reports</p>
+        </div>
+      </div>
+
+      <div class="report-grid">
+        <div class="card">
+          <h3>Daily Supervisor Report</h3>
+          <p style="margin-bottom:14px;">Open tasks, incidents, notes, coaching, and shift summary.</p>
+          <button class="primary-btn full generate-report-btn" data-report="supervisor">Generate Report</button>
+        </div>
+        <div class="card">
+          <h3>Receiving Report</h3>
+          <p style="margin-bottom:14px;">Truck log, dock times, OS&amp;Ds, and put-away entries.</p>
+          <button class="primary-btn full generate-report-btn" data-report="receiving">Generate Report</button>
+        </div>
+        <div class="card">
+          <h3>Inventory Report</h3>
+          <p style="margin-bottom:14px;">Stock levels, count history, and variance details.</p>
+          <button class="primary-btn full generate-report-btn" data-report="inventory">Generate Report</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end main-content -->
+
+</div><!-- end app-shell -->
+
+<!-- MODAL OVERLAY -->
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="modalTitle">Modal</h2>
+      <button id="closeModalBtn" class="modal-close">&times;</button>
+    </div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<!-- TOAST NOTIFICATION -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- SCRIPTS -->
+<script src="app.js"></script>
+
+</body>
+</html>
