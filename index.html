@@ -3,41 +3,73 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Warehouse Ops App</title>
+  <title>WarehouseOS — Operations Dashboard</title>
+  <meta name="description" content="Real-time warehouse operations dashboard with task management, inventory tracking, receiving dock timers, labor coaching, quality incidents, and shift reports." />
+  <meta property="og:title" content="WarehouseOS — Operations Dashboard" />
+  <meta property="og:description" content="Real-time warehouse operations control panel. Manage tasks, inventory, receiving, labor, quality, and reports from one dashboard." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231f6feb'/><text x='50' y='68' font-size='52' font-weight='900' text-anchor='middle' fill='white'>W</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
+<!-- MOBILE MENU -->
+<button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu">☰</button>
+<div class="mobile-overlay" id="mobileOverlay"></div>
+
 <div class="app-shell">
 
   <!-- SIDEBAR -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-icon">W</div>
       <div>
-        <h2>Warehouse Ops</h2>
+        <h2>WarehouseOS</h2>
         <p>Operations Dashboard</p>
       </div>
     </div>
 
     <div class="shift-box">
-      <label>Shift</label>
-      <select>
+      <label>Current Shift</label>
+      <select id="shiftSelect">
         <option>1st Shift — Day</option>
         <option>2nd Shift — Swing</option>
         <option>3rd Shift — Night</option>
       </select>
+      <div class="shift-clock" id="sidebarClock">--:--:-- --</div>
     </div>
 
     <nav class="nav-menu">
-      <button class="nav-btn active" data-view="dashboard">Dashboard</button>
-      <button class="nav-btn" data-view="operations">Operations</button>
-      <button class="nav-btn" data-view="inventory">Inventory</button>
-      <button class="nav-btn" data-view="receiving">Receiving</button>
-      <button class="nav-btn" data-view="labor">Labor &amp; Coaching</button>
-      <button class="nav-btn" data-view="quality">Quality &amp; Safety</button>
-      <button class="nav-btn" data-view="reports">Reports</button>
+      <button class="nav-btn active" data-view="dashboard">
+        <span class="nav-icon">📊</span> Dashboard
+      </button>
+      <button class="nav-btn" data-view="operations">
+        <span class="nav-icon">📋</span> Operations
+      </button>
+      <button class="nav-btn" data-view="inventory">
+        <span class="nav-icon">📦</span> Inventory
+      </button>
+      <button class="nav-btn" data-view="receiving">
+        <span class="nav-icon">🚛</span> Receiving &amp; Dock
+      </button>
+      <button class="nav-btn" data-view="labor">
+        <span class="nav-icon">👷</span> Labor &amp; Coaching
+      </button>
+      <button class="nav-btn" data-view="quality">
+        <span class="nav-icon">🛡️</span> Quality &amp; Safety
+      </button>
+      <button class="nav-btn" data-view="reports">
+        <span class="nav-icon">📄</span> Reports
+      </button>
     </nav>
+
+    <div class="sidebar-footer">
+      <button class="sidebar-reset-btn" id="resetDataBtn">Reset Demo Data</button>
+      <p class="sidebar-version">WarehouseOS v1.0 · Static Deploy</p>
+    </div>
   </aside>
 
   <!-- MAIN CONTENT -->
@@ -46,11 +78,11 @@
     <!-- TOP BAR -->
     <div class="topbar">
       <div>
-        <h1>Warehouse Ops</h1>
-        <p>Real-time warehouse operations control panel</p>
+        <h1 id="topbarTitle">Dashboard</h1>
+        <p id="topbarSubtitle">Shift overview — key metrics at a glance</p>
       </div>
       <div class="topbar-actions">
-        <input id="globalSearch" type="text" placeholder="Search everything…" style="width:220px;border-radius:12px;padding:10px 12px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#fff;" />
+        <input id="globalSearch" type="text" placeholder="🔍 Search everything…" />
         <button id="newActionBtn" class="primary-btn">+ New Action</button>
       </div>
     </div>
@@ -58,26 +90,32 @@
     <!-- ===================== DASHBOARD ===================== -->
     <div id="dashboardView" class="view active">
 
-      <div class="section-head">
-        <div>
-          <h2>Dashboard</h2>
-          <p>Shift overview — key metrics at a glance</p>
+      <div class="card-grid four">
+        <div class="card stat-card accent-blue">
+          <h3>Open Tasks</h3>
+          <div class="stat-value" id="dashboardTaskCount">0</div>
+          <p>Active work items</p>
+        </div>
+        <div class="card stat-card accent-yellow">
+          <h3>Tasks Behind</h3>
+          <div class="stat-value" id="tasksBehind">0</div>
+          <p>Queued / pending / at risk</p>
+        </div>
+        <div class="card stat-card accent-green">
+          <h3>Active Trucks</h3>
+          <div class="stat-value" id="activeTrucks">0</div>
+          <p>Currently unloading</p>
+        </div>
+        <div class="card stat-card accent-red">
+          <h3>Labor Issues</h3>
+          <div class="stat-value" id="laborIssues">0</div>
+          <p>Below productivity goal</p>
         </div>
       </div>
 
       <div class="card-grid four">
         <div class="card stat-card">
-          <h3>Open Tasks</h3>
-          <div class="stat-value" id="dashboardTaskCount">0</div>
-          <p>Active work items</p>
-        </div>
-        <div class="card stat-card">
-          <h3>Tasks Behind</h3>
-          <div class="stat-value" id="tasksBehind">0</div>
-          <p>Queued / pending / at risk</p>
-        </div>
-        <div class="card stat-card">
-          <h3>Trucks</h3>
+          <h3>Total Trucks</h3>
           <div class="stat-value" id="dashboardTruckCount">0</div>
           <p>Receiving dock trucks</p>
         </div>
@@ -86,29 +124,19 @@
           <div class="stat-value" id="dashboardCountCount">0</div>
           <p>Counts logged today</p>
         </div>
-      </div>
-
-      <div class="card-grid four">
         <div class="card stat-card">
           <h3>Low Inventory</h3>
           <div class="stat-value" id="lowInventory">0</div>
           <p>Low or out-of-stock SKUs</p>
         </div>
-        <div class="card stat-card">
-          <h3>Active Timers</h3>
-          <div class="stat-value" id="activeTrucks">0</div>
-          <p>Trucks currently unloading</p>
-        </div>
-        <div class="card stat-card">
-          <h3>Labor Issues</h3>
-          <div class="stat-value" id="laborIssues">0</div>
-          <p>Below productivity goal</p>
-        </div>
       </div>
 
       <div class="split-grid">
         <div class="card">
-          <h3>Task Summary</h3>
+          <div class="card-header">
+            <h3>Task Summary</h3>
+            <button class="small-btn export-csv-btn" data-export="dashboardTasks">Export CSV</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -129,9 +157,9 @@
         <div>
           <div class="card">
             <h3>Supervisor Notes</h3>
-            <div style="display:flex;gap:10px;margin-bottom:12px;">
-              <input id="dashboardNoteInput" type="text" placeholder="Add a note…" />
-              <button id="saveDashboardNoteBtn" class="primary-btn" style="white-space:nowrap;">Save</button>
+            <div class="note-input-row">
+              <input id="dashboardNoteInput" type="text" placeholder="Add a shift note…" />
+              <button id="saveDashboardNoteBtn" class="primary-btn">Save</button>
             </div>
             <div id="dashboardNotesList" class="stack-list"></div>
           </div>
@@ -148,6 +176,7 @@
           <p>Create, manage, and advance work tasks</p>
         </div>
         <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="operations">Export CSV</button>
           <button id="createTaskBtn" class="primary-btn">+ Create Task</button>
         </div>
       </div>
@@ -183,7 +212,8 @@
           <p>Stock levels, cycle counts, and variance tracking</p>
         </div>
         <div class="btn-row">
-          <button id="filtersBtn" class="secondary-btn">Filters</button>
+          <button class="small-btn export-csv-btn" data-export="inventory">Export CSV</button>
+          <button id="filtersBtn" class="secondary-btn">⚙ Filters</button>
           <button id="newCountBtn" class="primary-btn">+ New Count</button>
         </div>
       </div>
@@ -203,7 +233,7 @@
             <label>Bin</label>
             <input id="binFilter" type="text" placeholder="e.g. A-10" />
           </div>
-          <div class="btn-row" style="gap:8px;">
+          <div class="btn-row" style="gap:8px;align-self:end;">
             <button id="applyInventoryFiltersBtn" class="primary-btn">Apply</button>
             <button id="clearInventoryFiltersBtn" class="secondary-btn">Clear</button>
           </div>
@@ -211,12 +241,12 @@
       </div>
 
       <div class="card-grid three">
-        <div class="card stat-card">
+        <div class="card stat-card accent-blue">
           <h3>Total SKUs</h3>
           <div class="stat-value" id="inventoryTotalCount">0</div>
           <p>In current filter</p>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card accent-red">
           <h3>Low / Out</h3>
           <div class="stat-value" id="inventoryLowCount">0</div>
           <p>Need attention</p>
@@ -252,27 +282,28 @@
           <p>Inbound trucks, dock timers, and put-away logs</p>
         </div>
         <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="receiving">Export CSV</button>
           <button id="addTruckBtn" class="primary-btn">+ Add Truck</button>
         </div>
       </div>
 
       <div class="card-grid five">
-        <div class="card stat-card">
+        <div class="card stat-card accent-blue">
           <h3>Trucks</h3>
           <div class="stat-value" id="receivingTruckTotal">0</div>
           <p>Total logged</p>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card accent-green">
           <h3>Containers</h3>
           <div class="stat-value" id="receivingContainerTotal">0</div>
           <p>Total containers</p>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card accent-yellow">
           <h3>OS&amp;Ds</h3>
           <div class="stat-value" id="receivingOsdTotal">0</div>
           <p>Overages, shortages, damages</p>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card accent-green">
           <h3>Active Timers</h3>
           <div class="stat-value" id="receivingActiveTimers">0</div>
           <p>Currently unloading</p>
@@ -313,7 +344,7 @@
           <p>OCR-scanned put-away entries from label images</p>
         </div>
         <div class="btn-row">
-          <button id="uploadPutawayBtn" class="primary-btn">Upload Image</button>
+          <button id="uploadPutawayBtn" class="primary-btn">📷 Upload Image</button>
         </div>
       </div>
 
@@ -360,6 +391,9 @@
         <div>
           <h2>Labor &amp; Productivity</h2>
           <p>Employee performance, coaching, and status tracking</p>
+        </div>
+        <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="labor">Export CSV</button>
         </div>
       </div>
 
@@ -416,24 +450,25 @@
           <p>Track incidents, near misses, and corrective actions</p>
         </div>
         <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="quality">Export CSV</button>
           <button id="addIncidentBtn" class="primary-btn">+ Add Incident</button>
         </div>
       </div>
 
       <div class="card-grid three">
-        <div class="card stat-card">
+        <div class="card stat-card accent-blue">
           <h3>Total Incidents</h3>
           <div class="stat-value" id="qualityTotalCount">0</div>
           <p>All recorded</p>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card accent-red">
           <h3>High Severity</h3>
           <div class="stat-value" id="qualityHighCount">0</div>
           <p>Need immediate attention</p>
         </div>
-        <div class="card stat-card">
+        <div class="card stat-card accent-yellow">
           <h3>Top Issue Area</h3>
-          <div class="stat-value" id="qualityTopArea" style="font-size:1.2rem;">None</div>
+          <div class="stat-value" id="qualityTopArea" style="font-size:1.15rem;">None</div>
           <p>Most frequent area</p>
         </div>
       </div>
@@ -468,19 +503,22 @@
       </div>
 
       <div class="report-grid">
-        <div class="card">
+        <div class="card report-card">
+          <div class="report-icon">📊</div>
           <h3>Daily Supervisor Report</h3>
-          <p style="margin-bottom:14px;">Open tasks, incidents, notes, coaching, and shift summary.</p>
+          <p>Open tasks, incidents, notes, coaching, and full shift summary.</p>
           <button class="primary-btn full generate-report-btn" data-report="supervisor">Generate Report</button>
         </div>
-        <div class="card">
+        <div class="card report-card">
+          <div class="report-icon">🚛</div>
           <h3>Receiving Report</h3>
-          <p style="margin-bottom:14px;">Truck log, dock times, OS&amp;Ds, and put-away entries.</p>
+          <p>Truck log, dock times, OS&amp;Ds, and put-away entries.</p>
           <button class="primary-btn full generate-report-btn" data-report="receiving">Generate Report</button>
         </div>
-        <div class="card">
+        <div class="card report-card">
+          <div class="report-icon">📦</div>
           <h3>Inventory Report</h3>
-          <p style="margin-bottom:14px;">Stock levels, count history, and variance details.</p>
+          <p>Stock levels, count history, and variance details.</p>
           <button class="primary-btn full generate-report-btn" data-report="inventory">Generate Report</button>
         </div>
       </div>
@@ -505,6 +543,7 @@
 <div id="toast" class="toast hidden"></div>
 
 <!-- SCRIPTS -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="app.js"></script>
 
 </body>
