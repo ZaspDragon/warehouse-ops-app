@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Warehouse Logs — Put Away / Cycle Count / Order Picking</title>
+  <link rel="stylesheet" href="styles.css" />
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAAJgxXqBqKgvWnNIIBaG72iwiZ3PFykoU",
+      authDomain: "put-away-log-cw.firebaseapp.com",
+      projectId: "put-away-log-cw",
+      storageBucket: "put-away-log-cw.firebasestorage.app",
+      messagingSenderId: "23183103971",
+      appId: "1:23183103971:web:75f097b4270cd38874f2d6"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    window.auth = firebase.auth();
+    window.db = firebase.firestore();
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Warehouse Logs</h1>
+      <p>Put Away · Cycle Count · Order Picking · Employees</p>
+    </div>
+    <div class="top-actions">
+      <span id="userBadge">Signed out</span>
+      <button id="logoutBtn" class="danger hidden">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="loginPanel" class="card login-card">
+      <h2>Login</h2>
+      <p class="hint">Use Firebase email/password login. Reset password now works from this screen.</p>
+
+      <label>Email
+        <input id="emailInput" type="email" placeholder="email@example.com" />
+      </label>
+
+      <label>Password
+        <input id="passwordInput" type="password" placeholder="Password" />
+      </label>
+
+      <div class="actions">
+        <button id="loginBtn" class="primary">Login</button>
+        <button id="resetPasswordBtn">Reset Password</button>
+      </div>
+
+      <p id="loginMessage" class="message"></p>
+    </section>
+
+    <section id="appPanel" class="hidden">
+      <nav class="tabs">
+        <button class="tab active" data-tab="putaway">Put Away Log</button>
+        <button class="tab" data-tab="cycle">Cycle Count</button>
+        <button class="tab" data-tab="picking">Order Picking</button>
+        <button class="tab" data-tab="employees">Employees</button>
+      </nav>
+
+      <!-- PUT AWAY -->
+      <section id="putawayTab" class="tab-panel active">
+        <div class="card">
+          <h2>Put Away Log — 25 Lines</h2>
+          <div class="grid">
+            <label>Worker
+              <select id="putWorker"></select>
+            </label>
+            <label>Date
+              <input id="putDate" type="date" />
+            </label>
+            <label>Document / PO / SPO
+              <input id="putDoc" placeholder="SPO0219241" />
+            </label>
+          </div>
+
+          <div class="stats">
+            <div><strong id="putUsed">0</strong><span>Used Lines</span></div>
+            <div><strong id="putQty">0</strong><span>Total Qty</span></div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>#</th><th>Item #</th><th>Qty</th><th>Location</th><th>Notes</th></tr>
+              </thead>
+              <tbody id="putawayBody"></tbody>
+            </table>
+          </div>
+
+          <div class="actions">
+            <button id="savePutawayBtn" class="primary">Submit Put Away</button>
+            <button id="clearPutawayBtn">Clear Form</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Recent Put Away Logs</h3>
+          <button class="exportBtn" data-export="putaway">Export CSV</button>
+          <div class="table-wrap small">
+            <table>
+              <thead><tr><th>Date</th><th>Worker</th><th>Doc</th><th>Lines</th><th>Total Qty</th><th>Preview</th></tr></thead>
+              <tbody id="putawayLogBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- CYCLE COUNT -->
+      <section id="cycleTab" class="tab-panel">
+        <div class="card">
+          <h2>Cycle Count Worksheet — 25 Lines</h2>
+          <p class="hint">If the same item is counted from multiple locations, the app totals it automatically and shows variance.</p>
+
+          <div class="grid">
+            <label>Counter
+              <select id="cycleWorker"></select>
+            </label>
+            <label>Stock Count ID
+              <input id="cycleId" placeholder="COUNT-001" />
+            </label>
+            <label>Date
+              <input id="cycleDate" type="date" />
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>#</th><th>Item #</th><th>Description</th><th>Location</th><th>System Qty</th><th>Counted Qty</th><th>Variance</th><th>Reason</th><th>Done</th></tr>
+              </thead>
+              <tbody id="cycleBody"></tbody>
+            </table>
+          </div>
+
+          <div class="stats">
+            <div><strong id="cycleRows">0</strong><span>Rows Used</span></div>
+            <div><strong id="cycleDone">0</strong><span>Done</span></div>
+            <div><strong id="cycleVariance">0</strong><span>Variance Lines</span></div>
+          </div>
+
+          <h3>Auto Totals by Item</h3>
+          <div class="table-wrap small">
+            <table>
+              <thead><tr><th>Item</th><th>System Total</th><th>Counted Total</th><th>Variance</th><th>Status</th></tr></thead>
+              <tbody id="cycleSummaryBody"></tbody>
+            </table>
+          </div>
+
+          <div class="actions">
+            <button id="saveCycleBtn" class="primary">Save Cycle Count</button>
+            <button id="clearCycleBtn">Clear Form</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Saved Cycle Counts</h3>
+          <button class="exportBtn" data-export="cycle">Export CSV</button>
+          <div class="table-wrap small">
+            <table>
+              <thead><tr><th>Date</th><th>Counter</th><th>Count ID</th><th>Lines</th><th>Variance Lines</th></tr></thead>
+              <tbody id="cycleLogBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ORDER PICKING -->
+      <section id="pickingTab" class="tab-panel">
+        <div class="card">
+          <h2>Order Picking Worksheet — 25 Lines</h2>
+          <p class="hint">If one item is picked from multiple slots, the app totals picked qty and calculates remaining qty automatically.</p>
+
+          <div class="grid">
+            <label>Picker
+              <select id="pickWorker"></select>
+            </label>
+            <label>Order / Transfer #
+              <input id="pickOrder" placeholder="XFR / SO / Order #" />
+            </label>
+            <label>Date
+              <input id="pickDate" type="date" />
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>#</th><th>Item #</th><th>Description</th><th>From Slot</th><th>Required Qty</th><th>Picked Qty</th><th>Remaining</th><th>Status</th><th>Notes</th></tr>
+              </thead>
+              <tbody id="pickingBody"></tbody>
+            </table>
+          </div>
+
+          <div class="stats">
+            <div><strong id="pickRows">0</strong><span>Rows Used</span></div>
+            <div><strong id="pickQty">0</strong><span>Total Picked</span></div>
+            <div><strong id="pickIssues">0</strong><span>Issue Lines</span></div>
+          </div>
+
+          <h3>Auto Totals by Item</h3>
+          <div class="table-wrap small">
+            <table>
+              <thead><tr><th>Item</th><th>Required Total</th><th>Picked Total</th><th>Remaining</th><th>Status</th></tr></thead>
+              <tbody id="pickSummaryBody"></tbody>
+            </table>
+          </div>
+
+          <div class="actions">
+            <button id="savePickingBtn" class="primary">Save Picking Session</button>
+            <button id="clearPickingBtn">Clear Form</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Saved Picking Sessions</h3>
+          <button class="exportBtn" data-export="picking">Export CSV</button>
+          <div class="table-wrap small">
+            <table>
+              <thead><tr><th>Date</th><th>Picker</th><th>Order</th><th>Lines</th><th>Total Picked</th><th>Issues</th></tr></thead>
+              <tbody id="pickingLogBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- EMPLOYEES -->
+      <section id="employeesTab" class="tab-panel">
+        <div class="card">
+          <h2>Employee Management</h2>
+          <div class="grid">
+            <label>Employee Name
+              <input id="employeeName" placeholder="Worker name" />
+            </label>
+            <label>Role
+              <select id="employeeRole">
+                <option>Put Away</option>
+                <option>Cycle Count</option>
+                <option>Order Picking</option>
+                <option>Lead</option>
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button id="addEmployeeBtn" class="primary">Add Employee</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Active Employees</h3>
+          <div class="table-wrap small">
+            <table>
+              <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="employeeBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
