@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarehouseOS — Operations Dashboard</title>
+  <meta name="description" content="Warehouse operations dashboard with receiving, put-away logs, order picking, inventory, labor, quality, and reports." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAAJgxXqBqKgvWnNIIBaG72iwiZ3PFykoU",
+      authDomain: "put-away-log-cw.firebaseapp.com",
+      projectId: "put-away-log-cw",
+      storageBucket: "put-away-log-cw.firebasestorage.app",
+      messagingSenderId: "23183103971",
+      appId: "1:23183103971:web:75f097b4270cd38874f2d6"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    window.db = firebase.firestore();
+    window.auth = firebase.auth();
+  </script>
+</head>
+
+<body>
+<button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu">☰</button>
+<div class="mobile-overlay" id="mobileOverlay"></div>
+
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-icon">W</div>
+      <div>
+        <h2>WarehouseOS</h2>
+        <p>Operations Dashboard</p>
+      </div>
+    </div>
+
+    <div class="shift-box">
+      <label>Current Shift</label>
+      <select id="shiftSelect">
+        <option>1st Shift — Day</option>
+        <option>2nd Shift — Swing</option>
+        <option>3rd Shift — Night</option>
+      </select>
+      <div class="shift-clock" id="sidebarClock">--:--:--</div>
+      <div class="firebase-status" id="firebaseStatus">Firebase: connecting...</div>
+    </div>
+
+    <nav class="nav-menu">
+      <button class="nav-btn active" data-view="dashboard"><span>📊</span> Dashboard</button>
+      <button class="nav-btn" data-view="operations"><span>📋</span> Operations</button>
+      <button class="nav-btn" data-view="inventory"><span>📦</span> Inventory</button>
+      <button class="nav-btn" data-view="receiving"><span>🚛</span> Receiving & Dock</button>
+      <button class="nav-btn" data-view="orderPicking"><span>🧾</span> Order Picking</button>
+      <button class="nav-btn" data-view="labor"><span>👷</span> Labor & Coaching</button>
+      <button class="nav-btn" data-view="quality"><span>🛡️</span> Quality & Safety</button>
+      <button class="nav-btn" data-view="reports"><span>📄</span> Reports</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="sidebar-reset-btn" id="resetDataBtn">Reset Demo Data</button>
+      <p class="sidebar-version">WarehouseOS v2.0 · Firebase Put-Away + Picking</p>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <div class="topbar">
+      <div>
+        <h1 id="topbarTitle">Dashboard</h1>
+        <p id="topbarSubtitle">Shift overview — key metrics at a glance</p>
+      </div>
+      <div class="topbar-actions">
+        <input id="globalSearch" type="text" placeholder="🔍 Search everything…" />
+        <button id="newActionBtn" class="primary-btn">+ New Action</button>
+      </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section id="dashboardView" class="view active">
+      <div class="card-grid four">
+        <div class="card stat-card accent-blue"><h3>Open Tasks</h3><div class="stat-value" id="dashboardTaskCount">0</div><p>Active work items</p></div>
+        <div class="card stat-card accent-green"><h3>Active Trucks</h3><div class="stat-value" id="activeTrucks">0</div><p>Currently unloading</p></div>
+        <div class="card stat-card accent-yellow"><h3>Put-Away Logs</h3><div class="stat-value" id="dashboardPutawayCount">0</div><p>Saved entries</p></div>
+        <div class="card stat-card accent-red"><h3>Pick Lines</h3><div class="stat-value" id="dashboardPickCount">0</div><p>Order picking entries</p></div>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <div class="card-header">
+            <h3>Task Summary</h3>
+            <button class="small-btn export-csv-btn" data-export="tasks">Export CSV</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Task</th><th>Owner</th><th>Zone</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="dashboardTaskTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Supervisor Notes</h3>
+          <div class="note-input-row">
+            <input id="dashboardNoteInput" type="text" placeholder="Add a shift note…" />
+            <button id="saveDashboardNoteBtn" class="primary-btn">Save</button>
+          </div>
+          <div id="dashboardNotesList" class="stack-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- OPERATIONS -->
+    <section id="operationsView" class="view">
+      <div class="section-head">
+        <div><h2>Operations</h2><p>Create, manage, and advance work tasks</p></div>
+        <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="tasks">Export CSV</button>
+          <button id="createTaskBtn" class="primary-btn">+ Create Task</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Task</th><th>Owner</th><th>Zone</th><th>Priority</th><th>Status</th><th>Age</th><th>Actions</th></tr></thead>
+            <tbody id="operationsTaskTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- INVENTORY -->
+    <section id="inventoryView" class="view">
+      <div class="section-head">
+        <div><h2>Inventory</h2><p>Stock levels, cycle counts, and variance tracking</p></div>
+        <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="inventory">Export CSV</button>
+          <button id="newCountBtn" class="primary-btn">+ New Count</button>
+        </div>
+      </div>
+      <div class="card-grid three">
+        <div class="card stat-card accent-blue"><h3>Total SKUs</h3><div class="stat-value" id="inventoryTotalCount">0</div><p>Inventory records</p></div>
+        <div class="card stat-card accent-red"><h3>Low / Out</h3><div class="stat-value" id="inventoryLowCount">0</div><p>Need attention</p></div>
+        <div class="card stat-card accent-green"><h3>Counts</h3><div class="stat-value" id="inventoryCountTotal">0</div><p>Cycle counts saved</p></div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Item</th><th>Description</th><th>On Hand</th><th>Primary</th><th>Overstock</th><th>Bin</th><th>Status</th></tr></thead>
+            <tbody id="inventoryTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECEIVING -->
+    <section id="receivingView" class="view">
+      <div class="section-head">
+        <div><h2>Receiving & Dock</h2><p>Inbound trucks, dock timers, and put-away logs</p></div>
+        <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="receiving">Export CSV</button>
+          <button id="addTruckBtn" class="primary-btn">+ Add Truck</button>
+        </div>
+      </div>
+
+      <div class="card-grid five">
+        <div class="card stat-card accent-blue"><h3>Trucks</h3><div class="stat-value" id="receivingTruckTotal">0</div><p>Total logged</p></div>
+        <div class="card stat-card accent-green"><h3>Containers</h3><div class="stat-value" id="receivingContainerTotal">0</div><p>Total containers</p></div>
+        <div class="card stat-card accent-yellow"><h3>OS&Ds</h3><div class="stat-value" id="receivingOsdTotal">0</div><p>Over/short/damage</p></div>
+        <div class="card stat-card accent-green"><h3>Active Timers</h3><div class="stat-value" id="receivingActiveTimers">0</div><p>Currently unloading</p></div>
+        <div class="card stat-card"><h3>Avg Dock Time</h3><div class="stat-value" id="receivingAverageDockTime">00:00:00</div><p>Completed trucks</p></div>
+      </div>
+
+      <div class="card">
+        <h3>Truck Log</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Truck #</th><th>Carrier</th><th>Dock</th><th>Containers</th><th>OS&D</th><th>Start</th><th>Elapsed</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="receivingTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section-head" style="margin-top:24px;">
+        <div><h2>Put-Away Logs</h2><p>Manual or OCR-scanned put-away entries saved to Firebase</p></div>
+        <div class="btn-row">
+          <button id="manualPutawayBtn" class="secondary-btn">+ Manual Entry</button>
+          <button id="uploadPutawayBtn" class="primary-btn">📷 Upload Image / OCR</button>
+        </div>
+      </div>
+
+      <div class="card-grid three">
+        <div class="card stat-card"><h3>Total Logs</h3><div class="stat-value" id="putawayLogTotal">0</div><p>Put-away entries</p></div>
+        <div class="card stat-card"><h3>Unique Locations</h3><div class="stat-value" id="putawayLocationTotal">0</div><p>Distinct bins</p></div>
+        <div class="card stat-card"><h3>Last Upload</h3><div class="stat-value" id="putawayLastUploadCount">0</div><p>Lines parsed last</p></div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Location</th><th>Worker</th><th>PO/SPO</th><th>Raw Line</th><th>Actions</th></tr></thead>
+            <tbody id="putawayTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ORDER PICKING -->
+    <section id="orderPickingView" class="view">
+      <div class="section-head">
+        <div>
+          <h2>Order Picking</h2>
+          <p>Track what was picked, how much was picked, and from which slot/bin.</p>
+        </div>
+        <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="picks">Export CSV</button>
+          <button id="addPickBtn" class="primary-btn">+ Add Pick</button>
+        </div>
+      </div>
+
+      <div class="card-grid four">
+        <div class="card stat-card accent-blue"><h3>Pick Lines</h3><div class="stat-value" id="pickLineTotal">0</div><p>Total lines</p></div>
+        <div class="card stat-card accent-green"><h3>Total Qty</h3><div class="stat-value" id="pickQtyTotal">0</div><p>Units picked</p></div>
+        <div class="card stat-card accent-yellow"><h3>Pickers</h3><div class="stat-value" id="pickerTotal">0</div><p>Unique workers</p></div>
+        <div class="card stat-card accent-red"><h3>Shorts</h3><div class="stat-value" id="pickShortTotal">0</div><p>Short/issue lines</p></div>
+      </div>
+
+      <div class="card">
+        <h3>Quick Pick Entry</h3>
+        <div class="form-grid">
+          <div><label>Picker</label><input id="pickWorkerInput" placeholder="Picker name" /></div>
+          <div><label>Order / Transfer #</label><input id="pickOrderInput" placeholder="XFR / SO / Order #" /></div>
+          <div><label>Item #</label><input id="pickItemInput" placeholder="Item #" /></div>
+          <div><label>Qty Picked</label><input id="pickQtyInput" type="number" min="0" placeholder="Qty" /></div>
+          <div><label>From Slot / Bin</label><input id="pickSlotInput" placeholder="Example: B-20-2" /></div>
+          <div><label>Status</label><select id="pickStatusInput"><option>Picked</option><option>Short</option><option>Damaged</option><option>Wrong Slot</option></select></div>
+          <div class="full-span"><label>Notes</label><input id="pickNotesInput" placeholder="Optional notes" /></div>
+        </div>
+        <div class="mt-16"><button id="saveQuickPickBtn" class="primary-btn full">Save Pick Line</button></div>
+      </div>
+
+      <div class="card">
+        <h3>Picking Log</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Picker</th><th>Order</th><th>Item</th><th>Qty</th><th>From Slot</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
+            <tbody id="pickingTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- LABOR -->
+    <section id="laborView" class="view">
+      <div class="section-head">
+        <div><h2>Labor & Coaching</h2><p>Employee performance, coaching, and status tracking</p></div>
+        <button class="small-btn export-csv-btn" data-export="labor">Export CSV</button>
+      </div>
+      <div class="card">
+        <h3>Employee Performance</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Department</th><th>Productivity</th><th>Errors</th><th>Status</th></tr></thead>
+            <tbody id="laborTable"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Coaching Log</h3>
+        <div class="form-grid">
+          <div><label>Employee</label><input id="coachEmployee" placeholder="Employee name" /></div>
+          <div><label>Topic</label><input id="coachTopic" placeholder="Safety, productivity..." /></div>
+          <div class="full-span"><label>Notes</label><textarea id="coachNotes" placeholder="Coaching notes..."></textarea></div>
+        </div>
+        <div class="mt-16"><button id="saveCoachingBtn" class="primary-btn">Save Coaching</button></div>
+        <div id="coachingList" class="stack-list mt-16"></div>
+      </div>
+    </section>
+
+    <!-- QUALITY -->
+    <section id="qualityView" class="view">
+      <div class="section-head">
+        <div><h2>Quality & Safety</h2><p>Track incidents, near misses, and corrective actions</p></div>
+        <div class="btn-row">
+          <button class="small-btn export-csv-btn" data-export="quality">Export CSV</button>
+          <button id="addIncidentBtn" class="primary-btn">+ Add Incident</button>
+        </div>
+      </div>
+      <div class="card-grid three">
+        <div class="card stat-card accent-blue"><h3>Total Incidents</h3><div class="stat-value" id="qualityTotalCount">0</div><p>All logged</p></div>
+        <div class="card stat-card accent-red"><h3>High Severity</h3><div class="stat-value" id="qualityHighCount">0</div><p>Needs review</p></div>
+        <div class="card stat-card accent-yellow"><h3>Top Issue Area</h3><div class="stat-value" id="qualityTopArea">None</div><p>Most frequent</p></div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Area</th><th>Severity</th><th>Owner</th><th>Notes</th></tr></thead>
+            <tbody id="qualityTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPORTS -->
+    <section id="reportsView" class="view">
+      <div class="section-head"><div><h2>Reports & Exports</h2><p>Generate and download shift reports</p></div></div>
+      <div class="report-grid">
+        <div class="card report-card"><div class="report-icon">📊</div><h3>Daily Supervisor Report</h3><p>Tasks, trucks, put-away logs, picking, incidents, and notes.</p><button class="primary-btn full generate-report-btn" data-report="supervisor">Generate Report</button></div>
+        <div class="card report-card"><div class="report-icon">🚛</div><h3>Receiving Report</h3><p>Truck log, dock times, OS&Ds, and put-away entries.</p><button class="primary-btn full generate-report-btn" data-report="receiving">Generate Report</button></div>
+        <div class="card report-card"><div class="report-icon">🧾</div><h3>Picking Report</h3><p>Picker totals, order lines, slot usage, shorts, and issues.</p><button class="primary-btn full generate-report-btn" data-report="picking">Generate Report</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="modalTitle">Modal</h2>
+      <button id="closeModalBtn" class="modal-close">&times;</button>
+    </div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
