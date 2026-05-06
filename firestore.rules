@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Temporary working rules for this app while you test.
+    // These allow the web app to save put-away and order picking logs.
+    // Later, lock this down with Firebase Auth roles.
+
+    match /putAwayLogs/{logId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /orderPickingLogs/{logId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
