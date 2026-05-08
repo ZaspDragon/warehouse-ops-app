@@ -35,3 +35,95 @@ service cloud.firestore {
     }
   }
 }
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function myRole() {
+      return signedIn() && myUserDoc().data.role;
+    }
+
+    function isAdmin() {
+      return signedIn() && myRole() in ['admin', 'lead', 'platformOwner'];
+    }
+
+    function isWorker() {
+      return signedIn() && myRole() in ['worker', 'putAway', 'cycleCounter', 'orderPicker'];
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow create, update: if signedIn() && isAdmin();
+      allow delete: if false;
+    }
+
+    // Employees: only leads/admins can manage
+    match /employees/{employeeId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Put Away Logs
+    match /putAwayLogs/{logId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Cycle Counts
+    match /cycleCountSessions/{sessionId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Order Picking
+    match /orderPickingSessions/{sessionId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Other app collections
+    match /tasks/{taskId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /truckLogs/{truckId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /inventoryCounts/{countId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /qualityLogs/{logId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /coachingLogs/{logId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
