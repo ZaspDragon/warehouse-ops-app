@@ -20,99 +20,72 @@ service cloud.firestore {
         myRole() in ['admin', 'lead', 'platformOwner'];
     }
 
-    // =========================
-    // USERS
-    // =========================
     match /users/{userId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // =========================
-    // EMPLOYEES
-    // =========================
     match /employees/{employeeId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // =========================
-    // PUT AWAY LOGS
-    // =========================
     match /putAwayLogs/{logId} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }
 
-    // =========================
-    // CYCLE COUNT SESSIONS
-    // =========================
     match /cycleCountSessions/{sessionId} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }
 
-    // =========================
-    // ORDER PICKING SESSIONS
-    // =========================
     match /orderPickingSessions/{sessionId} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }
 
-    // =========================
-    // TASKS
-    // =========================
+    match /activityLogs/{activityId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
     match /tasks/{taskId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // =========================
-    // TRUCK LOGS
-    // =========================
     match /truckLogs/{truckId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // =========================
-    // INVENTORY COUNTS
-    // =========================
     match /inventoryCounts/{countId} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }
 
-    // =========================
-    // QUALITY LOGS
-    // =========================
     match /qualityLogs/{logId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // =========================
-    // COACHING LOGS
-    // =========================
     match /coachingLogs/{logId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // =========================
-    // DENY EVERYTHING ELSE
-    // =========================
     match /{document=**} {
       allow read, write: if false;
     }
