@@ -12,7 +12,8 @@ const COLLECTIONS = {
   employees: "employees",
   putaway: "putAwayLogs",
   cycle: "cycleCountSessions",
-  picking: "orderPickingSessions"
+  picking: "orderPickingSessions",
+  activity: "activityLogs"
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -124,7 +125,35 @@ function buildAllTables() {
   buildCycleRows();
   buildPickingRows();
 }
+async function saveActivityLogs(type, sessionDoc, lines) {
+  const batch = db.batch();
 
+  lines.forEach((line) => {
+    const ref = db.collection(COLLECTIONS.activity).doc();
+
+    batch.set(ref, {
+      type,
+      employee: sessionDoc.worker || sessionDoc.counter || sessionDoc.picker || "",
+      date: sessionDoc.date || "",
+      item: line.item || "",
+      description: line.description || "",
+      qty: line.qty || line.pickedQty || line.countedQty || 0,
+      systemQty: line.systemQty || 0,
+      countedQty: line.countedQty || 0,
+      variance: line.variance || 0,
+      location: line.location || line.slot || "",
+      documentNumber: sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
+      status: line.status || "",
+      reason: line.reason || "",
+      notes: line.notes || "",
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    });
+  });
+
+  await batch.commit();
+}
 function buildPutawayRows() {
   const body = $("putawayBody");
   body.innerHTML = "";
@@ -388,7 +417,8 @@ async function savePutaway() {
   };
 
   const ref = await db.collection(COLLECTIONS.putaway).add(doc);
-  state.putawayLogs.unshift({ id: ref.id, ...doc });
+await saveActivityLogs("putaway", doc, lines);
+state.putawayLogs.unshift({ id: ref.id, ...doc });
   renderLogs();
   clearRows("putawayBody");
   toast("Put away log saved.");
@@ -427,7 +457,8 @@ async function saveCycle() {
   };
 
   const ref = await db.collection(COLLECTIONS.cycle).add(doc);
-  state.cycleSessions.unshift({ id: ref.id, ...doc });
+await saveActivityLogs("cycleCount", doc, lines);
+state.cycleSessions.unshift({ id: ref.id, ...doc });
   renderLogs();
   clearRows("cycleBody");
   toast("Cycle count saved.");
@@ -467,7 +498,8 @@ async function savePicking() {
   };
 
   const ref = await db.collection(COLLECTIONS.picking).add(doc);
-  state.pickingSessions.unshift({ id: ref.id, ...doc });
+await saveActivityLogs("orderPicking", doc, lines);
+state.pickingSessions.unshift({ id: ref.id, ...doc });
   renderLogs();
   clearRows("pickingBody");
   toast("Picking session saved.");
