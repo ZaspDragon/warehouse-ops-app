@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Warehouse Logs — Put Away / Cycle Count / Order Picking</title>
+  <title>Warehouse Logs</title>
   <link rel="stylesheet" href="styles.css" />
 
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -32,7 +32,6 @@
       <h1>Warehouse Logs</h1>
       <p>Put Away · Cycle Count · Order Picking · Employees · History</p>
     </div>
-
     <div class="top-actions">
       <span id="userBadge">Signed out</span>
       <button id="logoutBtn" class="danger hidden">Logout</button>
@@ -42,7 +41,6 @@
   <main>
     <section id="loginPanel" class="card login-card">
       <h2>Login</h2>
-      <p class="hint">Use Firebase email/password login.</p>
 
       <label>Email
         <input id="emailInput" type="email" placeholder="email@example.com" />
@@ -85,11 +83,24 @@
             <label>Document / PO / SPO
               <input id="putDoc" placeholder="SPO0219241" />
             </label>
+
+            <label>Received Time
+              <input id="receivedTime" type="datetime-local" />
+            </label>
+
+            <label>Put Away Completed Time
+              <input id="stockedTime" type="datetime-local" />
+            </label>
+
+            <label>Dock-to-Stock Minutes
+              <input id="dockToStockMinutes" readonly />
+            </label>
           </div>
 
           <div class="stats">
             <div><strong id="putUsed">0</strong><span>Used Lines</span></div>
             <div><strong id="putQty">0</strong><span>Total Qty</span></div>
+            <div><strong id="dockToStockStat">0</strong><span>Dock-to-Stock Min</span></div>
           </div>
 
           <div class="table-wrap">
@@ -126,6 +137,7 @@
                   <th>Doc</th>
                   <th>Lines</th>
                   <th>Total Qty</th>
+                  <th>Dock-to-Stock</th>
                   <th>Preview</th>
                 </tr>
               </thead>
@@ -356,48 +368,11 @@
       <section id="historyTab" class="tab-panel">
         <div class="card">
           <h2>Warehouse Activity History</h2>
-          <p class="hint">Search saved put away, cycle count, and order picking line activity from Firebase.</p>
-
-          <div class="grid">
-            <label>Activity Type
-              <select id="historyType">
-                <option value="">All Types</option>
-                <option value="putaway">Put Away</option>
-                <option value="cycleCount">Cycle Count</option>
-                <option value="orderPicking">Order Picking</option>
-              </select>
-            </label>
-
-            <label>Employee
-              <input id="historyEmployee" placeholder="Employee name" />
-            </label>
-
-            <label>Item #
-              <input id="historyItem" placeholder="Item number" />
-            </label>
-
-            <label>Document / Order / Count ID
-              <input id="historyDoc" placeholder="Document #" />
-            </label>
-
-            <label>From Date
-              <input id="historyFrom" type="date" />
-            </label>
-
-            <label>To Date
-              <input id="historyTo" type="date" />
-            </label>
-          </div>
 
           <div class="actions">
-            <button id="searchHistoryBtn" class="primary">Search History</button>
-            <button id="clearHistoryBtn">Clear Filters</button>
+            <button id="refreshHistoryBtn" class="primary">Refresh History</button>
             <button id="exportHistoryBtn">Export History CSV</button>
           </div>
-        </div>
-
-        <div class="card">
-          <h3>Activity Logs</h3>
 
           <div class="table-wrap small">
             <table>
@@ -407,15 +382,11 @@
                   <th>Type</th>
                   <th>Employee</th>
                   <th>Item</th>
-                  <th>Description</th>
                   <th>Qty</th>
-                  <th>System</th>
-                  <th>Counted</th>
-                  <th>Variance</th>
                   <th>Location</th>
                   <th>Document</th>
+                  <th>Dock-to-Stock</th>
                   <th>Status / Reason</th>
-                  <th>Created By</th>
                 </tr>
               </thead>
               <tbody id="historyBody"></tbody>
