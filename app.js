@@ -1,11 +1,13 @@
 const $ = (id) => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
 const state = {
   user: null,
   employees: [],
   putawayLogs: [],
   cycleSessions: [],
-  pickingSessions: []
+  pickingSessions: [],
+  activityLogs: []
 };
 
 const COLLECTIONS = {
@@ -25,29 +27,36 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function setTodayDefaults() {
   const today = new Date().toISOString().slice(0, 10);
-  ["putDate", "cycleDate", "pickDate"].forEach(id => {
+
+  ["putDate", "cycleDate", "pickDate"].forEach((id) => {
     if ($(id)) $(id).value = today;
   });
 }
 
 function wireEvents() {
-  $("loginBtn").addEventListener("click", login);
-  $("resetPasswordBtn").addEventListener("click", resetPassword);
-  $("logoutBtn").addEventListener("click", () => auth.signOut());
+  $("loginBtn")?.addEventListener("click", login);
+  $("resetPasswordBtn")?.addEventListener("click", resetPassword);
+  $("logoutBtn")?.addEventListener("click", () => auth.signOut());
 
-  document.querySelectorAll(".tab").forEach(btn => {
+  document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
-  $("addEmployeeBtn").addEventListener("click", addEmployee);
-  $("savePutawayBtn").addEventListener("click", savePutaway);
-  $("clearPutawayBtn").addEventListener("click", () => clearRows("putawayBody"));
-  $("saveCycleBtn").addEventListener("click", saveCycle);
-  $("clearCycleBtn").addEventListener("click", () => clearRows("cycleBody"));
-  $("savePickingBtn").addEventListener("click", savePicking);
-  $("clearPickingBtn").addEventListener("click", () => clearRows("pickingBody"));
+  $("addEmployeeBtn")?.addEventListener("click", addEmployee);
 
-  document.querySelectorAll(".exportBtn").forEach(btn => {
+  $("savePutawayBtn")?.addEventListener("click", savePutaway);
+  $("clearPutawayBtn")?.addEventListener("click", () => clearRows("putawayBody"));
+
+  $("saveCycleBtn")?.addEventListener("click", saveCycle);
+  $("clearCycleBtn")?.addEventListener("click", () => clearRows("cycleBody"));
+
+  $("savePickingBtn")?.addEventListener("click", savePicking);
+  $("clearPickingBtn")?.addEventListener("click", () => clearRows("pickingBody"));
+
+  $("refreshHistoryBtn")?.addEventListener("click", loadHistory);
+  $("exportHistoryBtn")?.addEventListener("click", () => exportCsv("history"));
+
+  document.querySelectorAll(".exportBtn").forEach((btn) => {
     btn.addEventListener("click", () => exportCsv(btn.dataset.export));
   });
 
@@ -59,27 +68,48 @@ function wireEvents() {
 }
 
 function switchTab(tab) {
-  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-  $(`${tab}Tab`).classList.add("active");
+  document.querySelectorAll(".tab").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === tab);
+  });
+
+  document.querySelectorAll(".tab-panel").forEach((p) => {
+    p.classList.remove("active");
+  });
+
+  const panel = $(`${tab}Tab`);
+  if (panel) panel.classList.add("active");
+
+  if (tab === "history") {
+    loadHistory();
+  }
 }
 
 function watchAuth() {
-  auth.onAuthStateChanged(async user => {
+  auth.onAuthStateChanged(async (user) => {
     state.user = user;
-    $("loginPanel").classList.toggle("hidden", !!user);
-    $("appPanel").classList.toggle("hidden", !user);
-    $("logoutBtn").classList.toggle("hidden", !user);
-    $("userBadge").textContent = user ? user.email : "Signed out";
 
-    if (user) await loadAllData();
+    $("loginPanel")?.classList.toggle("hidden", !!user);
+    $("appPanel")?.classList.toggle("hidden", !user);
+    $("logoutBtn")?.classList.toggle("hidden", !user);
+
+    if ($("userBadge")) {
+      $("userBadge").textContent = user ? user.email : "Signed out";
+    }
+
+    if (user) {
+      await loadAllData();
+    }
   });
 }
 
 async function login() {
-  const email = $("emailInput").value.trim();
-  const password = $("passwordInput").value;
-  if (!email || !password) return setLoginMessage("Enter email and password.");
+  const email = $("emailInput")?.value.trim();
+  const password = $("passwordInput")?.value;
+
+  if (!email || !password) {
+    return setLoginMessage("Enter email and password.");
+  }
+
   try {
     await auth.signInWithEmailAndPassword(email, password);
     setLoginMessage("");
@@ -89,8 +119,12 @@ async function login() {
 }
 
 async function resetPassword() {
-  const email = $("emailInput").value.trim();
-  if (!email) return setLoginMessage("Enter your email first.");
+  const email = $("emailInput")?.value.trim();
+
+  if (!email) {
+    return setLoginMessage("Enter your email first.");
+  }
+
   try {
     await auth.sendPasswordResetEmail(email);
     setLoginMessage("Password reset email sent.");
@@ -100,24 +134,51 @@ async function resetPassword() {
 }
 
 function setLoginMessage(msg) {
-  $("loginMessage").textContent = msg;
+  if ($("loginMessage")) $("loginMessage").textContent = msg;
 }
 
 async function loadAllData() {
-  await Promise.all([
-    loadCollection(COLLECTIONS.employees, "employees"),
-    loadCollection(COLLECTIONS.putaway, "putawayLogs"),
-    loadCollection(COLLECTIONS.cycle, "cycleSessions"),
-    loadCollection(COLLECTIONS.picking, "pickingSessions")
-  ]);
-  renderEmployees();
-  renderLogs();
-  populateEmployeeDropdowns();
+  try {
+    await Promise.all([
+      loadCollection(COLLECTIONS.employees, "employees"),
+      loadCollection(COLLECTIONS.putaway, "putawayLogs"),
+      loadCollection(COLLECTIONS.cycle, "cycleSessions"),
+      loadCollection(COLLECTIONS.picking, "pickingSessions"),
+      loadCollection(COLLECTIONS.activity, "activityLogs")
+    ]);
+
+    renderEmployees();
+    renderLogs();
+    renderHistory();
+    populateEmployeeDropdowns();
+  } catch (err) {
+    console.error("Load data failed:", err);
+    toast("Load failed: " + err.message);
+  }
 }
 
 async function loadCollection(collection, key) {
-  const snap = await db.collection(collection).orderBy("createdAt", "desc").limit(200).get();
-  state[key] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const snap = await db
+    .collection(collection)
+    .orderBy("createdAt", "desc")
+    .limit(200)
+    .get();
+
+  state[key] = snap.docs.map((doc) => ({
+    id: doc.id,
+    ...doc.data()
+  }));
+}
+
+async function loadHistory() {
+  try {
+    await loadCollection(COLLECTIONS.activity, "activityLogs");
+    renderHistory();
+    toast("History refreshed.");
+  } catch (err) {
+    console.error("History load failed:", err);
+    toast("History failed: " + err.message);
+  }
 }
 
 function buildAllTables() {
@@ -125,7 +186,10 @@ function buildAllTables() {
   buildCycleRows();
   buildPickingRows();
 }
+
 async function saveActivityLogs(type, sessionDoc, lines) {
+  if (!lines.length) return;
+
   const batch = db.batch();
 
   lines.forEach((line) => {
@@ -137,12 +201,16 @@ async function saveActivityLogs(type, sessionDoc, lines) {
       date: sessionDoc.date || "",
       item: line.item || "",
       description: line.description || "",
-      qty: line.qty || line.pickedQty || line.countedQty || 0,
-      systemQty: line.systemQty || 0,
-      countedQty: line.countedQty || 0,
-      variance: line.variance || 0,
+      qty: Number(line.qty || line.pickedQty || line.countedQty || 0),
+      systemQty: Number(line.systemQty || 0),
+      countedQty: Number(line.countedQty || 0),
+      requiredQty: Number(line.requiredQty || 0),
+      pickedQty: Number(line.pickedQty || 0),
+      remainingQty: Number(line.remainingQty || 0),
+      variance: Number(line.variance || 0),
       location: line.location || line.slot || "",
-      documentNumber: sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
+      documentNumber:
+        sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
       status: line.status || "",
       reason: line.reason || "",
       notes: line.notes || "",
@@ -154,11 +222,17 @@ async function saveActivityLogs(type, sessionDoc, lines) {
 
   await batch.commit();
 }
+
 function buildPutawayRows() {
   const body = $("putawayBody");
+  if (!body) return;
+
   body.innerHTML = "";
+
   for (let i = 1; i <= 25; i++) {
-    body.insertAdjacentHTML("beforeend", `
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${i}</td>
         <td><input class="item-input put-item" placeholder="Item #" /></td>
@@ -166,15 +240,21 @@ function buildPutawayRows() {
         <td><input class="loc-input put-location" placeholder="Location" /></td>
         <td><input class="desc-input put-notes" placeholder="Notes" /></td>
       </tr>
-    `);
+    `
+    );
   }
 }
 
 function buildCycleRows() {
   const body = $("cycleBody");
+  if (!body) return;
+
   body.innerHTML = "";
+
   for (let i = 1; i <= 25; i++) {
-    body.insertAdjacentHTML("beforeend", `
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${i}</td>
         <td><input class="item-input cycle-item" placeholder="Item #" /></td>
@@ -198,15 +278,21 @@ function buildCycleRows() {
         </td>
         <td><input class="cycle-done" type="checkbox" /></td>
       </tr>
-    `);
+    `
+    );
   }
 }
 
 function buildPickingRows() {
   const body = $("pickingBody");
+  if (!body) return;
+
   body.innerHTML = "";
+
   for (let i = 1; i <= 25; i++) {
-    body.insertAdjacentHTML("beforeend", `
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${i}</td>
         <td><input class="item-input pick-item" placeholder="Item #" /></td>
@@ -226,7 +312,8 @@ function buildPickingRows() {
         </td>
         <td><input class="desc-input pick-notes" placeholder="Notes" /></td>
       </tr>
-    `);
+    `
+    );
   }
 }
 
@@ -241,26 +328,39 @@ function rowNumber(row, selector) {
 
 function updatePutawayStats() {
   const rows = [...document.querySelectorAll("#putawayBody tr")];
-  const used = rows.filter(r => rowValue(r, ".put-item") || rowValue(r, ".put-location") || rowNumber(r, ".put-qty")).length;
+
+  const used = rows.filter(
+    (r) =>
+      rowValue(r, ".put-item") ||
+      rowValue(r, ".put-location") ||
+      rowNumber(r, ".put-qty")
+  ).length;
+
   const qty = rows.reduce((sum, r) => sum + rowNumber(r, ".put-qty"), 0);
-  $("putUsed").textContent = used;
-  $("putQty").textContent = qty;
+
+  if ($("putUsed")) $("putUsed").textContent = used;
+  if ($("putQty")) $("putQty").textContent = qty;
 }
 
 function updateCycleStats() {
   const rows = [...document.querySelectorAll("#cycleBody tr")];
-  let used = 0, done = 0, varianceLines = 0;
+
+  let used = 0;
+  let done = 0;
+  let varianceLines = 0;
   const totals = {};
 
-  rows.forEach(row => {
+  rows.forEach((row) => {
     const item = rowValue(row, ".cycle-item");
     const system = rowNumber(row, ".cycle-system");
     const counted = rowNumber(row, ".cycle-counted");
     const variance = counted - system;
-    row.querySelector(".cycle-variance").textContent = variance;
+
+    const varianceCell = row.querySelector(".cycle-variance");
+    if (varianceCell) varianceCell.textContent = variance;
 
     if (item || system || counted) used++;
-    if (row.querySelector(".cycle-done").checked) done++;
+    if (row.querySelector(".cycle-done")?.checked) done++;
     if (variance !== 0 && (item || system || counted)) varianceLines++;
 
     if (item) {
@@ -270,42 +370,61 @@ function updateCycleStats() {
     }
   });
 
-  $("cycleRows").textContent = used;
-  $("cycleDone").textContent = done;
-  $("cycleVariance").textContent = varianceLines;
+  if ($("cycleRows")) $("cycleRows").textContent = used;
+  if ($("cycleDone")) $("cycleDone").textContent = done;
+  if ($("cycleVariance")) $("cycleVariance").textContent = varianceLines;
 
   const body = $("cycleSummaryBody");
+  if (!body) return;
+
   body.innerHTML = "";
+
   Object.entries(totals).forEach(([item, t]) => {
     const variance = t.counted - t.system;
-    body.insertAdjacentHTML("beforeend", `
+
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${escapeHtml(item)}</td>
         <td>${t.system}</td>
         <td>${t.counted}</td>
         <td>${variance}</td>
-        <td>${variance === 0 ? '<span class="badge ok">Balanced</span>' : '<span class="badge bad">Variance</span>'}</td>
+        <td>${
+          variance === 0
+            ? '<span class="badge ok">Balanced</span>'
+            : '<span class="badge bad">Variance</span>'
+        }</td>
       </tr>
-    `);
+    `
+    );
   });
 }
 
 function updatePickingStats() {
   const rows = [...document.querySelectorAll("#pickingBody tr")];
-  let used = 0, qty = 0, issues = 0;
+
+  let used = 0;
+  let qty = 0;
+  let issues = 0;
   const totals = {};
 
-  rows.forEach(row => {
+  rows.forEach((row) => {
     const item = rowValue(row, ".pick-item");
     const required = rowNumber(row, ".pick-required");
     const picked = rowNumber(row, ".pick-picked");
     const status = rowValue(row, ".pick-status");
     const remaining = required - picked;
-    row.querySelector(".pick-remaining").textContent = remaining;
+
+    const remainingCell = row.querySelector(".pick-remaining");
+    if (remainingCell) remainingCell.textContent = remaining;
 
     if (item || required || picked || rowValue(row, ".pick-slot")) used++;
     qty += picked;
-    if (["Short", "Damaged", "Wrong Slot", "Partial"].includes(status)) issues++;
+
+    if (["Short", "Damaged", "Wrong Slot", "Partial"].includes(status)) {
+      issues++;
+    }
 
     if (item) {
       totals[item] ||= { required: 0, picked: 0 };
@@ -314,77 +433,136 @@ function updatePickingStats() {
     }
   });
 
-  $("pickRows").textContent = used;
-  $("pickQty").textContent = qty;
-  $("pickIssues").textContent = issues;
+  if ($("pickRows")) $("pickRows").textContent = used;
+  if ($("pickQty")) $("pickQty").textContent = qty;
+  if ($("pickIssues")) $("pickIssues").textContent = issues;
 
   const body = $("pickSummaryBody");
+  if (!body) return;
+
   body.innerHTML = "";
+
   Object.entries(totals).forEach(([item, t]) => {
     const remaining = t.required - t.picked;
-    body.insertAdjacentHTML("beforeend", `
+
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${escapeHtml(item)}</td>
         <td>${t.required}</td>
         <td>${t.picked}</td>
         <td>${remaining}</td>
-        <td>${remaining <= 0 ? '<span class="badge ok">Complete</span>' : '<span class="badge warn">Needs More</span>'}</td>
+        <td>${
+          remaining <= 0
+            ? '<span class="badge ok">Complete</span>'
+            : '<span class="badge warn">Needs More</span>'
+        }</td>
       </tr>
-    `);
+    `
+    );
   });
 }
 
 async function addEmployee() {
-  const name = $("employeeName").value.trim();
-  const role = $("employeeRole").value;
+  const name = $("employeeName")?.value.trim();
+  const role = $("employeeRole")?.value;
+
   if (!name) return toast("Enter employee name.");
 
-  const entry = {
-    name,
-    role,
-    active: true,
-    createdAt: new Date().toISOString(),
-    createdBy: state.user?.uid || ""
-  };
+  try {
+    const entry = {
+      name,
+      role,
+      active: true,
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    };
 
-  const ref = await db.collection(COLLECTIONS.employees).add(entry);
-  state.employees.unshift({ id: ref.id, ...entry });
-  $("employeeName").value = "";
-  renderEmployees();
-  populateEmployeeDropdowns();
-  toast("Employee added.");
+    const ref = await db.collection(COLLECTIONS.employees).add(entry);
+
+    state.employees.unshift({
+      id: ref.id,
+      ...entry
+    });
+
+    if ($("employeeName")) $("employeeName").value = "";
+
+    renderEmployees();
+    populateEmployeeDropdowns();
+
+    toast("Employee added.");
+  } catch (err) {
+    console.error("Add employee failed:", err);
+    toast("Add failed: " + err.message);
+  }
 }
 
 async function toggleEmployee(id, active) {
-  await db.collection(COLLECTIONS.employees).doc(id).update({ active });
-  const emp = state.employees.find(e => e.id === id);
-  if (emp) emp.active = active;
-  renderEmployees();
-  populateEmployeeDropdowns();
+  try {
+    await db.collection(COLLECTIONS.employees).doc(id).update({ active });
+
+    const emp = state.employees.find((e) => e.id === id);
+    if (emp) emp.active = active;
+
+    renderEmployees();
+    populateEmployeeDropdowns();
+
+    toast(active ? "Employee activated." : "Employee deactivated.");
+  } catch (err) {
+    console.error("Toggle employee failed:", err);
+    toast("Update failed: " + err.message);
+  }
 }
 
 function renderEmployees() {
   const body = $("employeeBody");
+  if (!body) return;
+
   body.innerHTML = "";
-  state.employees.forEach(emp => {
-    body.insertAdjacentHTML("beforeend", `
+
+  state.employees.forEach((emp) => {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${escapeHtml(emp.name)}</td>
         <td>${escapeHtml(emp.role)}</td>
-        <td>${emp.active ? '<span class="badge ok">Active</span>' : '<span class="badge bad">Inactive</span>'}</td>
-        <td><button onclick="toggleEmployee('${emp.id}', ${!emp.active})">${emp.active ? "Deactivate" : "Activate"}</button></td>
+        <td>${
+          emp.active
+            ? '<span class="badge ok">Active</span>'
+            : '<span class="badge bad">Inactive</span>'
+        }</td>
+        <td>
+          <button onclick="toggleEmployee('${emp.id}', ${!emp.active})">
+            ${emp.active ? "Deactivate" : "Activate"}
+          </button>
+        </td>
       </tr>
-    `);
+    `
+    );
   });
 }
 
 function populateEmployeeDropdowns() {
-  const employees = state.employees.filter(e => e.active);
-  ["putWorker", "cycleWorker", "pickWorker"].forEach(id => {
+  const employees = state.employees.filter((e) => e.active);
+
+  ["putWorker", "cycleWorker", "pickWorker"].forEach((id) => {
     const select = $(id);
+    if (!select) return;
+
     const current = select.value;
+
     select.innerHTML = '<option value="">Select worker</option>';
-    employees.forEach(emp => select.insertAdjacentHTML("beforeend", `<option>${escapeHtml(emp.name)}</option>`));
+
+    employees.forEach((emp) => {
+      select.insertAdjacentHTML(
+        "beforeend",
+        `<option value="${escapeHtml(emp.name)}">${escapeHtml(emp.name)}</option>`
+      );
+    });
+
     select.value = current;
   });
 }
@@ -398,30 +576,47 @@ function collectPutawayLines() {
       location: rowValue(row, ".put-location"),
       notes: rowValue(row, ".put-notes")
     }))
-    .filter(x => x.item || x.qty || x.location || x.notes);
+    .filter((x) => x.item || x.qty || x.location || x.notes);
 }
 
 async function savePutaway() {
   const lines = collectPutawayLines();
-  if (!lines.length) return toast("Enter at least one put away line.");
 
-  const doc = {
-    worker: $("putWorker").value,
-    date: $("putDate").value,
-    docNumber: $("putDoc").value.trim(),
-    lines,
-    lineCount: lines.length,
-    totalQty: lines.reduce((s, x) => s + Number(x.qty || 0), 0),
-    createdAt: new Date().toISOString(),
-    createdBy: state.user?.uid || ""
-  };
+  if (!lines.length) {
+    return toast("Enter at least one put away line.");
+  }
 
-  const ref = await db.collection(COLLECTIONS.putaway).add(doc);
-await saveActivityLogs("putaway", doc, lines);
-state.putawayLogs.unshift({ id: ref.id, ...doc });
-  renderLogs();
-  clearRows("putawayBody");
-  toast("Put away log saved.");
+  try {
+    const doc = {
+      worker: $("putWorker")?.value || "",
+      date: $("putDate")?.value || "",
+      docNumber: $("putDoc")?.value.trim() || "",
+      lines,
+      lineCount: lines.length,
+      totalQty: lines.reduce((s, x) => s + Number(x.qty || 0), 0),
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    };
+
+    const ref = await db.collection(COLLECTIONS.putaway).add(doc);
+    await saveActivityLogs("putaway", doc, lines);
+
+    state.putawayLogs.unshift({
+      id: ref.id,
+      ...doc
+    });
+
+    await loadHistory();
+
+    renderLogs();
+    clearRows("putawayBody");
+
+    toast("Put away log saved.");
+  } catch (err) {
+    console.error("Put away save failed:", err);
+    toast("Save failed: " + err.message);
+  }
 }
 
 function collectCycleLines() {
@@ -433,35 +628,54 @@ function collectCycleLines() {
       location: rowValue(row, ".cycle-location"),
       systemQty: rowNumber(row, ".cycle-system"),
       countedQty: rowNumber(row, ".cycle-counted"),
-      variance: rowNumber(row, ".cycle-counted") - rowNumber(row, ".cycle-system"),
+      variance:
+        rowNumber(row, ".cycle-counted") - rowNumber(row, ".cycle-system"),
       reason: rowValue(row, ".cycle-reason"),
-      done: row.querySelector(".cycle-done").checked
+      done: row.querySelector(".cycle-done")?.checked || false
     }))
-    .filter(x => x.item || x.location || x.systemQty || x.countedQty);
+    .filter((x) => x.item || x.location || x.systemQty || x.countedQty);
 }
 
 async function saveCycle() {
   updateCycleStats();
+
   const lines = collectCycleLines();
-  if (!lines.length) return toast("Enter at least one cycle count line.");
 
-  const doc = {
-    counter: $("cycleWorker").value,
-    date: $("cycleDate").value,
-    countId: $("cycleId").value.trim(),
-    lines,
-    lineCount: lines.length,
-    varianceLines: lines.filter(x => x.variance !== 0).length,
-    createdAt: new Date().toISOString(),
-    createdBy: state.user?.uid || ""
-  };
+  if (!lines.length) {
+    return toast("Enter at least one cycle count line.");
+  }
 
-  const ref = await db.collection(COLLECTIONS.cycle).add(doc);
-await saveActivityLogs("cycleCount", doc, lines);
-state.cycleSessions.unshift({ id: ref.id, ...doc });
-  renderLogs();
-  clearRows("cycleBody");
-  toast("Cycle count saved.");
+  try {
+    const doc = {
+      counter: $("cycleWorker")?.value || "",
+      date: $("cycleDate")?.value || "",
+      countId: $("cycleId")?.value.trim() || "",
+      lines,
+      lineCount: lines.length,
+      varianceLines: lines.filter((x) => x.variance !== 0).length,
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    };
+
+    const ref = await db.collection(COLLECTIONS.cycle).add(doc);
+    await saveActivityLogs("cycleCount", doc, lines);
+
+    state.cycleSessions.unshift({
+      id: ref.id,
+      ...doc
+    });
+
+    await loadHistory();
+
+    renderLogs();
+    clearRows("cycleBody");
+
+    toast("Cycle count saved.");
+  } catch (err) {
+    console.error("Cycle count save failed:", err);
+    toast("Save failed: " + err.message);
+  }
 }
 
 function collectPickingLines() {
@@ -473,36 +687,57 @@ function collectPickingLines() {
       slot: rowValue(row, ".pick-slot"),
       requiredQty: rowNumber(row, ".pick-required"),
       pickedQty: rowNumber(row, ".pick-picked"),
-      remainingQty: rowNumber(row, ".pick-required") - rowNumber(row, ".pick-picked"),
+      remainingQty:
+        rowNumber(row, ".pick-required") - rowNumber(row, ".pick-picked"),
       status: rowValue(row, ".pick-status"),
       notes: rowValue(row, ".pick-notes")
     }))
-    .filter(x => x.item || x.slot || x.requiredQty || x.pickedQty);
+    .filter((x) => x.item || x.slot || x.requiredQty || x.pickedQty);
 }
 
 async function savePicking() {
   updatePickingStats();
+
   const lines = collectPickingLines();
-  if (!lines.length) return toast("Enter at least one picking line.");
 
-  const doc = {
-    picker: $("pickWorker").value,
-    date: $("pickDate").value,
-    orderNumber: $("pickOrder").value.trim(),
-    lines,
-    lineCount: lines.length,
-    totalPicked: lines.reduce((s, x) => s + Number(x.pickedQty || 0), 0),
-    issueLines: lines.filter(x => ["Short", "Damaged", "Wrong Slot", "Partial"].includes(x.status)).length,
-    createdAt: new Date().toISOString(),
-    createdBy: state.user?.uid || ""
-  };
+  if (!lines.length) {
+    return toast("Enter at least one picking line.");
+  }
 
-  const ref = await db.collection(COLLECTIONS.picking).add(doc);
-await saveActivityLogs("orderPicking", doc, lines);
-state.pickingSessions.unshift({ id: ref.id, ...doc });
-  renderLogs();
-  clearRows("pickingBody");
-  toast("Picking session saved.");
+  try {
+    const doc = {
+      picker: $("pickWorker")?.value || "",
+      date: $("pickDate")?.value || "",
+      orderNumber: $("pickOrder")?.value.trim() || "",
+      lines,
+      lineCount: lines.length,
+      totalPicked: lines.reduce((s, x) => s + Number(x.pickedQty || 0), 0),
+      issueLines: lines.filter((x) =>
+        ["Short", "Damaged", "Wrong Slot", "Partial"].includes(x.status)
+      ).length,
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    };
+
+    const ref = await db.collection(COLLECTIONS.picking).add(doc);
+    await saveActivityLogs("orderPicking", doc, lines);
+
+    state.pickingSessions.unshift({
+      id: ref.id,
+      ...doc
+    });
+
+    await loadHistory();
+
+    renderLogs();
+    clearRows("pickingBody");
+
+    toast("Picking session saved.");
+  } catch (err) {
+    console.error("Picking save failed:", err);
+    toast("Save failed: " + err.message);
+  }
 }
 
 function renderLogs() {
@@ -513,26 +748,42 @@ function renderLogs() {
 
 function renderPutawayLogs() {
   const body = $("putawayLogBody");
+  if (!body) return;
+
   body.innerHTML = "";
-  state.putawayLogs.forEach(log => {
-    body.insertAdjacentHTML("beforeend", `
+
+  state.putawayLogs.forEach((log) => {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${escapeHtml(log.date || "")}</td>
         <td>${escapeHtml(log.worker || "")}</td>
         <td>${escapeHtml(log.docNumber || "")}</td>
         <td>${log.lineCount || log.lines?.length || 0}</td>
         <td>${log.totalQty || 0}</td>
-        <td>${escapeHtml((log.lines || []).slice(0, 3).map(x => `${x.item} x${x.qty} @ ${x.location}`).join(" | "))}</td>
+        <td>${escapeHtml(
+          (log.lines || [])
+            .slice(0, 3)
+            .map((x) => `${x.item} x${x.qty} @ ${x.location}`)
+            .join(" | ")
+        )}</td>
       </tr>
-    `);
+    `
+    );
   });
 }
 
 function renderCycleLogs() {
   const body = $("cycleLogBody");
+  if (!body) return;
+
   body.innerHTML = "";
-  state.cycleSessions.forEach(log => {
-    body.insertAdjacentHTML("beforeend", `
+
+  state.cycleSessions.forEach((log) => {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${escapeHtml(log.date || "")}</td>
         <td>${escapeHtml(log.counter || "")}</td>
@@ -540,15 +791,21 @@ function renderCycleLogs() {
         <td>${log.lineCount || log.lines?.length || 0}</td>
         <td>${log.varianceLines || 0}</td>
       </tr>
-    `);
+    `
+    );
   });
 }
 
 function renderPickingLogs() {
   const body = $("pickingLogBody");
+  if (!body) return;
+
   body.innerHTML = "";
-  state.pickingSessions.forEach(log => {
-    body.insertAdjacentHTML("beforeend", `
+
+  state.pickingSessions.forEach((log) => {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
       <tr>
         <td>${escapeHtml(log.date || "")}</td>
         <td>${escapeHtml(log.picker || "")}</td>
@@ -557,7 +814,45 @@ function renderPickingLogs() {
         <td>${log.totalPicked || 0}</td>
         <td>${log.issueLines || 0}</td>
       </tr>
-    `);
+    `
+    );
+  });
+}
+
+function renderHistory() {
+  const body = $("historyBody");
+  if (!body) return;
+
+  body.innerHTML = "";
+
+  if (!state.activityLogs.length) {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
+      <tr>
+        <td colspan="8">No activity history found yet.</td>
+      </tr>
+    `
+    );
+    return;
+  }
+
+  state.activityLogs.forEach((log) => {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
+      <tr>
+        <td>${escapeHtml(log.date || "")}</td>
+        <td>${escapeHtml(log.type || "")}</td>
+        <td>${escapeHtml(log.employee || "")}</td>
+        <td>${escapeHtml(log.item || "")}</td>
+        <td>${escapeHtml(log.qty ?? "")}</td>
+        <td>${escapeHtml(log.location || "")}</td>
+        <td>${escapeHtml(log.documentNumber || "")}</td>
+        <td>${escapeHtml(log.status || log.reason || "")}</td>
+      </tr>
+    `
+    );
   });
 }
 
@@ -565,6 +860,7 @@ function clearRows(bodyId) {
   if (bodyId === "putawayBody") buildPutawayRows();
   if (bodyId === "cycleBody") buildCycleRows();
   if (bodyId === "pickingBody") buildPickingRows();
+
   updatePutawayStats();
   updateCycleStats();
   updatePickingStats();
@@ -572,33 +868,71 @@ function clearRows(bodyId) {
 
 function exportCsv(type) {
   let rows = [];
-  if (type === "putaway") rows = flattenSessions(state.putawayLogs, "putaway");
-  if (type === "cycle") rows = flattenSessions(state.cycleSessions, "cycle");
-  if (type === "picking") rows = flattenSessions(state.pickingSessions, "picking");
-  if (!rows.length) return toast("No data to export.");
-  downloadCsv(rows, `${type}-${new Date().toISOString().slice(0,10)}.csv`);
+
+  if (type === "putaway") {
+    rows = flattenSessions(state.putawayLogs, "putaway");
+  }
+
+  if (type === "cycle") {
+    rows = flattenSessions(state.cycleSessions, "cycle");
+  }
+
+  if (type === "picking") {
+    rows = flattenSessions(state.pickingSessions, "picking");
+  }
+
+  if (type === "history") {
+    rows = state.activityLogs;
+  }
+
+  if (!rows.length) {
+    return toast("No data to export.");
+  }
+
+  downloadCsv(rows, `${type}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 function flattenSessions(sessions, type) {
   const out = [];
-  sessions.forEach(session => {
-    (session.lines || []).forEach(line => {
-      out.push({ type, sessionDate: session.date, worker: session.worker || session.counter || session.picker, doc: session.docNumber || session.countId || session.orderNumber, ...line });
+
+  sessions.forEach((session) => {
+    (session.lines || []).forEach((line) => {
+      out.push({
+        type,
+        sessionDate: session.date,
+        worker: session.worker || session.counter || session.picker,
+        doc: session.docNumber || session.countId || session.orderNumber,
+        ...line
+      });
     });
   });
+
   return out;
 }
 
 function downloadCsv(rows, filename) {
-  const headers = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
-  const csv = [headers, ...rows.map(r => headers.map(h => r[h] ?? ""))]
-    .map(row => row.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(","))
+  const headers = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
+
+  const csv = [
+    headers,
+    ...rows.map((r) => headers.map((h) => r[h] ?? ""))
+  ]
+    .map((row) =>
+      row
+        .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
+        .join(",")
+    )
     .join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
+
+  const blob = new Blob([csv], {
+    type: "text/csv"
+  });
+
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
+
   URL.revokeObjectURL(a.href);
 }
 
@@ -613,7 +947,16 @@ function escapeHtml(value) {
 
 function toast(message) {
   const el = $("toast");
+
+  if (!el) {
+    alert(message);
+    return;
+  }
+
   el.textContent = message;
   el.classList.remove("hidden");
-  setTimeout(() => el.classList.add("hidden"), 2500);
+
+  setTimeout(() => {
+    el.classList.add("hidden");
+  }, 2500);
 }
