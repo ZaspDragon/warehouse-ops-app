@@ -40,6 +40,8 @@ function wireEvents() {
   $("receivedTime")?.addEventListener("change", calculateDockToStock);
   $("stockedTime")?.addEventListener("change", calculateDockToStock);
 
+  $("loadPickFileBtn")?.addEventListener("click", loadPickTicketFile);
+
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
@@ -131,6 +133,10 @@ function setLoginMessage(msg) {
   if ($("loginMessage")) $("loginMessage").textContent = msg;
 }
 
+function setUploadMessage(msg) {
+  if ($("uploadMessage")) $("uploadMessage").textContent = msg;
+}
+
 async function loadAllData() {
   try {
     await Promise.all([
@@ -191,13 +197,8 @@ function calculateDockToStock() {
   const minutes = Math.round((end - start) / 60000);
   const cleanMinutes = minutes >= 0 ? minutes : 0;
 
-  if ($("dockToStockMinutes")) {
-    $("dockToStockMinutes").value = cleanMinutes;
-  }
-
-  if ($("dockToStockStat")) {
-    $("dockToStockStat").textContent = cleanMinutes;
-  }
+  if ($("dockToStockMinutes")) $("dockToStockMinutes").value = cleanMinutes;
+  if ($("dockToStockStat")) $("dockToStockStat").textContent = cleanMinutes;
 
   return cleanMinutes;
 }
@@ -306,13 +307,13 @@ function buildCycleRows() {
   }
 }
 
-function buildPickingRows() {
+function buildPickingRows(rowCount = 25) {
   const body = $("pickingBody");
   if (!body) return;
 
   body.innerHTML = "";
 
-  for (let i = 1; i <= 25; i++) {
+  for (let i = 1; i <= rowCount; i++) {
     body.insertAdjacentHTML(
       "beforeend",
       `
@@ -338,6 +339,160 @@ function buildPickingRows() {
     `
     );
   }
+}
+
+async function loadPickTicketFile() {
+  const fileInput = $("pickFileUpload");
+  const file = fileInput?.files?.[0];
+
+  if (!file) {
+    setUploadMessage("Choose a pick ticket file first.");
+    return toast("Choose a pick ticket file first.");
+  }
+
+  try {
+    if (typeof XLSX === "undefined") {
+      throw new Error("Excel reader failed to load. Refresh the page and try again.");
+    }
+
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: "array" });
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheetName];
+
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: ""
+    });
+
+    const orderNumber = extractOrderNumber(rows);
+    if ($("pickOrder") && orderNumber) $("pickOrder").value = orderNumber;
+
+    const parsedLines = parsePickTicketRows(rows);
+
+    if (!parsedLines.length) {
+      setUploadMessage("No picking lines found. Check the file format.");
+      return toast("No picking lines found in file.");
+    }
+
+    fillPickingTableFromUpload(parsedLines);
+
+    setUploadMessage(`Loaded ${parsedLines.length} picking lines from ${file.name}.`);
+    toast(`Loaded ${parsedLines.length} picking lines.`);
+  } catch (err) {
+    console.error("Pick ticket upload failed:", err);
+    setUploadMessage("Upload failed: " + err.message);
+    toast("Upload failed: " + err.message);
+  }
+}
+
+function extractOrderNumber(rows) {
+  let orderNumber = "";
+
+  rows.forEach((row) => {
+    row.forEach((cell) => {
+      const text = String(cell || "").trim();
+
+      if (!text) return;
+
+      if (text.toUpperCase().includes("ORDER NUMBER")) {
+        const clean = text
+          .replace(/ORDER NUMBER:/i, "")
+          .replace(/ORDER NUMBER/i, "")
+          .replace(/\*/g, "")
+          .trim();
+
+        if (clean) orderNumber = clean;
+      }
+
+      const match = text.match(/\*?(S?XFR|XFR|SO|PO)\d+\*?/i);
+      if (match) {
+        orderNumber = match[0].replace(/\*/g, "").trim();
+      }
+    });
+  });
+
+  return orderNumber;
+}
+
+function parsePickTicketRows(rows) {
+  const parsedLines = [];
+
+  rows.forEach((row) => {
+    const binLoc = String(row[1] || "").trim();
+    const item = String(row[2] || "").trim();
+    const orderQty = toNumber(row[3]);
+    const available = toNumber(row[10]);
+    const description = String(row[11] || "").trim();
+    const um = String(row[16] || "").trim();
+
+    const itemLooksValid =
+      item &&
+      !item.toUpperCase().includes("ITEM") &&
+      !item.toUpperCase().includes("NUMBER") &&
+      /^[A-Z0-9-]+$/i.test(item);
+
+    const binLooksValid =
+      binLoc &&
+      !binLoc.toUpperCase().includes("BIN") &&
+      !binLoc.toUpperCase().includes("LOC");
+
+    if (itemLooksValid && binLooksValid && orderQty > 0) {
+      parsedLines.push({
+        binLoc,
+        item,
+        orderQty,
+        available,
+        description,
+        um
+      });
+    }
+  });
+
+  return parsedLines;
+}
+
+function fillPickingTableFromUpload(lines) {
+  const rowCount = Math.max(25, lines.length);
+  buildPickingRows(rowCount);
+
+  const tableRows = [...document.querySelectorAll("#pickingBody tr")];
+
+  lines.forEach((line, index) => {
+    const row = tableRows[index];
+    if (!row) return;
+
+    const itemInput = row.querySelector(".pick-item");
+    const descInput = row.querySelector(".pick-desc");
+    const slotInput = row.querySelector(".pick-slot");
+    const requiredInput = row.querySelector(".pick-required");
+    const pickedInput = row.querySelector(".pick-picked");
+    const statusSelect = row.querySelector(".pick-status");
+    const notesInput = row.querySelector(".pick-notes");
+
+    if (itemInput) itemInput.value = line.item;
+    if (descInput) descInput.value = line.description;
+    if (slotInput) slotInput.value = line.binLoc;
+    if (requiredInput) requiredInput.value = line.orderQty;
+    if (pickedInput) pickedInput.value = line.orderQty;
+    if (statusSelect) statusSelect.value = "Picked";
+
+    if (notesInput) {
+      notesInput.value = `Avail: ${line.available || 0} ${line.um || ""}`.trim();
+    }
+  });
+
+  updatePickingStats();
+}
+
+function toNumber(value) {
+  const clean = String(value ?? "")
+    .replace(/,/g, "")
+    .replace(/[^\d.-]/g, "")
+    .trim();
+
+  const num = Number(clean);
+  return Number.isFinite(num) ? num : 0;
 }
 
 function rowValue(row, selector) {
@@ -856,7 +1011,12 @@ function clearRows(bodyId) {
   }
 
   if (bodyId === "cycleBody") buildCycleRows();
-  if (bodyId === "pickingBody") buildPickingRows();
+
+  if (bodyId === "pickingBody") {
+    buildPickingRows();
+    if ($("pickFileUpload")) $("pickFileUpload").value = "";
+    setUploadMessage("");
+  }
 
   updatePutawayStats();
   updateCycleStats();
