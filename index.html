@@ -10,6 +10,9 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
+  <!-- Excel / CSV Upload Reader -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAAJgxXqBqKgvWnNIIBaG72iwiZ3PFykoU",
@@ -67,6 +70,7 @@
         <button class="tab" data-tab="history">History</button>
       </nav>
 
+      <!-- PUT AWAY -->
       <section id="putawayTab" class="tab-panel active">
         <div class="card">
           <h2>Put Away Log — 25 Lines</h2>
@@ -147,6 +151,7 @@
         </div>
       </section>
 
+      <!-- CYCLE COUNT -->
       <section id="cycleTab" class="tab-panel">
         <div class="card">
           <h2>Cycle Count Worksheet — 25 Lines</h2>
@@ -234,9 +239,10 @@
         </div>
       </section>
 
+      <!-- ORDER PICKING -->
       <section id="pickingTab" class="tab-panel">
         <div class="card">
-          <h2>Order Picking Worksheet — 25 Lines</h2>
+          <h2>Order Picking Worksheet — Upload or Enter Manually</h2>
 
           <div class="grid">
             <label>Picker
@@ -244,12 +250,24 @@
             </label>
 
             <label>Order / Transfer #
-              <input id="pickOrder" placeholder="XFR / SO / Order #" />
+              <input id="pickOrder" placeholder="XFR / SXFR / SO / Order #" />
             </label>
 
             <label>Date
               <input id="pickDate" type="date" />
             </label>
+          </div>
+
+          <div class="card" style="margin-top:16px;">
+            <h3>Upload Transfer / Pick Ticket</h3>
+            <p class="hint">Upload .xlsx, .xls, or .csv. The app will auto-fill item, location, required qty, description, and available qty.</p>
+
+            <div class="actions">
+              <input id="pickFileUpload" type="file" accept=".xlsx,.xls,.csv" />
+              <button id="loadPickFileBtn" class="primary">Load Pick Ticket</button>
+            </div>
+
+            <p id="uploadMessage" class="message"></p>
           </div>
 
           <div class="table-wrap">
@@ -322,6 +340,7 @@
         </div>
       </section>
 
+      <!-- EMPLOYEES -->
       <section id="employeesTab" class="tab-panel">
         <div class="card">
           <h2>Employee Management</h2>
@@ -365,6 +384,7 @@
         </div>
       </section>
 
+      <!-- HISTORY -->
       <section id="historyTab" class="tab-panel">
         <div class="card">
           <h2>Warehouse Activity History</h2>
