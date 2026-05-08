@@ -7,121 +7,112 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Login required. This keeps random public users out.
-    // To test, create users in Firebase Authentication first.
-
-    match /employees/{employeeId} {
-      allow read, create, update: if signedIn();
-      allow delete: if false;
-    }
-
-    match /putAwayLogs/{logId} {
-      allow read, create: if signedIn();
-      allow update, delete: if false;
-    }
-
-    match /cycleCountSessions/{sessionId} {
-      allow read, create: if signedIn();
-      allow update, delete: if false;
-    }
-
-    match /orderPickingSessions/{sessionId} {
-      allow read, create: if signedIn();
-      allow update, delete: if false;
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}
-rules_version = '2';
-
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    function signedIn() {
-      return request.auth != null;
-    }
-
     function myUserDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     function myRole() {
-      return signedIn() && myUserDoc().data.role;
+      return myUserDoc().data.role;
     }
 
     function isAdmin() {
-      return signedIn() && myRole() in ['admin', 'lead', 'platformOwner'];
+      return signedIn() &&
+        myRole() in ['admin', 'lead', 'platformOwner'];
     }
 
-    function isWorker() {
-      return signedIn() && myRole() in ['worker', 'putAway', 'cycleCounter', 'orderPicker'];
-    }
-
-    // User profiles
+    // =========================
+    // USERS
+    // =========================
     match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
-      allow create, update: if signedIn() && isAdmin();
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // Employees: only leads/admins can manage
+    // =========================
+    // EMPLOYEES
+    // =========================
     match /employees/{employeeId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // Put Away Logs
+    // =========================
+    // PUT AWAY LOGS
+    // =========================
     match /putAwayLogs/{logId} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }
 
-    // Cycle Counts
+    // =========================
+    // CYCLE COUNT SESSIONS
+    // =========================
     match /cycleCountSessions/{sessionId} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }
 
-    // Order Picking
+    // =========================
+    // ORDER PICKING SESSIONS
+    // =========================
     match /orderPickingSessions/{sessionId} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }
 
-    // Other app collections
+    // =========================
+    // TASKS
+    // =========================
     match /tasks/{taskId} {
-      allow read, create, update: if isAdmin();
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // =========================
+    // TRUCK LOGS
+    // =========================
     match /truckLogs/{truckId} {
-      allow read, create, update: if isAdmin();
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // =========================
+    // INVENTORY COUNTS
+    // =========================
     match /inventoryCounts/{countId} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }
 
+    // =========================
+    // QUALITY LOGS
+    // =========================
     match /qualityLogs/{logId} {
-      allow read, create, update: if isAdmin();
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // =========================
+    // COACHING LOGS
+    // =========================
     match /coachingLogs/{logId} {
-      allow read, create, update: if isAdmin();
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // =========================
+    // DENY EVERYTHING ELSE
+    // =========================
     match /{document=**} {
       allow read, write: if false;
     }
