@@ -37,6 +37,9 @@ function wireEvents() {
   $("resetPasswordBtn")?.addEventListener("click", resetPassword);
   $("logoutBtn")?.addEventListener("click", () => auth.signOut());
 
+  $("receivedTime")?.addEventListener("change", calculateDockToStock);
+  $("stockedTime")?.addEventListener("change", calculateDockToStock);
+
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
@@ -78,9 +81,7 @@ function switchTab(tab) {
   const panel = $(`${tab}Tab`);
   if (panel) panel.classList.add("active");
 
-  if (tab === "history") {
-    loadHistory();
-  }
+  if (tab === "history") loadHistory();
 }
 
 function watchAuth() {
@@ -95,9 +96,7 @@ function watchAuth() {
       $("userBadge").textContent = user ? user.email : "Signed out";
     }
 
-    if (user) {
-      await loadAllData();
-    }
+    if (user) await loadAllData();
   });
 }
 
@@ -105,9 +104,7 @@ async function login() {
   const email = $("emailInput")?.value.trim();
   const password = $("passwordInput")?.value;
 
-  if (!email || !password) {
-    return setLoginMessage("Enter email and password.");
-  }
+  if (!email || !password) return setLoginMessage("Enter email and password.");
 
   try {
     await auth.signInWithEmailAndPassword(email, password);
@@ -120,9 +117,7 @@ async function login() {
 async function resetPassword() {
   const email = $("emailInput")?.value.trim();
 
-  if (!email) {
-    return setLoginMessage("Enter your email first.");
-  }
+  if (!email) return setLoginMessage("Enter your email first.");
 
   try {
     await auth.sendPasswordResetEmail(email);
@@ -180,6 +175,33 @@ async function loadHistory() {
   }
 }
 
+function calculateDockToStock() {
+  const received = $("receivedTime")?.value;
+  const stocked = $("stockedTime")?.value;
+
+  if (!received || !stocked) {
+    if ($("dockToStockMinutes")) $("dockToStockMinutes").value = "";
+    if ($("dockToStockStat")) $("dockToStockStat").textContent = "0";
+    return 0;
+  }
+
+  const start = new Date(received);
+  const end = new Date(stocked);
+
+  const minutes = Math.round((end - start) / 60000);
+  const cleanMinutes = minutes >= 0 ? minutes : 0;
+
+  if ($("dockToStockMinutes")) {
+    $("dockToStockMinutes").value = cleanMinutes;
+  }
+
+  if ($("dockToStockStat")) {
+    $("dockToStockStat").textContent = cleanMinutes;
+  }
+
+  return cleanMinutes;
+}
+
 function buildAllTables() {
   buildPutawayRows();
   buildCycleRows();
@@ -208,8 +230,10 @@ async function saveActivityLogs(type, sessionDoc, lines) {
       remainingQty: Number(line.remainingQty || 0),
       variance: Number(line.variance || 0),
       location: line.location || line.slot || "",
-      documentNumber:
-        sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
+      documentNumber: sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
+      receivedTime: sessionDoc.receivedTime || "",
+      stockedTime: sessionDoc.stockedTime || "",
+      dockToStockMinutes: Number(sessionDoc.dockToStockMinutes || 0),
       status: line.status || "",
       reason: line.reason || "",
       notes: line.notes || "",
@@ -389,11 +413,7 @@ function updateCycleStats() {
         <td>${t.system}</td>
         <td>${t.counted}</td>
         <td>${variance}</td>
-        <td>${
-          variance === 0
-            ? '<span class="badge ok">Balanced</span>'
-            : '<span class="badge bad">Variance</span>'
-        }</td>
+        <td>${variance === 0 ? '<span class="badge ok">Balanced</span>' : '<span class="badge bad">Variance</span>'}</td>
       </tr>
     `
     );
@@ -421,9 +441,7 @@ function updatePickingStats() {
     if (item || required || picked || rowValue(row, ".pick-slot")) used++;
     qty += picked;
 
-    if (["Short", "Damaged", "Wrong Slot", "Partial"].includes(status)) {
-      issues++;
-    }
+    if (["Short", "Damaged", "Wrong Slot", "Partial"].includes(status)) issues++;
 
     if (item) {
       totals[item] ||= { required: 0, picked: 0 };
@@ -452,11 +470,7 @@ function updatePickingStats() {
         <td>${t.required}</td>
         <td>${t.picked}</td>
         <td>${remaining}</td>
-        <td>${
-          remaining <= 0
-            ? '<span class="badge ok">Complete</span>'
-            : '<span class="badge warn">Needs More</span>'
-        }</td>
+        <td>${remaining <= 0 ? '<span class="badge ok">Complete</span>' : '<span class="badge warn">Needs More</span>'}</td>
       </tr>
     `
     );
@@ -481,10 +495,7 @@ async function addEmployee() {
 
     const ref = await db.collection(COLLECTIONS.employees).add(entry);
 
-    state.employees.unshift({
-      id: ref.id,
-      ...entry
-    });
+    state.employees.unshift({ id: ref.id, ...entry });
 
     if ($("employeeName")) $("employeeName").value = "";
 
@@ -528,11 +539,7 @@ function renderEmployees() {
       <tr>
         <td>${escapeHtml(emp.name)}</td>
         <td>${escapeHtml(emp.role)}</td>
-        <td>${
-          emp.active
-            ? '<span class="badge ok">Active</span>'
-            : '<span class="badge bad">Inactive</span>'
-        }</td>
+        <td>${emp.active ? '<span class="badge ok">Active</span>' : '<span class="badge bad">Inactive</span>'}</td>
         <td>
           <button onclick="toggleEmployee('${emp.id}', ${!emp.active})">
             ${emp.active ? "Deactivate" : "Activate"}
@@ -581,15 +588,18 @@ function collectPutawayLines() {
 async function savePutaway() {
   const lines = collectPutawayLines();
 
-  if (!lines.length) {
-    return toast("Enter at least one put away line.");
-  }
+  if (!lines.length) return toast("Enter at least one put away line.");
 
   try {
+    const dockToStockMinutes = calculateDockToStock();
+
     const doc = {
       worker: $("putWorker")?.value || "",
       date: $("putDate")?.value || "",
       docNumber: $("putDoc")?.value.trim() || "",
+      receivedTime: $("receivedTime")?.value || "",
+      stockedTime: $("stockedTime")?.value || "",
+      dockToStockMinutes,
       lines,
       lineCount: lines.length,
       totalQty: lines.reduce((s, x) => s + Number(x.qty || 0), 0),
@@ -601,10 +611,7 @@ async function savePutaway() {
     const ref = await db.collection(COLLECTIONS.putaway).add(doc);
     await saveActivityLogs("putaway", doc, lines);
 
-    state.putawayLogs.unshift({
-      id: ref.id,
-      ...doc
-    });
+    state.putawayLogs.unshift({ id: ref.id, ...doc });
 
     await loadHistory();
 
@@ -627,8 +634,7 @@ function collectCycleLines() {
       location: rowValue(row, ".cycle-location"),
       systemQty: rowNumber(row, ".cycle-system"),
       countedQty: rowNumber(row, ".cycle-counted"),
-      variance:
-        rowNumber(row, ".cycle-counted") - rowNumber(row, ".cycle-system"),
+      variance: rowNumber(row, ".cycle-counted") - rowNumber(row, ".cycle-system"),
       reason: rowValue(row, ".cycle-reason"),
       done: row.querySelector(".cycle-done")?.checked || false
     }))
@@ -640,9 +646,7 @@ async function saveCycle() {
 
   const lines = collectCycleLines();
 
-  if (!lines.length) {
-    return toast("Enter at least one cycle count line.");
-  }
+  if (!lines.length) return toast("Enter at least one cycle count line.");
 
   try {
     const doc = {
@@ -660,10 +664,7 @@ async function saveCycle() {
     const ref = await db.collection(COLLECTIONS.cycle).add(doc);
     await saveActivityLogs("cycleCount", doc, lines);
 
-    state.cycleSessions.unshift({
-      id: ref.id,
-      ...doc
-    });
+    state.cycleSessions.unshift({ id: ref.id, ...doc });
 
     await loadHistory();
 
@@ -686,8 +687,7 @@ function collectPickingLines() {
       slot: rowValue(row, ".pick-slot"),
       requiredQty: rowNumber(row, ".pick-required"),
       pickedQty: rowNumber(row, ".pick-picked"),
-      remainingQty:
-        rowNumber(row, ".pick-required") - rowNumber(row, ".pick-picked"),
+      remainingQty: rowNumber(row, ".pick-required") - rowNumber(row, ".pick-picked"),
       status: rowValue(row, ".pick-status"),
       notes: rowValue(row, ".pick-notes")
     }))
@@ -699,9 +699,7 @@ async function savePicking() {
 
   const lines = collectPickingLines();
 
-  if (!lines.length) {
-    return toast("Enter at least one picking line.");
-  }
+  if (!lines.length) return toast("Enter at least one picking line.");
 
   try {
     const doc = {
@@ -722,10 +720,7 @@ async function savePicking() {
     const ref = await db.collection(COLLECTIONS.picking).add(doc);
     await saveActivityLogs("orderPicking", doc, lines);
 
-    state.pickingSessions.unshift({
-      id: ref.id,
-      ...doc
-    });
+    state.pickingSessions.unshift({ id: ref.id, ...doc });
 
     await loadHistory();
 
@@ -761,6 +756,7 @@ function renderPutawayLogs() {
         <td>${escapeHtml(log.docNumber || "")}</td>
         <td>${log.lineCount || log.lines?.length || 0}</td>
         <td>${log.totalQty || 0}</td>
+        <td>${log.dockToStockMinutes || 0} min</td>
         <td>${escapeHtml(
           (log.lines || [])
             .slice(0, 3)
@@ -825,14 +821,7 @@ function renderHistory() {
   body.innerHTML = "";
 
   if (!state.activityLogs.length) {
-    body.insertAdjacentHTML(
-      "beforeend",
-      `
-      <tr>
-        <td colspan="8">No activity history found yet.</td>
-      </tr>
-    `
-    );
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No activity history found yet.</td></tr>`);
     return;
   }
 
@@ -848,6 +837,7 @@ function renderHistory() {
         <td>${escapeHtml(log.qty ?? "")}</td>
         <td>${escapeHtml(log.location || "")}</td>
         <td>${escapeHtml(log.documentNumber || "")}</td>
+        <td>${log.dockToStockMinutes || 0} min</td>
         <td>${escapeHtml(log.status || log.reason || "")}</td>
       </tr>
     `
@@ -856,7 +846,15 @@ function renderHistory() {
 }
 
 function clearRows(bodyId) {
-  if (bodyId === "putawayBody") buildPutawayRows();
+  if (bodyId === "putawayBody") {
+    buildPutawayRows();
+
+    if ($("receivedTime")) $("receivedTime").value = "";
+    if ($("stockedTime")) $("stockedTime").value = "";
+    if ($("dockToStockMinutes")) $("dockToStockMinutes").value = "";
+    if ($("dockToStockStat")) $("dockToStockStat").textContent = "0";
+  }
+
   if (bodyId === "cycleBody") buildCycleRows();
   if (bodyId === "pickingBody") buildPickingRows();
 
@@ -868,25 +866,12 @@ function clearRows(bodyId) {
 function exportCsv(type) {
   let rows = [];
 
-  if (type === "putaway") {
-    rows = flattenSessions(state.putawayLogs, "putaway");
-  }
+  if (type === "putaway") rows = flattenSessions(state.putawayLogs, "putaway");
+  if (type === "cycle") rows = flattenSessions(state.cycleSessions, "cycle");
+  if (type === "picking") rows = flattenSessions(state.pickingSessions, "picking");
+  if (type === "history") rows = state.activityLogs;
 
-  if (type === "cycle") {
-    rows = flattenSessions(state.cycleSessions, "cycle");
-  }
-
-  if (type === "picking") {
-    rows = flattenSessions(state.pickingSessions, "picking");
-  }
-
-  if (type === "history") {
-    rows = state.activityLogs;
-  }
-
-  if (!rows.length) {
-    return toast("No data to export.");
-  }
+  if (!rows.length) return toast("No data to export.");
 
   downloadCsv(rows, `${type}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
@@ -901,6 +886,9 @@ function flattenSessions(sessions, type) {
         sessionDate: session.date,
         worker: session.worker || session.counter || session.picker,
         doc: session.docNumber || session.countId || session.orderNumber,
+        dockToStockMinutes: session.dockToStockMinutes || "",
+        receivedTime: session.receivedTime || "",
+        stockedTime: session.stockedTime || "",
         ...line
       });
     });
@@ -917,15 +905,11 @@ function downloadCsv(rows, filename) {
     ...rows.map((r) => headers.map((h) => r[h] ?? ""))
   ]
     .map((row) =>
-      row
-        .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
-        .join(",")
+      row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")
     )
     .join("\n");
 
-  const blob = new Blob([csv], {
-    type: "text/csv"
-  });
+  const blob = new Blob([csv], { type: "text/csv" });
 
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
