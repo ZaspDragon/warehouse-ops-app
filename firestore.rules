@@ -7,12 +7,20 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function userDocPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userExists() {
+      return signedIn() && exists(userDocPath());
+    }
+
     function myUserDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return get(userDocPath());
     }
 
     function myRole() {
-      return myUserDoc().data.role;
+      return userExists() ? myUserDoc().data.role : null;
     }
 
     function isAdmin() {
@@ -20,72 +28,127 @@ service cloud.firestore {
         myRole() in ['admin', 'lead', 'platformOwner'];
     }
 
+    function isPlatformOwner() {
+      return signedIn() &&
+        myRole() == 'platformOwner';
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function hasCreatedFields() {
+      return request.resource.data.createdAt is string &&
+        request.resource.data.createdBy is string &&
+        request.resource.data.createdByEmail is string;
+    }
+
+    // USERS
     match /users/{userId} {
-      allow read: if signedIn();
-      allow create, update: if isAdmin();
+      // Users can read their own profile.
+      // Admins/leads/platformOwner can read all user profiles.
+      allow read: if isOwner(userId) || isAdmin();
+
+      // First-time user profile creation:
+      // Allows a signed-in user to create only their own user profile,
+      // but forces default worker-level role unless admin creates it.
+      allow create: if
+        (
+          isOwner(userId) &&
+          request.resource.data.role in ['worker', 'picker', 'counter'] &&
+          request.resource.data.uid == request.auth.uid
+        )
+        || isAdmin();
+
+      // Users cannot promote themselves.
+      // Admins can update users.
+      allow update: if isAdmin();
+
+      // No client-side deletes.
       allow delete: if false;
     }
 
+    // EMPLOYEES
     match /employees/{employeeId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // PUT AWAY LOGS
     match /putAwayLogs/{logId} {
       allow read: if signedIn();
+
       allow create: if signedIn();
+
       allow update, delete: if isAdmin();
     }
 
+    // CYCLE COUNT SESSIONS
     match /cycleCountSessions/{sessionId} {
       allow read: if signedIn();
+
       allow create: if signedIn();
+
       allow update, delete: if isAdmin();
     }
 
+    // ORDER PICKING SESSIONS
     match /orderPickingSessions/{sessionId} {
       allow read: if signedIn();
+
       allow create: if signedIn();
+
       allow update, delete: if isAdmin();
     }
 
+    // ACTIVITY LOGS
     match /activityLogs/{activityId} {
       allow read: if signedIn();
+
       allow create: if signedIn();
+
       allow update, delete: if isAdmin();
     }
 
+    // TASKS
     match /tasks/{taskId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // TRUCK LOGS
     match /truckLogs/{truckId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // INVENTORY COUNTS
     match /inventoryCounts/{countId} {
       allow read: if signedIn();
+
       allow create: if signedIn();
+
       allow update, delete: if isAdmin();
     }
 
+    // QUALITY LOGS
     match /qualityLogs/{logId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // COACHING LOGS
     match /coachingLogs/{logId} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
+    // BLOCK EVERYTHING ELSE
     match /{document=**} {
       allow read, write: if false;
     }
