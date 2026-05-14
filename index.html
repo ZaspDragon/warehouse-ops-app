@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <title>Warehouse Logs</title>
+
   <link rel="stylesheet" href="styles.css" />
 
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -35,6 +37,7 @@
       <h1>Warehouse Logs</h1>
       <p>Put Away · Cycle Count · Order Picking · Employees · History</p>
     </div>
+
     <div class="top-actions">
       <span id="userBadge">Signed out</span>
       <button id="logoutBtn" class="danger hidden">Logout</button>
@@ -250,7 +253,7 @@
             </label>
 
             <label>Order / Transfer #
-              <input id="pickOrder" placeholder="XFR / SXFR / SO / Order #" />
+              <input id="pickOrder" placeholder="SXFR0203013" />
             </label>
 
             <label>Date
@@ -258,13 +261,16 @@
             </label>
           </div>
 
-          <div class="card" style="margin-top:16px;">
+          <div class="upload-card">
             <h3>Upload Transfer / Pick Ticket</h3>
-            <p class="hint">Upload .xlsx, .xls, or .csv. The app will auto-fill item, location, required qty, description, and available qty.</p>
+            <p class="hint">
+              Upload .xlsx, .xls, or .csv. The app finds the BIN LOC / ITEM # row and fills the table automatically.
+            </p>
 
             <div class="actions">
               <input id="pickFileUpload" type="file" accept=".xlsx,.xls,.csv" />
               <button id="loadPickFileBtn" class="primary">Load Pick Ticket</button>
+              <button id="exportCurrentPickingBtn">Export Current Pick Sheet</button>
             </div>
 
             <p id="uploadMessage" class="message"></p>
@@ -279,9 +285,11 @@
                   <th>Description</th>
                   <th>From Slot</th>
                   <th>Required Qty</th>
+                  <th>Available Qty</th>
                   <th>Picked Qty</th>
                   <th>Remaining</th>
                   <th>Status</th>
+                  <th>UOM</th>
                   <th>Notes</th>
                 </tr>
               </thead>
@@ -320,7 +328,7 @@
 
         <div class="card">
           <h3>Saved Picking Sessions</h3>
-          <button class="exportBtn" data-export="picking">Export CSV</button>
+          <button class="exportBtn" data-export="picking">Export Saved Picking CSV</button>
 
           <div class="table-wrap small">
             <table>
