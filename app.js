@@ -41,6 +41,7 @@ function wireEvents() {
   $("stockedTime")?.addEventListener("change", calculateDockToStock);
 
   $("loadPickFileBtn")?.addEventListener("click", loadPickTicketFile);
+  $("exportCurrentPickingBtn")?.addEventListener("click", exportCurrentPicking);
 
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
@@ -67,6 +68,17 @@ function wireEvents() {
   document.addEventListener("input", (e) => {
     if (e.target.closest("#putawayBody")) updatePutawayStats();
     if (e.target.closest("#cycleBody")) updateCycleStats();
+
+    if (e.target.closest("#pickingBody")) {
+      if (e.target.classList.contains("pick-picked") || e.target.classList.contains("pick-required")) {
+        autoStatusForRow(e.target.closest("tr"));
+      }
+
+      updatePickingStats();
+    }
+  });
+
+  document.addEventListener("change", (e) => {
     if (e.target.closest("#pickingBody")) updatePickingStats();
   });
 }
@@ -229,8 +241,10 @@ async function saveActivityLogs(type, sessionDoc, lines) {
       requiredQty: Number(line.requiredQty || 0),
       pickedQty: Number(line.pickedQty || 0),
       remainingQty: Number(line.remainingQty || 0),
+      availableQty: Number(line.availableQty || 0),
       variance: Number(line.variance || 0),
-      location: line.location || line.slot || "",
+      location: line.location || line.slot || line.fromSlot || "",
+      uom: line.uom || "",
       documentNumber: sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
       receivedTime: sessionDoc.receivedTime || "",
       stockedTime: sessionDoc.stockedTime || "",
@@ -321,25 +335,33 @@ function buildPickingRows(rowCount = 25) {
         <td>${i}</td>
         <td><input class="item-input pick-item" placeholder="Item #" /></td>
         <td><input class="desc-input pick-desc" placeholder="Description" /></td>
-        <td><input class="loc-input pick-slot" placeholder="Slot" /></td>
+        <td><input class="loc-input pick-slot" placeholder="From Slot" /></td>
         <td><input class="qty-input pick-required" type="number" min="0" placeholder="Required" /></td>
+        <td><input class="qty-input pick-available" type="number" min="0" placeholder="Available" /></td>
         <td><input class="qty-input pick-picked" type="number" min="0" placeholder="Picked" /></td>
         <td class="pick-remaining">0</td>
         <td>
           <select class="pick-status">
-            <option>Picked</option>
+            <option>Pending</option>
             <option>Partial</option>
+            <option>Picked</option>
+            <option>Overpicked</option>
             <option>Short</option>
             <option>Damaged</option>
             <option>Wrong Slot</option>
           </select>
         </td>
+        <td><input class="uom-input pick-uom" placeholder="UM" /></td>
         <td><input class="desc-input pick-notes" placeholder="Notes" /></td>
       </tr>
     `
     );
   }
 }
+
+/* ---------------------------
+   PICK TICKET UPLOAD FIX
+---------------------------- */
 
 async function loadPickTicketFile() {
   const fileInput = $("pickFileUpload");
@@ -362,17 +384,18 @@ async function loadPickTicketFile() {
 
     const rows = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
-      defval: ""
+      defval: "",
+      raw: false
     });
 
     const orderNumber = extractOrderNumber(rows);
     if ($("pickOrder") && orderNumber) $("pickOrder").value = orderNumber;
 
-    const parsedLines = parsePickTicketRows(rows);
+    const parsedLines = parsePickTicketRows(rows, orderNumber);
 
     if (!parsedLines.length) {
-      setUploadMessage("No picking lines found. Check the file format.");
-      return toast("No picking lines found in file.");
+      setUploadMessage("No picking lines found. Make sure the sheet has BIN LOC and ITEM # headers.");
+      return toast("No picking lines found.");
     }
 
     fillPickingTableFromUpload(parsedLines);
@@ -386,6 +409,90 @@ async function loadPickTicketFile() {
   }
 }
 
+function parsePickTicketRows(rows, orderNumber = "") {
+  const headerRowIndex = findPickTicketHeaderRow(rows);
+
+  if (headerRowIndex === -1) {
+    return [];
+  }
+
+  const headers = rows[headerRowIndex].map(cleanHeader);
+  const col = buildColumnMap(headers);
+
+  const parsedLines = [];
+
+  for (let i = headerRowIndex + 1; i < rows.length; i++) {
+    const row = rows[i];
+
+    const binLoc = getCell(row, col["BIN LOC"]);
+    const item = getCell(row, col["ITEM #"]);
+    const requiredQty = toNumber(getCell(row, col["ORDER QTY"]));
+    const pickedQtyRaw = getCell(row, col["PICK QTY"]);
+    const pickedQty = pickedQtyRaw === "" ? 0 : toNumber(pickedQtyRaw);
+    const availableQty = toNumber(getCell(row, col["AVAIL"]));
+    const description = getCell(row, col["DESCRIPTION"]);
+    const uom = getCell(row, col["UM"]);
+
+    const itemLooksValid =
+      item &&
+      !cleanHeader(item).includes("ITEM") &&
+      /^[A-Z0-9-]+$/i.test(item);
+
+    const binLooksValid =
+      binLoc &&
+      !cleanHeader(binLoc).includes("BIN") &&
+      !cleanHeader(binLoc).includes("LOC");
+
+    if (!itemLooksValid && !binLooksValid && !description) continue;
+    if (!itemLooksValid) continue;
+
+    parsedLines.push({
+      orderNumber,
+      item,
+      description,
+      fromSlot: binLoc,
+      requiredQty,
+      availableQty,
+      pickedQty,
+      remainingQty: requiredQty - pickedQty,
+      status: getPickStatus(requiredQty, pickedQty),
+      uom,
+      notes: ""
+    });
+  }
+
+  return parsedLines;
+}
+
+function findPickTicketHeaderRow(rows) {
+  return rows.findIndex((row) => {
+    const cleaned = row.map(cleanHeader);
+    return cleaned.includes("BIN LOC") && cleaned.includes("ITEM #");
+  });
+}
+
+function cleanHeader(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function buildColumnMap(headers) {
+  const map = {};
+
+  headers.forEach((header, index) => {
+    if (header) map[header] = index;
+  });
+
+  return map;
+}
+
+function getCell(row, index) {
+  if (index === undefined || index === -1) return "";
+  return String(row[index] ?? "").trim();
+}
+
 function extractOrderNumber(rows) {
   let orderNumber = "";
 
@@ -395,61 +502,14 @@ function extractOrderNumber(rows) {
 
       if (!text) return;
 
-      if (text.toUpperCase().includes("ORDER NUMBER")) {
-        const clean = text
-          .replace(/ORDER NUMBER:/i, "")
-          .replace(/ORDER NUMBER/i, "")
-          .replace(/\*/g, "")
-          .trim();
-
-        if (clean) orderNumber = clean;
-      }
-
       const match = text.match(/\*?(S?XFR|XFR|SO|PO)\d+\*?/i);
       if (match) {
-        orderNumber = match[0].replace(/\*/g, "").trim();
+        orderNumber = match[0].replace(/\*/g, "").trim().toUpperCase();
       }
     });
   });
 
   return orderNumber;
-}
-
-function parsePickTicketRows(rows) {
-  const parsedLines = [];
-
-  rows.forEach((row) => {
-    const binLoc = String(row[1] || "").trim();
-    const item = String(row[2] || "").trim();
-    const orderQty = toNumber(row[3]);
-    const available = toNumber(row[10]);
-    const description = String(row[11] || "").trim();
-    const um = String(row[16] || "").trim();
-
-    const itemLooksValid =
-      item &&
-      !item.toUpperCase().includes("ITEM") &&
-      !item.toUpperCase().includes("NUMBER") &&
-      /^[A-Z0-9-]+$/i.test(item);
-
-    const binLooksValid =
-      binLoc &&
-      !binLoc.toUpperCase().includes("BIN") &&
-      !binLoc.toUpperCase().includes("LOC");
-
-    if (itemLooksValid && binLooksValid && orderQty > 0) {
-      parsedLines.push({
-        binLoc,
-        item,
-        orderQty,
-        available,
-        description,
-        um
-      });
-    }
-  });
-
-  return parsedLines;
 }
 
 function fillPickingTableFromUpload(lines) {
@@ -462,28 +522,64 @@ function fillPickingTableFromUpload(lines) {
     const row = tableRows[index];
     if (!row) return;
 
-    const itemInput = row.querySelector(".pick-item");
-    const descInput = row.querySelector(".pick-desc");
-    const slotInput = row.querySelector(".pick-slot");
-    const requiredInput = row.querySelector(".pick-required");
-    const pickedInput = row.querySelector(".pick-picked");
+    setRowValue(row, ".pick-item", line.item);
+    setRowValue(row, ".pick-desc", line.description);
+    setRowValue(row, ".pick-slot", line.fromSlot);
+    setRowValue(row, ".pick-required", line.requiredQty);
+    setRowValue(row, ".pick-available", line.availableQty);
+    setRowValue(row, ".pick-picked", line.pickedQty);
+    setRowValue(row, ".pick-uom", line.uom);
+    setRowValue(row, ".pick-notes", line.notes);
+
     const statusSelect = row.querySelector(".pick-status");
-    const notesInput = row.querySelector(".pick-notes");
+    if (statusSelect) statusSelect.value = line.status;
 
-    if (itemInput) itemInput.value = line.item;
-    if (descInput) descInput.value = line.description;
-    if (slotInput) slotInput.value = line.binLoc;
-    if (requiredInput) requiredInput.value = line.orderQty;
-    if (pickedInput) pickedInput.value = line.orderQty;
-    if (statusSelect) statusSelect.value = "Picked";
-
-    if (notesInput) {
-      notesInput.value = `Avail: ${line.available || 0} ${line.um || ""}`.trim();
-    }
+    autoStatusForRow(row);
   });
 
   updatePickingStats();
 }
+
+function setRowValue(row, selector, value) {
+  const el = row.querySelector(selector);
+  if (el) el.value = value ?? "";
+}
+
+function getPickStatus(requiredQty, pickedQty) {
+  const required = Number(requiredQty || 0);
+  const picked = Number(pickedQty || 0);
+
+  if (picked === 0) return "Pending";
+  if (picked > required) return "Overpicked";
+  if (picked === required) return "Picked";
+  if (picked > 0 && picked < required) return "Partial";
+
+  return "Pending";
+}
+
+function autoStatusForRow(row) {
+  if (!row) return;
+
+  const required = rowNumber(row, ".pick-required");
+  const picked = rowNumber(row, ".pick-picked");
+
+  const remainingCell = row.querySelector(".pick-remaining");
+  if (remainingCell) remainingCell.textContent = required - picked;
+
+  const statusSelect = row.querySelector(".pick-status");
+  if (!statusSelect) return;
+
+  const current = statusSelect.value;
+  const manualException = ["Short", "Damaged", "Wrong Slot"].includes(current);
+
+  if (!manualException) {
+    statusSelect.value = getPickStatus(required, picked);
+  }
+}
+
+/* ---------------------------
+   GENERAL HELPERS / STATS
+---------------------------- */
 
 function toNumber(value) {
   const clean = String(value ?? "")
@@ -497,7 +593,7 @@ function toNumber(value) {
 
 function rowValue(row, selector) {
   const el = row.querySelector(selector);
-  return el ? el.value.trim() : "";
+  return el ? String(el.value || "").trim() : "";
 }
 
 function rowNumber(row, selector) {
@@ -596,7 +692,7 @@ function updatePickingStats() {
     if (item || required || picked || rowValue(row, ".pick-slot")) used++;
     qty += picked;
 
-    if (["Short", "Damaged", "Wrong Slot", "Partial"].includes(status)) issues++;
+    if (["Short", "Damaged", "Wrong Slot", "Partial", "Overpicked"].includes(status)) issues++;
 
     if (item) {
       totals[item] ||= { required: 0, picked: 0 };
@@ -631,6 +727,10 @@ function updatePickingStats() {
     );
   });
 }
+
+/* ---------------------------
+   EMPLOYEES
+---------------------------- */
 
 async function addEmployee() {
   const name = $("employeeName")?.value.trim();
@@ -681,6 +781,8 @@ async function toggleEmployee(id, active) {
   }
 }
 
+window.toggleEmployee = toggleEmployee;
+
 function renderEmployees() {
   const body = $("employeeBody");
   if (!body) return;
@@ -727,6 +829,10 @@ function populateEmployeeDropdowns() {
     select.value = current;
   });
 }
+
+/* ---------------------------
+   SAVE / COLLECT
+---------------------------- */
 
 function collectPutawayLines() {
   return [...document.querySelectorAll("#putawayBody tr")]
@@ -834,19 +940,24 @@ async function saveCycle() {
 }
 
 function collectPickingLines() {
+  updatePickingStats();
+
   return [...document.querySelectorAll("#pickingBody tr")]
     .map((row, idx) => ({
       line: idx + 1,
       item: rowValue(row, ".pick-item"),
       description: rowValue(row, ".pick-desc"),
       slot: rowValue(row, ".pick-slot"),
+      fromSlot: rowValue(row, ".pick-slot"),
       requiredQty: rowNumber(row, ".pick-required"),
+      availableQty: rowNumber(row, ".pick-available"),
       pickedQty: rowNumber(row, ".pick-picked"),
       remainingQty: rowNumber(row, ".pick-required") - rowNumber(row, ".pick-picked"),
       status: rowValue(row, ".pick-status"),
+      uom: rowValue(row, ".pick-uom"),
       notes: rowValue(row, ".pick-notes")
     }))
-    .filter((x) => x.item || x.slot || x.requiredQty || x.pickedQty);
+    .filter((x) => x.item || x.slot || x.requiredQty || x.pickedQty || x.description);
 }
 
 async function savePicking() {
@@ -865,7 +976,7 @@ async function savePicking() {
       lineCount: lines.length,
       totalPicked: lines.reduce((s, x) => s + Number(x.pickedQty || 0), 0),
       issueLines: lines.filter((x) =>
-        ["Short", "Damaged", "Wrong Slot", "Partial"].includes(x.status)
+        ["Short", "Damaged", "Wrong Slot", "Partial", "Overpicked"].includes(x.status)
       ).length,
       createdAt: new Date().toISOString(),
       createdBy: state.user?.uid || "",
@@ -888,6 +999,10 @@ async function savePicking() {
     toast("Save failed: " + err.message);
   }
 }
+
+/* ---------------------------
+   RENDER LOGS
+---------------------------- */
 
 function renderLogs() {
   renderPutawayLogs();
@@ -1000,6 +1115,10 @@ function renderHistory() {
   });
 }
 
+/* ---------------------------
+   CLEAR / EXPORT
+---------------------------- */
+
 function clearRows(bodyId) {
   if (bodyId === "putawayBody") {
     buildPutawayRows();
@@ -1014,6 +1133,7 @@ function clearRows(bodyId) {
 
   if (bodyId === "pickingBody") {
     buildPickingRows();
+
     if ($("pickFileUpload")) $("pickFileUpload").value = "";
     setUploadMessage("");
   }
@@ -1021,6 +1141,31 @@ function clearRows(bodyId) {
   updatePutawayStats();
   updateCycleStats();
   updatePickingStats();
+}
+
+function exportCurrentPicking() {
+  const rows = collectPickingLines();
+
+  if (!rows.length) return toast("No current picking rows to export.");
+
+  const orderNumber = $("pickOrder")?.value.trim() || "pick-ticket";
+
+  const exportRows = rows.map((line) => ({
+    transferNumber: orderNumber,
+    item: line.item,
+    description: line.description,
+    fromSlot: line.fromSlot,
+    requiredQty: line.requiredQty,
+    availableQty: line.availableQty,
+    pickedQty: line.pickedQty,
+    remainingQty: line.remainingQty,
+    uom: line.uom,
+    status: line.status,
+    notes: line.notes,
+    timestamp: new Date().toISOString()
+  }));
+
+  downloadCsv(exportRows, `${orderNumber || "picking"}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 function exportCsv(type) {
