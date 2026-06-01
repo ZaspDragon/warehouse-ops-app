@@ -61,10 +61,29 @@
         <button id="resetPasswordBtn">Reset Password</button>
       </div>
 
+      <div class="demo-callout">
+        <h3>Try the demo</h3>
+        <p>Open the app with sample warehouse data. Demo changes stay only in this browser.</p>
+        <div class="actions">
+          <button id="demoLoginBtn">Start Demo Mode</button>
+        </div>
+      </div>
+
       <p id="loginMessage" class="message"></p>
     </section>
 
     <section id="appPanel" class="hidden">
+      <section id="demoBanner" class="card demo-banner hidden">
+        <div>
+          <h2>Demo Mode</h2>
+          <p>Sample data is loaded locally so visitors can explore workflows without touching production records.</p>
+        </div>
+
+        <div class="actions">
+          <button id="resetDemoBtn">Reset Demo Data</button>
+        </div>
+      </section>
+
       <nav class="tabs">
         <button class="tab active" data-tab="putaway">Put Away Log</button>
         <button class="tab" data-tab="cycle">Cycle Count</button>

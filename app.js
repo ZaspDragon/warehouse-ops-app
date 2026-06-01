@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
   user: null,
+  isDemoMode: false,
   employees: [],
   putawayLogs: [],
   cycleSessions: [],
@@ -17,11 +18,20 @@ const COLLECTIONS = {
   activity: "activityLogs"
 };
 
+const DEMO_STORAGE_KEY = "warehouseOpsDemoStateV1";
+const DEMO_USER = {
+  uid: "demo-user",
+  email: "demo@warehouse-ops-app.local"
+};
+
 document.addEventListener("DOMContentLoaded", () => {
   setTodayDefaults();
   buildAllTables();
   wireEvents();
   watchAuth();
+  if (new URLSearchParams(window.location.search).get("demo") === "1") {
+    enterDemoMode({ silent: true });
+  }
 });
 
 function setTodayDefaults() {
@@ -34,8 +44,10 @@ function setTodayDefaults() {
 
 function wireEvents() {
   $("loginBtn")?.addEventListener("click", login);
+  $("demoLoginBtn")?.addEventListener("click", () => enterDemoMode());
   $("resetPasswordBtn")?.addEventListener("click", resetPassword);
-  $("logoutBtn")?.addEventListener("click", () => auth.signOut());
+  $("logoutBtn")?.addEventListener("click", logoutCurrentUser);
+  $("resetDemoBtn")?.addEventListener("click", () => resetDemoData());
 
   $("receivedTime")?.addEventListener("change", calculateDockToStock);
   $("stockedTime")?.addEventListener("change", calculateDockToStock);
@@ -100,21 +112,475 @@ function switchTab(tab) {
 
 function watchAuth() {
   auth.onAuthStateChanged(async (user) => {
+    if (state.isDemoMode) return;
+
     state.user = user;
+    syncShell();
 
-    $("loginPanel")?.classList.toggle("hidden", !!user);
-    $("appPanel")?.classList.toggle("hidden", !user);
-    $("logoutBtn")?.classList.toggle("hidden", !user);
-
-    if ($("userBadge")) {
-      $("userBadge").textContent = user ? user.email : "Signed out";
+    if (user) {
+      await loadAllData();
+      return;
     }
 
-    if (user) await loadAllData();
+    clearLoadedState();
   });
 }
 
+function syncShell() {
+  const signedIn = !!state.user;
+
+  $("loginPanel")?.classList.toggle("hidden", signedIn);
+  $("appPanel")?.classList.toggle("hidden", !signedIn);
+  $("logoutBtn")?.classList.toggle("hidden", !signedIn);
+  $("demoBanner")?.classList.toggle("hidden", !state.isDemoMode);
+
+  if ($("logoutBtn")) {
+    $("logoutBtn").textContent = state.isDemoMode ? "Exit Demo" : "Logout";
+  }
+
+  if ($("userBadge")) {
+    $("userBadge").textContent = state.isDemoMode
+      ? "Demo Mode"
+      : state.user?.email || "Signed out";
+  }
+
+  document.body.classList.toggle("demo-mode", state.isDemoMode);
+}
+
+function clearLoadedState() {
+  state.employees = [];
+  state.putawayLogs = [];
+  state.cycleSessions = [];
+  state.pickingSessions = [];
+  state.activityLogs = [];
+
+  resetWorkingForms();
+  renderEmployees();
+  renderLogs();
+  renderHistory();
+  populateEmployeeDropdowns();
+}
+
+function resetWorkingForms() {
+  clearRows("putawayBody");
+  clearRows("cycleBody");
+  clearRows("pickingBody");
+  setTodayDefaults();
+
+  if ($("putDoc")) $("putDoc").value = "";
+  if ($("cycleId")) $("cycleId").value = "";
+  if ($("pickOrder")) $("pickOrder").value = "";
+}
+
+function logoutCurrentUser() {
+  if (state.isDemoMode) {
+    exitDemoMode();
+    return;
+  }
+
+  auth.signOut();
+}
+
+function enterDemoMode(options = {}) {
+  const { silent = false } = options;
+  const savedState = readDemoState();
+
+  state.isDemoMode = true;
+  state.user = { ...DEMO_USER };
+
+  if (savedState) {
+    applyDemoState(savedState);
+  } else {
+    applyDemoState(buildDemoState());
+    persistDemoState();
+  }
+
+  resetWorkingForms();
+  syncShell();
+  switchTab("putaway");
+  setLoginMessage("");
+  updateDemoUrl(true);
+
+  if (!silent) {
+    toast("Demo mode loaded.");
+  }
+}
+
+function exitDemoMode() {
+  state.isDemoMode = false;
+  state.user = auth.currentUser || null;
+
+  syncShell();
+  if (state.user) {
+    loadAllData();
+  } else {
+    clearLoadedState();
+  }
+
+  setLoginMessage("Demo mode ended.");
+  updateDemoUrl(false);
+}
+
+function resetDemoData(options = {}) {
+  if (!state.isDemoMode) return;
+
+  const { silent = false } = options;
+  applyDemoState(buildDemoState());
+  resetWorkingForms();
+  persistDemoState();
+  switchTab("putaway");
+
+  if (!silent) {
+    toast("Demo data reset.");
+  }
+}
+
+function updateDemoUrl(enabled) {
+  const url = new URL(window.location.href);
+
+  if (enabled) {
+    url.searchParams.set("demo", "1");
+  } else {
+    url.searchParams.delete("demo");
+  }
+
+  window.history.replaceState({}, "", url);
+}
+
+function persistDemoState() {
+  if (!state.isDemoMode) return;
+
+  try {
+    window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(snapshotDemoState()));
+  } catch (err) {
+    console.warn("Demo state persist failed:", err);
+  }
+}
+
+function readDemoState() {
+  try {
+    const raw = window.localStorage.getItem(DEMO_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed?.employees)) {
+      return null;
+    }
+
+    return {
+      employees: parsed.employees || [],
+      putawayLogs: parsed.putawayLogs || [],
+      cycleSessions: parsed.cycleSessions || [],
+      pickingSessions: parsed.pickingSessions || [],
+      activityLogs: parsed.activityLogs || []
+    };
+  } catch (err) {
+    console.warn("Demo state load failed:", err);
+    return null;
+  }
+}
+
+function snapshotDemoState() {
+  return {
+    employees: state.employees,
+    putawayLogs: state.putawayLogs,
+    cycleSessions: state.cycleSessions,
+    pickingSessions: state.pickingSessions,
+    activityLogs: state.activityLogs
+  };
+}
+
+function applyDemoState(data) {
+  state.employees = data.employees || [];
+  state.putawayLogs = sortByCreatedAtDesc(data.putawayLogs || []);
+  state.cycleSessions = sortByCreatedAtDesc(data.cycleSessions || []);
+  state.pickingSessions = sortByCreatedAtDesc(data.pickingSessions || []);
+  state.activityLogs = sortByCreatedAtDesc(data.activityLogs || []);
+
+  renderEmployees();
+  renderLogs();
+  renderHistory();
+  populateEmployeeDropdowns();
+}
+
+function buildDemoState() {
+  const employees = [
+    createDemoEmployee("emp-ava", "Ava Patel", "Put Away", true, 9),
+    createDemoEmployee("emp-diego", "Diego Martinez", "Cycle Count", true, 7),
+    createDemoEmployee("emp-jordan", "Jordan Lee", "Order Picking", true, 6),
+    createDemoEmployee("emp-maya", "Maya Chen", "Lead", true, 12),
+    createDemoEmployee("emp-noah", "Noah Brooks", "Order Picking", false, 4)
+  ];
+
+  const putawayLogs = [
+    {
+      id: "put-demo-1",
+      worker: "Ava Patel",
+      date: demoDate(0),
+      docNumber: "SPO240531",
+      receivedTime: demoDateTimeLocal(0, 7, 18),
+      stockedTime: demoDateTimeLocal(0, 8, 4),
+      dockToStockMinutes: 46,
+      lines: [
+        { line: 1, item: "SKU-4401", qty: 24, location: "A1-04", notes: "Top rack reserve" },
+        { line: 2, item: "SKU-1188", qty: 12, location: "B2-09", notes: "Fast mover refill" },
+        { line: 3, item: "SKU-7720", qty: 18, location: "C1-02", notes: "Received sealed" }
+      ],
+      lineCount: 3,
+      totalQty: 54,
+      createdAt: demoTimestamp(0, 8, 4)
+    },
+    {
+      id: "put-demo-2",
+      worker: "Maya Chen",
+      date: demoDate(1),
+      docNumber: "PO240530",
+      receivedTime: demoDateTimeLocal(1, 13, 10),
+      stockedTime: demoDateTimeLocal(1, 14, 2),
+      dockToStockMinutes: 52,
+      lines: [
+        { line: 1, item: "SKU-9042", qty: 8, location: "D4-01", notes: "Overflow pallet" },
+        { line: 2, item: "SKU-2207", qty: 30, location: "A3-07", notes: "Split between cases" }
+      ],
+      lineCount: 2,
+      totalQty: 38,
+      createdAt: demoTimestamp(1, 14, 2)
+    }
+  ];
+
+  const cycleSessions = [
+    {
+      id: "cycle-demo-1",
+      counter: "Diego Martinez",
+      date: demoDate(0),
+      countId: "COUNT-0531-A",
+      lines: [
+        {
+          line: 1,
+          item: "SKU-1188",
+          description: "24in Packing Tape",
+          location: "B2-09",
+          systemQty: 48,
+          countedQty: 48,
+          variance: 0,
+          reason: "Count Verified",
+          done: true
+        },
+        {
+          line: 2,
+          item: "SKU-7720",
+          description: "Dock Seal Kit",
+          location: "C1-02",
+          systemQty: 22,
+          countedQty: 20,
+          variance: -2,
+          reason: "Short Pick",
+          done: true
+        },
+        {
+          line: 3,
+          item: "SKU-5521",
+          description: "Safety Gloves Large",
+          location: "E1-03",
+          systemQty: 36,
+          countedQty: 36,
+          variance: 0,
+          reason: "Count Verified",
+          done: true
+        }
+      ],
+      lineCount: 3,
+      varianceLines: 1,
+      createdAt: demoTimestamp(0, 10, 35)
+    },
+    {
+      id: "cycle-demo-2",
+      counter: "Maya Chen",
+      date: demoDate(2),
+      countId: "COUNT-0529-B",
+      lines: [
+        {
+          line: 1,
+          item: "SKU-2207",
+          description: "Stretch Wrap",
+          location: "A3-07",
+          systemQty: 15,
+          countedQty: 17,
+          variance: 2,
+          reason: "Receiving Error",
+          done: true
+        }
+      ],
+      lineCount: 1,
+      varianceLines: 1,
+      createdAt: demoTimestamp(2, 15, 22)
+    }
+  ];
+
+  const pickingSessions = [
+    {
+      id: "pick-demo-1",
+      picker: "Jordan Lee",
+      date: demoDate(0),
+      orderNumber: "SXFR205813",
+      lines: [
+        {
+          line: 1,
+          item: "SKU-4401",
+          description: "Blue Tote 18L",
+          slot: "A1-04",
+          fromSlot: "A1-04",
+          requiredQty: 10,
+          availableQty: 14,
+          pickedQty: 10,
+          remainingQty: 0,
+          status: "Picked",
+          uom: "EA",
+          notes: ""
+        },
+        {
+          line: 2,
+          item: "SKU-9042",
+          description: "Pallet Corner Boards",
+          slot: "D4-01",
+          fromSlot: "D4-01",
+          requiredQty: 6,
+          availableQty: 5,
+          pickedQty: 5,
+          remainingQty: 1,
+          status: "Short",
+          uom: "EA",
+          notes: "1 short, waiting replenishment"
+        },
+        {
+          line: 3,
+          item: "SKU-5521",
+          description: "Safety Gloves Large",
+          slot: "E1-03",
+          fromSlot: "E1-03",
+          requiredQty: 12,
+          availableQty: 18,
+          pickedQty: 12,
+          remainingQty: 0,
+          status: "Picked",
+          uom: "PR",
+          notes: ""
+        }
+      ],
+      lineCount: 3,
+      totalPicked: 27,
+      issueLines: 1,
+      createdAt: demoTimestamp(0, 13, 42)
+    },
+    {
+      id: "pick-demo-2",
+      picker: "Noah Brooks",
+      date: demoDate(1),
+      orderNumber: "SO2405308",
+      lines: [
+        {
+          line: 1,
+          item: "SKU-1188",
+          description: "24in Packing Tape",
+          slot: "B2-09",
+          fromSlot: "B2-09",
+          requiredQty: 20,
+          availableQty: 24,
+          pickedQty: 18,
+          remainingQty: 2,
+          status: "Partial",
+          uom: "EA",
+          notes: "Last two held for QA"
+        }
+      ],
+      lineCount: 1,
+      totalPicked: 18,
+      issueLines: 1,
+      createdAt: demoTimestamp(1, 16, 10)
+    }
+  ];
+
+  return {
+    employees,
+    putawayLogs,
+    cycleSessions,
+    pickingSessions,
+    activityLogs: buildDemoActivityLogs(putawayLogs, cycleSessions, pickingSessions)
+  };
+}
+
+function createDemoEmployee(id, name, role, active, daysAgo) {
+  return {
+    id,
+    name,
+    role,
+    active,
+    createdAt: demoTimestamp(daysAgo, 9, 0),
+    createdBy: DEMO_USER.uid,
+    createdByEmail: DEMO_USER.email
+  };
+}
+
+function buildDemoActivityLogs(putawayLogs, cycleSessions, pickingSessions) {
+  const activityLogs = [
+    ...putawayLogs.flatMap((session) => createActivityEntries("putaway", session, session.lines, session.createdAt)),
+    ...cycleSessions.flatMap((session) => createActivityEntries("cycleCount", session, session.lines, session.createdAt)),
+    ...pickingSessions.flatMap((session) => createActivityEntries("orderPicking", session, session.lines, session.createdAt))
+  ];
+
+  return sortByCreatedAtDesc(activityLogs);
+}
+
+function demoDate(daysAgo) {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
+}
+
+function demoDateTimeLocal(daysAgo, hours, minutes) {
+  const date = new Date();
+  date.setSeconds(0, 0);
+  date.setDate(date.getDate() - daysAgo);
+  date.setHours(hours, minutes, 0, 0);
+  return formatDateTimeLocal(date);
+}
+
+function demoTimestamp(daysAgo, hours, minutes) {
+  const date = new Date();
+  date.setSeconds(0, 0);
+  date.setDate(date.getDate() - daysAgo);
+  date.setHours(hours, minutes, 0, 0);
+  return date.toISOString();
+}
+
+function formatDateTimeLocal(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function pad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function sortByCreatedAtDesc(rows) {
+  return [...rows].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+}
+
+function createLocalId(prefix) {
+  if (window.crypto?.randomUUID) {
+    return `${prefix}-${window.crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
 async function login() {
+  if (state.isDemoMode) {
+    state.isDemoMode = false;
+    updateDemoUrl(false);
+  }
+
   const email = $("emailInput")?.value.trim();
   const password = $("passwordInput")?.value;
 
@@ -150,6 +616,8 @@ function setUploadMessage(msg) {
 }
 
 async function loadAllData() {
+  if (state.isDemoMode) return;
+
   try {
     await Promise.all([
       loadCollection(COLLECTIONS.employees, "employees"),
@@ -183,6 +651,12 @@ async function loadCollection(collection, key) {
 }
 
 async function loadHistory() {
+  if (state.isDemoMode) {
+    renderHistory();
+    toast("History refreshed.");
+    return;
+  }
+
   try {
     await loadCollection(COLLECTIONS.activity, "activityLogs");
     renderHistory();
@@ -225,40 +699,65 @@ async function saveActivityLogs(type, sessionDoc, lines) {
   if (!lines.length) return;
 
   const batch = db.batch();
+  const entries = createActivityEntries(type, sessionDoc, lines);
 
-  lines.forEach((line) => {
+  entries.forEach((entry) => {
     const ref = db.collection(COLLECTIONS.activity).doc();
 
-    batch.set(ref, {
-      type,
-      employee: sessionDoc.worker || sessionDoc.counter || sessionDoc.picker || "",
-      date: sessionDoc.date || "",
-      item: line.item || "",
-      description: line.description || "",
-      qty: Number(line.qty || line.pickedQty || line.countedQty || 0),
-      systemQty: Number(line.systemQty || 0),
-      countedQty: Number(line.countedQty || 0),
-      requiredQty: Number(line.requiredQty || 0),
-      pickedQty: Number(line.pickedQty || 0),
-      remainingQty: Number(line.remainingQty || 0),
-      availableQty: Number(line.availableQty || 0),
-      variance: Number(line.variance || 0),
-      location: line.location || line.slot || line.fromSlot || "",
-      uom: line.uom || "",
-      documentNumber: sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
-      receivedTime: sessionDoc.receivedTime || "",
-      stockedTime: sessionDoc.stockedTime || "",
-      dockToStockMinutes: Number(sessionDoc.dockToStockMinutes || 0),
-      status: line.status || "",
-      reason: line.reason || "",
-      notes: line.notes || "",
-      createdAt: new Date().toISOString(),
-      createdBy: state.user?.uid || "",
-      createdByEmail: state.user?.email || ""
-    });
+    batch.set(ref, entry);
   });
 
   await batch.commit();
+}
+
+function createActivityEntries(type, sessionDoc, lines, createdAtBase = Date.now()) {
+  return lines.map((line, index) =>
+    buildActivityEntry(
+      type,
+      sessionDoc,
+      line,
+      typeof createdAtBase === "string"
+        ? new Date(new Date(createdAtBase).getTime() - index * 1000).toISOString()
+        : new Date(createdAtBase - index * 1000).toISOString()
+    )
+  );
+}
+
+function buildActivityEntry(type, sessionDoc, line, createdAt) {
+  return {
+    type,
+    employee: sessionDoc.worker || sessionDoc.counter || sessionDoc.picker || "",
+    date: sessionDoc.date || "",
+    item: line.item || "",
+    description: line.description || "",
+    qty: Number(line.qty || line.pickedQty || line.countedQty || 0),
+    systemQty: Number(line.systemQty || 0),
+    countedQty: Number(line.countedQty || 0),
+    requiredQty: Number(line.requiredQty || 0),
+    pickedQty: Number(line.pickedQty || 0),
+    remainingQty: Number(line.remainingQty || 0),
+    availableQty: Number(line.availableQty || 0),
+    variance: Number(line.variance || 0),
+    location: line.location || line.slot || line.fromSlot || "",
+    uom: line.uom || "",
+    documentNumber: sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
+    receivedTime: sessionDoc.receivedTime || "",
+    stockedTime: sessionDoc.stockedTime || "",
+    dockToStockMinutes: Number(sessionDoc.dockToStockMinutes || 0),
+    status: line.status || "",
+    reason: line.reason || "",
+    notes: line.notes || "",
+    createdAt,
+    createdBy: state.user?.uid || "",
+    createdByEmail: state.user?.email || ""
+  };
+}
+
+function appendDemoActivityEntries(type, sessionDoc, lines) {
+  state.activityLogs = sortByCreatedAtDesc([
+    ...createActivityEntries(type, sessionDoc, lines),
+    ...state.activityLogs
+  ]);
 }
 
 function buildPutawayRows() {
@@ -738,6 +1237,26 @@ async function addEmployee() {
 
   if (!name) return toast("Enter employee name.");
 
+  if (state.isDemoMode) {
+    state.employees.unshift({
+      id: createLocalId("emp"),
+      name,
+      role,
+      active: true,
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    });
+
+    if ($("employeeName")) $("employeeName").value = "";
+
+    persistDemoState();
+    renderEmployees();
+    populateEmployeeDropdowns();
+    toast("Employee added.");
+    return;
+  }
+
   try {
     const entry = {
       name,
@@ -765,6 +1284,18 @@ async function addEmployee() {
 }
 
 async function toggleEmployee(id, active) {
+  if (state.isDemoMode) {
+    const emp = state.employees.find((employee) => employee.id === id);
+    if (!emp) return;
+
+    emp.active = active;
+    persistDemoState();
+    renderEmployees();
+    populateEmployeeDropdowns();
+    toast(active ? "Employee activated." : "Employee deactivated.");
+    return;
+  }
+
   try {
     await db.collection(COLLECTIONS.employees).doc(id).update({ active });
 
@@ -851,6 +1382,34 @@ async function savePutaway() {
 
   if (!lines.length) return toast("Enter at least one put away line.");
 
+  if (state.isDemoMode) {
+    const dockToStockMinutes = calculateDockToStock();
+    const doc = {
+      id: createLocalId("put"),
+      worker: $("putWorker")?.value || "",
+      date: $("putDate")?.value || "",
+      docNumber: $("putDoc")?.value.trim() || "",
+      receivedTime: $("receivedTime")?.value || "",
+      stockedTime: $("stockedTime")?.value || "",
+      dockToStockMinutes,
+      lines,
+      lineCount: lines.length,
+      totalQty: lines.reduce((sum, line) => sum + Number(line.qty || 0), 0),
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    };
+
+    state.putawayLogs = sortByCreatedAtDesc([{ ...doc }, ...state.putawayLogs]);
+    appendDemoActivityEntries("putaway", doc, lines);
+    persistDemoState();
+    renderLogs();
+    renderHistory();
+    clearRows("putawayBody");
+    toast("Put away log saved.");
+    return;
+  }
+
   try {
     const dockToStockMinutes = calculateDockToStock();
 
@@ -909,6 +1468,30 @@ async function saveCycle() {
 
   if (!lines.length) return toast("Enter at least one cycle count line.");
 
+  if (state.isDemoMode) {
+    const doc = {
+      id: createLocalId("cycle"),
+      counter: $("cycleWorker")?.value || "",
+      date: $("cycleDate")?.value || "",
+      countId: $("cycleId")?.value.trim() || "",
+      lines,
+      lineCount: lines.length,
+      varianceLines: lines.filter((line) => line.variance !== 0).length,
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    };
+
+    state.cycleSessions = sortByCreatedAtDesc([{ ...doc }, ...state.cycleSessions]);
+    appendDemoActivityEntries("cycleCount", doc, lines);
+    persistDemoState();
+    renderLogs();
+    renderHistory();
+    clearRows("cycleBody");
+    toast("Cycle count saved.");
+    return;
+  }
+
   try {
     const doc = {
       counter: $("cycleWorker")?.value || "",
@@ -966,6 +1549,33 @@ async function savePicking() {
   const lines = collectPickingLines();
 
   if (!lines.length) return toast("Enter at least one picking line.");
+
+  if (state.isDemoMode) {
+    const doc = {
+      id: createLocalId("pick"),
+      picker: $("pickWorker")?.value || "",
+      date: $("pickDate")?.value || "",
+      orderNumber: $("pickOrder")?.value.trim() || "",
+      lines,
+      lineCount: lines.length,
+      totalPicked: lines.reduce((sum, line) => sum + Number(line.pickedQty || 0), 0),
+      issueLines: lines.filter((line) =>
+        ["Short", "Damaged", "Wrong Slot", "Partial", "Overpicked"].includes(line.status)
+      ).length,
+      createdAt: new Date().toISOString(),
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    };
+
+    state.pickingSessions = sortByCreatedAtDesc([{ ...doc }, ...state.pickingSessions]);
+    appendDemoActivityEntries("orderPicking", doc, lines);
+    persistDemoState();
+    renderLogs();
+    renderHistory();
+    clearRows("pickingBody");
+    toast("Picking session saved.");
+    return;
+  }
 
   try {
     const doc = {

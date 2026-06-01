@@ -47,6 +47,17 @@ body {
   align-items: center;
 }
 
+#userBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-weight: 700;
+}
+
 main {
   max-width: 1500px;
   margin: 0 auto;
@@ -73,6 +84,25 @@ main {
   margin: 40px auto;
 }
 
+.demo-callout {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #d8e5ff;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #edf4ff, #f8fbff);
+}
+
+.demo-callout h3,
+.demo-banner h2 {
+  margin: 0 0 8px;
+}
+
+.demo-callout p,
+.demo-banner p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .hint {
   color: var(--muted);
   font-size: 14px;
@@ -91,6 +121,15 @@ main {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.demo-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border-color: #ffe2a8;
+  background: linear-gradient(135deg, #fff8e2, #fffef5);
 }
 
 .tab {
@@ -284,6 +323,11 @@ th {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 }
 
+body.demo-mode #userBadge {
+  background: #fff0c2;
+  color: #734c00;
+}
+
 @media (max-width: 900px) {
   .topbar {
     display: block;
@@ -303,6 +347,10 @@ th {
 
   .tabs {
     display: grid;
+  }
+
+  .demo-banner {
+    display: block;
   }
 
   .tab {
