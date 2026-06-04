@@ -10,6 +10,10 @@
   document.addEventListener("DOMContentLoaded", () => {
     installReceivingUi();
     wireReceivingRoleWatcher();
+    applyDemoReceivingRoleIfNeeded();
+    $("demoLoginBtn")?.addEventListener("click", () => {
+      window.setTimeout(applyDemoReceivingRoleIfNeeded, 0);
+    });
   });
 
   function wireReceivingRoleWatcher() {
@@ -32,6 +36,26 @@
       clearReceiverTempMode();
       applyLeadAdminReceivingMode();
     });
+  }
+
+  function applyDemoReceivingRoleIfNeeded() {
+    if (!state?.isDemoMode) return;
+
+    context.profile = {
+      uid: state.user?.uid || "demo-user",
+      email: state.user?.email || "demo@warehouse-ops-app.local",
+      role: new URLSearchParams(window.location.search).get("role") || "lead",
+      site: new URLSearchParams(window.location.search).get("site") || "demo-site",
+      department: new URLSearchParams(window.location.search).get("department") || "receiving"
+    };
+    context.role = getRoleFromProfile(context.profile);
+
+    if (context.role === RECEIVER_ROLE) {
+      applyReceiverTempMode();
+    } else {
+      clearReceiverTempMode();
+      applyLeadAdminReceivingMode();
+    }
   }
 
   async function loadUserProfile(user) {
