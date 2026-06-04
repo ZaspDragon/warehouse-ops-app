@@ -414,31 +414,119 @@
       <!-- HISTORY -->
       <section id="historyTab" class="tab-panel">
         <div class="card">
-          <h2>Warehouse Activity History</h2>
-
-          <div class="actions">
+          <div class="section-heading">
+            <h2>History</h2>
             <button id="refreshHistoryBtn" class="primary">Refresh History</button>
-            <button id="exportHistoryBtn">Export History CSV</button>
           </div>
 
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Employee</th>
-                  <th>Item</th>
-                  <th>Qty</th>
-                  <th>Location</th>
-                  <th>Document</th>
-                  <th>Dock-to-Stock</th>
-                  <th>Status / Reason</th>
-                </tr>
-              </thead>
-              <tbody id="historyBody"></tbody>
-            </table>
-          </div>
+          <nav class="history-tabs">
+            <button class="history-tab active" data-history-tab="putaway">Put Away Log</button>
+            <button class="history-tab" data-history-tab="cycle">Cycle Count</button>
+            <button class="history-tab" data-history-tab="picking">Order Picking</button>
+          </nav>
+
+          <section id="putawayHistoryPanel" class="history-panel active">
+            <div class="history-toolbar">
+              <label>Start Date
+                <input id="putawayHistoryStart" type="date" />
+              </label>
+              <label>End Date
+                <input id="putawayHistoryEnd" type="date" />
+              </label>
+              <div class="actions">
+                <button class="historyFilterBtn primary" data-history-type="putaway">Search / Filter</button>
+                <button class="historyClearBtn" data-history-type="putaway">Clear Filter</button>
+                <button class="historyExportBtn" data-history-type="putaway">Export Put Away History CSV</button>
+              </div>
+            </div>
+
+            <div class="table-wrap small history-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Completed Date</th>
+                    <th>Worker</th>
+                    <th>Document / PO / SPO</th>
+                    <th>Lines</th>
+                    <th>Total Qty</th>
+                    <th>Received Time</th>
+                    <th>Put Away Completed Time</th>
+                    <th>Dock-to-Stock Minutes</th>
+                    <th>Preview / Details</th>
+                  </tr>
+                </thead>
+                <tbody id="putawayHistoryBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="cycleHistoryPanel" class="history-panel">
+            <div class="history-toolbar">
+              <label>Start Date
+                <input id="cycleHistoryStart" type="date" />
+              </label>
+              <label>End Date
+                <input id="cycleHistoryEnd" type="date" />
+              </label>
+              <div class="actions">
+                <button class="historyFilterBtn primary" data-history-type="cycle">Search / Filter</button>
+                <button class="historyClearBtn" data-history-type="cycle">Clear Filter</button>
+                <button class="historyExportBtn" data-history-type="cycle">Export Cycle Count History CSV</button>
+              </div>
+            </div>
+
+            <div class="table-wrap small history-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Completed Date</th>
+                    <th>Counter</th>
+                    <th>Stock Count ID</th>
+                    <th>Lines Counted</th>
+                    <th>Variance Lines</th>
+                    <th>Total Variance</th>
+                    <th>Status</th>
+                    <th>Preview / Details</th>
+                  </tr>
+                </thead>
+                <tbody id="cycleHistoryBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="pickingHistoryPanel" class="history-panel">
+            <div class="history-toolbar">
+              <label>Start Date
+                <input id="pickingHistoryStart" type="date" />
+              </label>
+              <label>End Date
+                <input id="pickingHistoryEnd" type="date" />
+              </label>
+              <div class="actions">
+                <button class="historyFilterBtn primary" data-history-type="picking">Search / Filter</button>
+                <button class="historyClearBtn" data-history-type="picking">Clear Filter</button>
+                <button class="historyExportBtn" data-history-type="picking">Export Order Picking History CSV</button>
+              </div>
+            </div>
+
+            <div class="table-wrap small history-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Completed Date</th>
+                    <th>Picker</th>
+                    <th>Order / Transfer #</th>
+                    <th>Lines</th>
+                    <th>Total Picked</th>
+                    <th>Issue Lines</th>
+                    <th>Status</th>
+                    <th>Preview / Details</th>
+                  </tr>
+                </thead>
+                <tbody id="pickingHistoryBody"></tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </section>
     </section>
@@ -447,5 +535,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="app.js"></script>
+  <script src="history-upgrade.js"></script>
 </body>
 </html>
