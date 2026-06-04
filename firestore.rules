@@ -28,6 +28,11 @@ service cloud.firestore {
         myRole() in ['admin', 'lead', 'platformOwner'];
     }
 
+    function isReceiverTemp() {
+      return signedIn() &&
+        myRole() == 'receiverTemp';
+    }
+
     function isPlatformOwner() {
       return signedIn() &&
         myRole() == 'platformOwner';
@@ -41,6 +46,34 @@ service cloud.firestore {
       return request.resource.data.createdAt is string &&
         request.resource.data.createdBy is string &&
         request.resource.data.createdByEmail is string;
+    }
+
+    function mySite() {
+      return userExists() ? myUserDoc().data.site : null;
+    }
+
+    function myDepartment() {
+      return userExists() ? myUserDoc().data.department : null;
+    }
+
+    function matchesMySiteDepartment(data) {
+      return data.site == mySite() &&
+        data.department == myDepartment();
+    }
+
+    function hasNoReceiverTempAdminFields() {
+      return !request.resource.data.keys().hasAny([
+        'receivedAt',
+        'putawayCompletedAt',
+        'dockToStockMinutes',
+        'status',
+        'approvedBy',
+        'approvedAt',
+        'completedBy',
+        'completedAt',
+        'adminNotes',
+        'adminFields'
+      ]);
     }
 
     // USERS
@@ -79,9 +112,30 @@ service cloud.firestore {
     match /putAwayLogs/{logId} {
       allow read: if signedIn();
 
-      allow create: if signedIn();
+      allow create: if signedIn() && !isReceiverTemp();
 
       allow update, delete: if isAdmin();
+    }
+
+    // RECEIVING LINE ENTRY
+    match /receivingLines/{lineId} {
+      allow read: if isAdmin() ||
+        (
+          isReceiverTemp() &&
+          resource.data.createdBy == request.auth.uid &&
+          matchesMySiteDepartment(resource.data)
+        );
+
+      allow create: if isReceiverTemp() &&
+        hasCreatedFields() &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.lines is list &&
+        matchesMySiteDepartment(request.resource.data) &&
+        hasNoReceiverTempAdminFields();
+
+      allow update: if isAdmin();
+
+      allow delete: if false;
     }
 
     // CYCLE COUNT SESSIONS
@@ -109,6 +163,17 @@ service cloud.firestore {
       allow create: if signedIn();
 
       allow update, delete: if isAdmin();
+    }
+
+    // AUDIT LOGS
+    match /auditLogs/{auditId} {
+      allow read: if isAdmin();
+
+      allow create: if signedIn() &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdAt is string;
+
+      allow update, delete: if false;
     }
 
     // TASKS
