@@ -33,6 +33,11 @@ service cloud.firestore {
         myRole() == 'receiverTemp';
     }
 
+    function isCounterRole() {
+      return signedIn() &&
+        myRole() in ['counter', 'worker', 'admin', 'lead', 'platformOwner'];
+    }
+
     function isPlatformOwner() {
       return signedIn() &&
         myRole() == 'platformOwner';
@@ -145,6 +150,43 @@ service cloud.firestore {
       allow create: if signedIn();
 
       allow update, delete: if isAdmin();
+    }
+
+    // CYCLE COUNT TEXT IMPORTS
+    match /cycleCountImports/{importId} {
+      allow read: if isAdmin() ||
+        (
+          isCounterRole() &&
+          resource.data.createdBy == request.auth.uid
+        );
+
+      allow create: if
+        (
+          isCounterRole() &&
+          !isAdmin() &&
+          hasCreatedFields() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.rows is list &&
+          request.resource.data.status in ['Draft', 'Pending Review']
+        )
+        ||
+        (
+          isAdmin() &&
+          hasCreatedFields() &&
+          request.resource.data.rows is list &&
+          request.resource.data.status in ['Draft', 'Pending Review', 'Approved', 'Finalized']
+        );
+
+      allow update: if isAdmin() ||
+        (
+          isCounterRole() &&
+          resource.data.createdBy == request.auth.uid &&
+          resource.data.status in ['Draft', 'Pending Review'] &&
+          request.resource.data.status in ['Draft', 'Pending Review'] &&
+          request.resource.data.createdBy == resource.data.createdBy
+        );
+
+      allow delete: if isAdmin();
     }
 
     // ORDER PICKING SESSIONS
