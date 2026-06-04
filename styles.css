@@ -149,6 +149,58 @@ main {
   display: block;
 }
 
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.section-heading h2 {
+  margin: 0;
+}
+
+.history-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.history-tab {
+  background: #e8eefc;
+}
+
+.history-tab.active {
+  background: var(--blue);
+  color: #ffffff;
+}
+
+.history-panel {
+  display: none;
+}
+
+.history-panel.active {
+  display: block;
+}
+
+.history-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 260px)) 1fr;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.history-toolbar .actions {
+  margin-top: 0;
+}
+
+.history-table-wrap {
+  width: 100%;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -347,6 +399,30 @@ body.demo-mode #userBadge {
 
   .tabs {
     display: grid;
+  }
+
+  .section-heading {
+    display: grid;
+  }
+
+  .history-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .history-tab {
+    min-height: 44px;
+    padding: 10px 8px;
+    width: 100%;
+  }
+
+  .history-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .history-toolbar .actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .demo-banner {
