@@ -380,6 +380,32 @@ body.demo-mode #userBadge {
   color: #734c00;
 }
 
+body.receiver-temp-mode main {
+  max-width: 900px;
+}
+
+body.receiver-temp-mode #putawayTab > .card:first-child {
+  border-radius: 12px;
+}
+
+body.receiver-temp-mode #putawayTab > .card:first-child .table-wrap table {
+  min-width: 620px;
+}
+
+body.receiver-temp-mode #putawayTab > .card:first-child th:nth-child(4),
+body.receiver-temp-mode #putawayTab > .card:first-child td:nth-child(4) {
+  display: none;
+}
+
+body.receiver-temp-mode #putawayTab > .card:first-child input {
+  min-height: 48px;
+  font-size: 16px;
+}
+
+.receiver-temp-message {
+  color: var(--green);
+}
+
 @media (max-width: 900px) {
   .topbar {
     display: block;
@@ -435,5 +461,36 @@ body.demo-mode #userBadge {
 
   main {
     padding: 12px;
+  }
+
+  body.receiver-temp-mode #putawayTab > .card:first-child {
+    padding: 12px;
+  }
+
+  body.receiver-temp-mode #putawayTab > .card:first-child h2 {
+    font-size: 22px;
+  }
+
+  body.receiver-temp-mode #putawayTab > .card:first-child th,
+  body.receiver-temp-mode #putawayTab > .card:first-child td {
+    padding: 8px;
+  }
+
+  body.receiver-temp-mode #putawayTab > .card:first-child .item-input {
+    min-width: 180px;
+  }
+
+  body.receiver-temp-mode #putawayTab > .card:first-child .qty-input {
+    min-width: 110px;
+  }
+
+  body.receiver-temp-mode #putawayTab > .card:first-child .desc-input {
+    min-width: 220px;
+  }
+
+  body.receiver-temp-mode #savePutawayBtn {
+    width: 100%;
+    min-height: 52px;
+    font-size: 16px;
   }
 }
