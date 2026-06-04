@@ -20,6 +20,11 @@
     if (!window.auth || !window.db) return;
 
     auth.onAuthStateChanged(async (user) => {
+      if (state?.isDemoMode) {
+        applyDemoReceivingRoleIfNeeded();
+        return;
+      }
+
       if (!user) {
         clearReceivingRoleMode();
         return;
