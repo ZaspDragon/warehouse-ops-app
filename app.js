@@ -3,6 +3,8 @@ const $ = (id) => document.getElementById(id);
 const DEMO_STORAGE_KEY = "warehouseOpsDemoStateV1";
 const TIMER_STORAGE_KEY = "warehouseOpsReceivingTimerV1";
 const SETTINGS_STORAGE_KEY = "warehouseOpsSettingsV1";
+const TERMS_STORAGE_KEY = "warehouseOpsTermsAcceptanceV1";
+const TERMS_VERSION = "warehouseos-ip-terms-v1";
 const ROLE_OWNER_EMAIL = "brandon.evanshine@chadwellsupply.com";
 const DEMO_USER = {
   uid: "demo-user",
@@ -105,6 +107,11 @@ function wireEvents() {
   $("searchItemHistoryBtn")?.addEventListener("click", renderItemHistory);
   $("exportItemHistoryBtn")?.addEventListener("click", exportItemHistory);
   $("saveSettingsBtn")?.addEventListener("click", saveSettings);
+  $("termsAgree")?.addEventListener("change", () => {
+    if ($("acceptTermsBtn")) $("acceptTermsBtn").disabled = !$("termsAgree").checked;
+  });
+  $("acceptTermsBtn")?.addEventListener("click", acceptTerms);
+  $("declineTermsBtn")?.addEventListener("click", declineTerms);
   $("closeHistoryModalBtn")?.addEventListener("click", closeHistoryModal);
   $("saveHistoryEditBtn")?.addEventListener("click", saveHistoryEdit);
   $("deleteHistoryRecordBtn")?.addEventListener("click", deleteHistoryRecord);
@@ -149,6 +156,53 @@ function switchTab(tab) {
   if (tab === "settings") syncSettingsUi();
 }
 
+function hasAcceptedTerms() {
+  const record = readJson(TERMS_STORAGE_KEY, null);
+  return Boolean(record?.accepted && record.version === TERMS_VERSION);
+}
+
+function showTermsModal() {
+  if (hasAcceptedTerms()) return;
+  $("termsModal")?.classList.remove("hidden");
+  $("termsModal")?.setAttribute("aria-hidden", "false");
+}
+
+function hideTermsModal() {
+  $("termsModal")?.classList.add("hidden");
+  $("termsModal")?.setAttribute("aria-hidden", "true");
+}
+
+async function acceptTerms() {
+  const record = {
+    accepted: true,
+    version: TERMS_VERSION,
+    acceptedAt: new Date().toISOString(),
+    userEmail: state.user?.email || "",
+    userId: state.user?.uid || ""
+  };
+
+  writeJson(TERMS_STORAGE_KEY, record);
+  hideTermsModal();
+
+  if (!state.isDemoMode && window.db) {
+    try {
+      const ref = await db.collection("termsAcceptances").add({
+        ...record,
+        userAgent: navigator.userAgent,
+        termsSummary: "WarehouseOS proprietary-use, non-transfer, confidentiality, and no-copy terms accepted."
+      });
+      writeJson(TERMS_STORAGE_KEY, { ...record, serverAcceptanceId: ref.id });
+    } catch (err) {
+      console.warn("Terms acceptance saved locally only:", err);
+    }
+  }
+}
+
+function declineTerms() {
+  alert("You must accept the terms before using WarehouseOS.");
+  logoutCurrentUser();
+}
+
 function watchAuth() {
   auth.onAuthStateChanged(async (user) => {
     if (state.isDemoMode) return;
@@ -185,6 +239,7 @@ function syncShell() {
 
   document.body.classList.toggle("demo-mode", state.isDemoMode);
   syncSettingsUi();
+  if (signedIn) showTermsModal();
 }
 
 function clearLoadedState() {

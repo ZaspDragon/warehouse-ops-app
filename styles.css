@@ -349,6 +349,37 @@ button:hover {
   font-family: "Courier New", monospace;
 }
 
+.terms-card {
+  width: min(900px, 100%);
+}
+
+.terms-box {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 16px;
+  line-height: 1.5;
+}
+
+.terms-box h3 {
+  margin: 16px 0 6px;
+}
+
+.terms-check {
+  display: flex;
+  grid-template-columns: none;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 16px;
+}
+
+.terms-check input {
+  width: auto;
+  margin-top: 3px;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
