@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Warehouse Logs</title>
+  <title>WarehouseOS Inventory Control Dashboard</title>
 
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="responsive-upgrade.css?v=20260604-1" />
@@ -16,6 +16,8 @@
 
   <!-- Excel / CSV Upload Reader -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <script>
     const firebaseConfig = {
@@ -36,7 +38,7 @@
 <body>
   <header class="topbar">
     <div>
-      <h1>Warehouse Logs</h1>
+      <h1>WarehouseOS</h1>
       <p>Put Away · Cycle Count · Order Picking · Employees · History</p>
     </div>
 
@@ -90,45 +92,58 @@
         <button class="tab active" data-tab="putaway">Put Away Log</button>
         <button class="tab" data-tab="cycle">Cycle Count</button>
         <button class="tab" data-tab="picking">Order Picking</button>
+        <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
         <button class="tab" data-tab="history">History</button>
+        <button class="tab" data-tab="settings">Settings</button>
       </nav>
 
       <!-- PUT AWAY -->
       <section id="putawayTab" class="tab-panel active">
         <div class="card">
+          <h2>Receiving Timer</h2>
+
+          <div class="timer-layout">
+            <div class="timer-face">
+              <strong id="receivingClock">00:00:00</strong>
+            </div>
+            <div class="stats kpi-compact">
+              <div><strong id="dockToStockStat">0</strong><span>Dock-To-Stock Minutes</span></div>
+              <div><strong id="timerStatus">Idle</strong><span>Status</span></div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="startReceivingTimerBtn" class="primary">Start</button>
+            <button id="stopReceivingTimerBtn">Stop</button>
+            <button id="resetReceivingTimerBtn" class="danger">Reset</button>
+          </div>
+
+          <div class="timer-meta">
+            <div><span>Started By</span><strong id="timerStartedBy">-</strong></div>
+            <div><span>Started At</span><strong id="timerStartedAt">-</strong></div>
+            <div><span>Stopped By</span><strong id="timerStoppedBy">-</strong></div>
+            <div><span>Stopped At</span><strong id="timerStoppedAt">-</strong></div>
+          </div>
+        </div>
+
+        <div class="card">
           <h2>Put Away Log — 25 Lines</h2>
 
           <div class="grid">
             <label>Worker
-              <select id="putWorker"></select>
+              <input id="putWorker" list="workerOptions" placeholder="Worker name" />
             </label>
 
             <label>Date
               <input id="putDate" type="date" />
-            </label>
-
-            <label>Document / PO / SPO
-              <input id="putDoc" placeholder="SPO0219241" />
-            </label>
-
-            <label>Received Time
-              <input id="receivedTime" type="datetime-local" />
-            </label>
-
-            <label>Put Away Completed Time
-              <input id="stockedTime" type="datetime-local" />
-            </label>
-
-            <label>Dock-to-Stock Minutes
-              <input id="dockToStockMinutes" readonly />
             </label>
           </div>
 
           <div class="stats">
             <div><strong id="putUsed">0</strong><span>Used Lines</span></div>
             <div><strong id="putQty">0</strong><span>Total Qty</span></div>
-            <div><strong id="dockToStockStat">0</strong><span>Dock-to-Stock Min</span></div>
+            <div><strong id="dockToStockSheetStat">0</strong><span>Dock-To-Stock Min</span></div>
           </div>
 
           <div class="table-wrap">
@@ -162,10 +177,9 @@
                 <tr>
                   <th>Date</th>
                   <th>Worker</th>
-                  <th>Doc</th>
                   <th>Lines</th>
                   <th>Total Qty</th>
-                  <th>Dock-to-Stock</th>
+                  <th>Dock-To-Stock</th>
                   <th>Preview</th>
                 </tr>
               </thead>
@@ -192,6 +206,17 @@
             <label>Date
               <input id="cycleDate" type="date" />
             </label>
+          </div>
+
+          <div class="upload-card">
+            <h3>Upload Cycle Count Sheet</h3>
+            <p class="hint">Upload .xlsx, .xls, or .csv. The worksheet stays editable after import.</p>
+            <div class="actions">
+              <input id="cycleFileUpload" type="file" accept=".xlsx,.xls,.csv,.pdf" />
+              <button id="loadCycleFileBtn" class="primary">Load Cycle Count</button>
+              <button id="exportCurrentCycleBtn">Export Current Count Sheet</button>
+            </div>
+            <p id="cycleUploadMessage" class="message"></p>
           </div>
 
           <div class="table-wrap">
@@ -369,6 +394,62 @@
         </div>
       </section>
 
+      <!-- ITEM HISTORY -->
+      <section id="itemHistoryTab" class="tab-panel">
+        <div class="card">
+          <div class="section-heading">
+            <h2>Item History</h2>
+            <button id="exportItemHistoryBtn" class="primary">Export CSV</button>
+          </div>
+
+          <div class="history-toolbar">
+            <label>Item Number
+              <input id="itemHistorySearch" placeholder="Item #" />
+            </label>
+            <label>Worker
+              <input id="itemHistoryWorker" placeholder="Worker" />
+            </label>
+            <label>Process
+              <select id="itemHistoryProcess">
+                <option value="">All Processes</option>
+                <option value="putaway">Put Away</option>
+                <option value="cycleCount">Cycle Count</option>
+                <option value="orderPicking">Order Picking</option>
+                <option value="receiving">Receiving</option>
+              </select>
+            </label>
+            <label>Start Date
+              <input id="itemHistoryStart" type="date" />
+            </label>
+            <label>End Date
+              <input id="itemHistoryEnd" type="date" />
+            </label>
+            <div class="actions">
+              <button id="searchItemHistoryBtn" class="primary">Search</button>
+            </div>
+          </div>
+
+          <div class="table-wrap small">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Process</th>
+                  <th>Worker</th>
+                  <th>Item</th>
+                  <th>Description</th>
+                  <th>Qty</th>
+                  <th>Location</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="itemHistoryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <!-- EMPLOYEES -->
       <section id="employeesTab" class="tab-panel">
         <div class="card">
@@ -448,13 +529,11 @@
                   <tr>
                     <th>Completed Date</th>
                     <th>Worker</th>
-                    <th>Document / PO / SPO</th>
                     <th>Lines</th>
                     <th>Total Qty</th>
-                    <th>Received Time</th>
-                    <th>Put Away Completed Time</th>
                     <th>Dock-to-Stock Minutes</th>
                     <th>Preview / Details</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="putawayHistoryBody"></tbody>
@@ -489,6 +568,7 @@
                     <th>Total Variance</th>
                     <th>Status</th>
                     <th>Preview / Details</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="cycleHistoryBody"></tbody>
@@ -523,6 +603,7 @@
                     <th>Issue Lines</th>
                     <th>Status</th>
                     <th>Preview / Details</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="pickingHistoryBody"></tbody>
@@ -531,15 +612,67 @@
           </section>
         </div>
       </section>
+
+      <!-- SETTINGS -->
+      <section id="settingsTab" class="tab-panel">
+        <div class="card">
+          <h2>Settings</h2>
+          <div class="grid">
+            <label>Operator Name
+              <input id="operatorName" placeholder="Worker name" />
+            </label>
+            <label>Operator Role
+              <select id="operatorRole">
+                <option value="worker">Worker</option>
+                <option value="lead">Lead</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+          </div>
+          <p id="roleLockNotice" class="message">Only brandon.evanshine@chadwellsupply.com can change operator roles.</p>
+          <div class="actions">
+            <button id="saveSettingsBtn" class="primary">Save Settings</button>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
+
+  <datalist id="workerOptions"></datalist>
+
+  <div id="historyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+      <div class="section-heading">
+        <h2 id="historyModalTitle">History Record</h2>
+        <button id="closeHistoryModalBtn">Close</button>
+      </div>
+      <div class="grid">
+        <label>Date
+          <input id="historyEditDate" type="date" />
+        </label>
+        <label>Worker
+          <input id="historyEditWorker" />
+        </label>
+        <label>Reference
+          <input id="historyEditReference" />
+        </label>
+      </div>
+      <label>Lines
+        <textarea id="historyEditLines" rows="8"></textarea>
+      </label>
+      <div class="actions">
+        <button id="saveHistoryEditBtn" class="primary">Save Changes</button>
+        <button id="deleteHistoryRecordBtn" class="danger">Delete Record</button>
+      </div>
+      <p id="historyEditMessage" class="message"></p>
+    </div>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
 
   <script src="app.js"></script>
   <script src="history-upgrade.js"></script>
-  <script src="receiving-access.js?v=20260604-2"></script>
-  <script src="cycle-count-import.js?v=20260604-1"></script>
   <script src="responsive-ui.js?v=20260604-1"></script>
 </body>
 </html>

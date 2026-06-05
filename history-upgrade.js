@@ -286,7 +286,7 @@
     body.innerHTML = "";
 
     if (!records.length) {
-      body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No Put Away Log records found for this date range.</td></tr>`);
+      body.insertAdjacentHTML("beforeend", `<tr><td colspan="7">No Put Away Log records found for this date range.</td></tr>`);
       return;
     }
 
@@ -298,13 +298,11 @@
         <tr>
           <td>${escapeHtml(getCompletedDate(log))}</td>
           <td>${escapeHtml(log.worker || "")}</td>
-          <td>${escapeHtml(log.docNumber || "")}</td>
           <td>${Number(log.lineCount || lines.length || 0)}</td>
           <td>${Number(log.totalQty || sumBy(lines, "qty"))}</td>
-          <td>${escapeHtml(log.receivedTime || "")}</td>
-          <td>${escapeHtml(log.stockedTime || "")}</td>
           <td>${Number(log.dockToStockMinutes || 0)}</td>
           <td>${escapeHtml(previewLines(lines, (line) => `${line.item || ""} x${line.qty || 0} @ ${line.location || ""}`))}</td>
+          <td>${historyActions("putaway", log.id)}</td>
         </tr>
       `
       );
@@ -319,7 +317,7 @@
     body.innerHTML = "";
 
     if (!records.length) {
-      body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No Cycle Count records found for this date range.</td></tr>`);
+      body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No Cycle Count records found for this date range.</td></tr>`);
       return;
     }
 
@@ -339,6 +337,7 @@
           <td>${totalVariance}</td>
           <td>${varianceLines ? '<span class="badge bad">Variance</span>' : '<span class="badge ok">Balanced</span>'}</td>
           <td>${escapeHtml(previewLines(lines, (line) => `${line.item || ""}: counted ${line.countedQty || 0}, variance ${line.variance || 0}`))}</td>
+          <td>${historyActions("cycle", log.id)}</td>
         </tr>
       `
       );
@@ -353,7 +352,7 @@
     body.innerHTML = "";
 
     if (!records.length) {
-      body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No Order Picking records found for this date range.</td></tr>`);
+      body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No Order Picking records found for this date range.</td></tr>`);
       return;
     }
 
@@ -372,6 +371,7 @@
           <td>${issueLines}</td>
           <td>${issueLines ? '<span class="badge warn">Issues</span>' : '<span class="badge ok">Complete</span>'}</td>
           <td>${escapeHtml(previewLines(lines, (line) => `${line.item || ""}: picked ${line.pickedQty || 0}, ${line.status || "Pending"}`))}</td>
+          <td>${historyActions("picking", log.id)}</td>
         </tr>
       `
       );
@@ -397,11 +397,8 @@
       return {
         completedDate: getCompletedDate(log),
         worker: log.worker || "",
-        documentNumber: log.docNumber || "",
         lines: Number(log.lineCount || lines.length || 0),
         totalQty: Number(log.totalQty || sumBy(lines, "qty")),
-        receivedTime: log.receivedTime || "",
-        putAwayCompletedTime: log.stockedTime || "",
         dockToStockMinutes: Number(log.dockToStockMinutes || 0),
         details: previewLines(lines, (line) => `${line.item || ""} x${line.qty || 0} @ ${line.location || ""}`)
       };
@@ -456,5 +453,18 @@
       .map(formatter)
       .filter(Boolean)
       .join(" | ");
+  }
+
+  function historyActions(type, id) {
+    if (!id) return "";
+    const safeType = escapeHtml(type);
+    const safeId = escapeHtml(id);
+    return `
+      <div class="row-actions">
+        <button type="button" onclick="openHistoryRecord('${safeType}', '${safeId}', 'view')">View</button>
+        <button type="button" onclick="openHistoryRecord('${safeType}', '${safeId}', 'edit')">Edit</button>
+        <button type="button" class="danger" onclick="deleteHistoryRecordByKey('${safeType}', '${safeId}')">Delete</button>
+      </div>
+    `;
   }
 })();

@@ -1,5 +1,14 @@
 const $ = (id) => document.getElementById(id);
 
+const DEMO_STORAGE_KEY = "warehouseOpsDemoStateV1";
+const TIMER_STORAGE_KEY = "warehouseOpsReceivingTimerV1";
+const SETTINGS_STORAGE_KEY = "warehouseOpsSettingsV1";
+const ROLE_OWNER_EMAIL = "brandon.evanshine@chadwellsupply.com";
+const DEMO_USER = {
+  uid: "demo-user",
+  email: "demo@warehouse-ops-app.local"
+};
+
 const state = {
   user: null,
   isDemoMode: false,
@@ -7,7 +16,11 @@ const state = {
   putawayLogs: [],
   cycleSessions: [],
   pickingSessions: [],
-  activityLogs: []
+  activityLogs: [],
+  itemHistoryRows: [],
+  timer: readJson(TIMER_STORAGE_KEY, { status: "idle", elapsedMinutes: 0 }),
+  settings: readJson(SETTINGS_STORAGE_KEY, { operatorName: "", operatorRole: "worker" }),
+  editingHistory: null
 };
 
 const COLLECTIONS = {
@@ -18,16 +31,30 @@ const COLLECTIONS = {
   activity: "activityLogs"
 };
 
-const DEMO_STORAGE_KEY = "warehouseOpsDemoStateV1";
-const DEMO_USER = {
-  uid: "demo-user",
-  email: "demo@warehouse-ops-app.local"
-};
+function readJson(key, fallback) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (err) {
+    return fallback;
+  }
+}
+
+function writeJson(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.warn("Local storage write failed:", err);
+  }
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   setTodayDefaults();
   buildAllTables();
   wireEvents();
+  syncSettingsUi();
+  renderReceivingTimer();
+  window.setInterval(renderReceivingTimer, 1000);
   watchAuth();
   if (new URLSearchParams(window.location.search).get("demo") === "1") {
     enterDemoMode({ silent: true });
@@ -49,9 +76,12 @@ function wireEvents() {
   $("logoutBtn")?.addEventListener("click", logoutCurrentUser);
   $("resetDemoBtn")?.addEventListener("click", () => resetDemoData());
 
-  $("receivedTime")?.addEventListener("change", calculateDockToStock);
-  $("stockedTime")?.addEventListener("change", calculateDockToStock);
+  $("startReceivingTimerBtn")?.addEventListener("click", startReceivingTimer);
+  $("stopReceivingTimerBtn")?.addEventListener("click", stopReceivingTimer);
+  $("resetReceivingTimerBtn")?.addEventListener("click", resetReceivingTimer);
 
+  $("loadCycleFileBtn")?.addEventListener("click", loadCycleCountFile);
+  $("exportCurrentCycleBtn")?.addEventListener("click", exportCurrentCycle);
   $("loadPickFileBtn")?.addEventListener("click", loadPickTicketFile);
   $("exportCurrentPickingBtn")?.addEventListener("click", exportCurrentPicking);
 
@@ -72,6 +102,12 @@ function wireEvents() {
 
   $("refreshHistoryBtn")?.addEventListener("click", loadHistory);
   $("exportHistoryBtn")?.addEventListener("click", () => exportCsv("history"));
+  $("searchItemHistoryBtn")?.addEventListener("click", renderItemHistory);
+  $("exportItemHistoryBtn")?.addEventListener("click", exportItemHistory);
+  $("saveSettingsBtn")?.addEventListener("click", saveSettings);
+  $("closeHistoryModalBtn")?.addEventListener("click", closeHistoryModal);
+  $("saveHistoryEditBtn")?.addEventListener("click", saveHistoryEdit);
+  $("deleteHistoryRecordBtn")?.addEventListener("click", deleteHistoryRecord);
 
   document.querySelectorAll(".exportBtn").forEach((btn) => {
     btn.addEventListener("click", () => exportCsv(btn.dataset.export));
@@ -92,6 +128,7 @@ function wireEvents() {
 
   document.addEventListener("change", (e) => {
     if (e.target.closest("#pickingBody")) updatePickingStats();
+    if (e.target.closest("#cycleBody")) updateCycleStats();
   });
 }
 
@@ -108,6 +145,8 @@ function switchTab(tab) {
   if (panel) panel.classList.add("active");
 
   if (tab === "history") loadHistory();
+  if (tab === "itemHistory") renderItemHistory();
+  if (tab === "settings") syncSettingsUi();
 }
 
 function watchAuth() {
@@ -145,6 +184,7 @@ function syncShell() {
   }
 
   document.body.classList.toggle("demo-mode", state.isDemoMode);
+  syncSettingsUi();
 }
 
 function clearLoadedState() {
@@ -158,6 +198,7 @@ function clearLoadedState() {
   renderEmployees();
   renderLogs();
   renderHistory();
+  renderItemHistory();
   populateEmployeeDropdowns();
 }
 
@@ -167,7 +208,6 @@ function resetWorkingForms() {
   clearRows("pickingBody");
   setTodayDefaults();
 
-  if ($("putDoc")) $("putDoc").value = "";
   if ($("cycleId")) $("cycleId").value = "";
   if ($("pickOrder")) $("pickOrder").value = "";
 }
@@ -301,6 +341,7 @@ function applyDemoState(data) {
   renderEmployees();
   renderLogs();
   renderHistory();
+  renderItemHistory();
   populateEmployeeDropdowns();
 }
 
@@ -318,9 +359,6 @@ function buildDemoState() {
       id: "put-demo-1",
       worker: "Ava Patel",
       date: demoDate(0),
-      docNumber: "SPO240531",
-      receivedTime: demoDateTimeLocal(0, 7, 18),
-      stockedTime: demoDateTimeLocal(0, 8, 4),
       dockToStockMinutes: 46,
       lines: [
         { line: 1, item: "SKU-4401", qty: 24, location: "A1-04", notes: "Top rack reserve" },
@@ -335,9 +373,6 @@ function buildDemoState() {
       id: "put-demo-2",
       worker: "Maya Chen",
       date: demoDate(1),
-      docNumber: "PO240530",
-      receivedTime: demoDateTimeLocal(1, 13, 10),
-      stockedTime: demoDateTimeLocal(1, 14, 2),
       dockToStockMinutes: 52,
       lines: [
         { line: 1, item: "SKU-9042", qty: 8, location: "D4-01", notes: "Overflow pallet" },
@@ -630,6 +665,7 @@ async function loadAllData() {
     renderEmployees();
     renderLogs();
     renderHistory();
+    renderItemHistory();
     populateEmployeeDropdowns();
   } catch (err) {
     console.error("Load data failed:", err);
@@ -667,26 +703,156 @@ async function loadHistory() {
   }
 }
 
-function calculateDockToStock() {
-  const received = $("receivedTime")?.value;
-  const stocked = $("stockedTime")?.value;
+function currentOperatorName() {
+  return state.settings.operatorName || state.user?.email || $("putWorker")?.value || "Warehouse Operator";
+}
 
-  if (!received || !stocked) {
-    if ($("dockToStockMinutes")) $("dockToStockMinutes").value = "";
-    if ($("dockToStockStat")) $("dockToStockStat").textContent = "0";
-    return 0;
+function isRoleOwner() {
+  return String(state.user?.email || "").toLowerCase() === ROLE_OWNER_EMAIL;
+}
+
+function canResetTimer() {
+  return isRoleOwner() || ["lead", "manager", "admin"].includes(String(state.settings.operatorRole || "").toLowerCase());
+}
+
+function timerSeconds() {
+  if (!state.timer.startedAt) return Math.round(Number(state.timer.elapsedMinutes || 0) * 60);
+  const start = new Date(state.timer.startedAt).getTime();
+  const end = state.timer.stoppedAt ? new Date(state.timer.stoppedAt).getTime() : Date.now();
+  return Math.max(0, Math.round((end - start) / 1000));
+}
+
+function timerMinutes() {
+  return Math.round((timerSeconds() / 60) * 100) / 100;
+}
+
+function formatTimer(seconds) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return [hrs, mins, secs].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function renderReceivingTimer() {
+  const minutes = timerMinutes();
+  if ($("receivingClock")) $("receivingClock").textContent = formatTimer(timerSeconds());
+  if ($("dockToStockStat")) $("dockToStockStat").textContent = minutes;
+  if ($("dockToStockSheetStat")) $("dockToStockSheetStat").textContent = minutes;
+  if ($("timerStatus")) $("timerStatus").textContent = titleCase(state.timer.status || "idle");
+  if ($("timerStartedBy")) $("timerStartedBy").textContent = state.timer.startedByName || "-";
+  if ($("timerStartedAt")) $("timerStartedAt").textContent = formatDateTime(state.timer.startedAt);
+  if ($("timerStoppedBy")) $("timerStoppedBy").textContent = state.timer.stoppedByName || "-";
+  if ($("timerStoppedAt")) $("timerStoppedAt").textContent = formatDateTime(state.timer.stoppedAt);
+  if ($("startReceivingTimerBtn")) $("startReceivingTimerBtn").disabled = state.timer.status === "running";
+  if ($("stopReceivingTimerBtn")) $("stopReceivingTimerBtn").disabled = state.timer.status !== "running";
+  if ($("resetReceivingTimerBtn")) $("resetReceivingTimerBtn").disabled = !canResetTimer();
+}
+
+function persistTimer() {
+  state.timer.elapsedMinutes = timerMinutes();
+  writeJson(TIMER_STORAGE_KEY, state.timer);
+}
+
+function startReceivingTimer() {
+  if (state.timer.status === "running") return;
+  state.timer = {
+    status: "running",
+    startedAt: new Date().toISOString(),
+    startedBy: state.user?.email || "",
+    startedByName: currentOperatorName(),
+    stoppedAt: "",
+    stoppedBy: "",
+    stoppedByName: "",
+    elapsedMinutes: 0
+  };
+  persistTimer();
+  addReceivingActivity("Started");
+  renderReceivingTimer();
+}
+
+function stopReceivingTimer() {
+  if (state.timer.status !== "running") return;
+  state.timer.stoppedAt = new Date().toISOString();
+  state.timer.stoppedBy = state.user?.email || "";
+  state.timer.stoppedByName = currentOperatorName();
+  state.timer.status = "stopped";
+  persistTimer();
+  addReceivingActivity("Stopped");
+  renderReceivingTimer();
+}
+
+function resetReceivingTimer() {
+  if (!canResetTimer()) return toast("Only a Lead/Admin or Brandon can reset the timer.");
+  state.timer = { status: "idle", elapsedMinutes: 0 };
+  writeJson(TIMER_STORAGE_KEY, state.timer);
+  renderReceivingTimer();
+}
+
+function addReceivingActivity(status) {
+  const entry = {
+    type: "receiving",
+    employee: currentOperatorName(),
+    date: new Date().toISOString().slice(0, 10),
+    item: "",
+    description: "Receiving Timer",
+    qty: timerMinutes(),
+    location: "Dock",
+    status,
+    notes: `Dock-To-Stock Minutes: ${timerMinutes()}`,
+    createdAt: new Date().toISOString(),
+    createdBy: state.user?.uid || "",
+    createdByEmail: state.user?.email || ""
+  };
+  state.activityLogs = sortByCreatedAtDesc([entry, ...state.activityLogs]).slice(0, 500);
+  if (state.isDemoMode) persistDemoState();
+  renderItemHistory();
+}
+
+function titleCase(value) {
+  return String(value || "").replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function syncSettingsUi() {
+  if (!state.settings.operatorName) {
+    state.settings.operatorName = state.user?.email || "";
   }
+  if ($("operatorName")) $("operatorName").value = state.settings.operatorName || "";
+  if ($("operatorRole")) {
+    $("operatorRole").value = state.settings.operatorRole || "worker";
+    $("operatorRole").disabled = !isRoleOwner();
+  }
+  if ($("employeeRole")) $("employeeRole").disabled = !isRoleOwner();
+  if ($("roleLockNotice")) {
+    $("roleLockNotice").textContent = isRoleOwner()
+      ? "Brandon access detected. Role changes are enabled."
+      : "Only brandon.evanshine@chadwellsupply.com can change operator roles.";
+  }
+  renderReceivingTimer();
+}
 
-  const start = new Date(received);
-  const end = new Date(stocked);
+function saveSettings() {
+  state.settings.operatorName = $("operatorName")?.value.trim() || state.user?.email || "Warehouse Operator";
+  if (isRoleOwner()) {
+    state.settings.operatorRole = $("operatorRole")?.value || "worker";
+  } else {
+    state.settings.operatorRole = "worker";
+  }
+  writeJson(SETTINGS_STORAGE_KEY, state.settings);
+  syncSettingsUi();
+  toast("Settings saved.");
+}
 
-  const minutes = Math.round((end - start) / 60000);
-  const cleanMinutes = minutes >= 0 ? minutes : 0;
-
-  if ($("dockToStockMinutes")) $("dockToStockMinutes").value = cleanMinutes;
-  if ($("dockToStockStat")) $("dockToStockStat").textContent = cleanMinutes;
-
-  return cleanMinutes;
+function calculateDockToStock() {
+  const minutes = timerMinutes();
+  if ($("dockToStockStat")) $("dockToStockStat").textContent = minutes;
+  if ($("dockToStockSheetStat")) $("dockToStockSheetStat").textContent = minutes;
+  return minutes;
 }
 
 function buildAllTables() {
@@ -740,9 +906,6 @@ function buildActivityEntry(type, sessionDoc, line, createdAt) {
     variance: Number(line.variance || 0),
     location: line.location || line.slot || line.fromSlot || "",
     uom: line.uom || "",
-    documentNumber: sessionDoc.docNumber || sessionDoc.countId || sessionDoc.orderNumber || "",
-    receivedTime: sessionDoc.receivedTime || "",
-    stockedTime: sessionDoc.stockedTime || "",
     dockToStockMinutes: Number(sessionDoc.dockToStockMinutes || 0),
     status: line.status || "",
     reason: line.reason || "",
@@ -782,13 +945,13 @@ function buildPutawayRows() {
   }
 }
 
-function buildCycleRows() {
+function buildCycleRows(rowCount = 25) {
   const body = $("cycleBody");
   if (!body) return;
 
   body.innerHTML = "";
 
-  for (let i = 1; i <= 25; i++) {
+  for (let i = 1; i <= rowCount; i++) {
     body.insertAdjacentHTML(
       "beforeend",
       `
@@ -859,8 +1022,162 @@ function buildPickingRows(rowCount = 25) {
 }
 
 /* ---------------------------
-   PICK TICKET UPLOAD FIX
+   WORKSHEET UPLOADS
 ---------------------------- */
+
+async function loadCycleCountFile() {
+  const file = $("cycleFileUpload")?.files?.[0];
+
+  if (!file) {
+    setCycleUploadMessage("Choose a cycle count file first.");
+    return toast("Choose a cycle count file first.");
+  }
+
+  try {
+    const rows = await readWorksheetRows(file);
+    const parsedLines = parseCycleUploadRows(rows);
+
+    if (!parsedLines.length) {
+      setCycleUploadMessage("No cycle count rows found.");
+      return toast("No cycle count rows found.");
+    }
+
+    fillCycleTableFromUpload(parsedLines);
+    setCycleUploadMessage(`Loaded ${parsedLines.length} cycle count lines from ${file.name}.`);
+    toast(`Loaded ${parsedLines.length} cycle count lines.`);
+  } catch (err) {
+    console.error("Cycle count upload failed:", err);
+    setCycleUploadMessage("Upload failed: " + err.message);
+    toast("Upload failed: " + err.message);
+  }
+}
+
+async function readWorksheetRows(file) {
+  const extension = file.name.split(".").pop().toLowerCase();
+
+  if (extension === "pdf") {
+    const text = await readPdfText(file);
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim().split(/\s{2,}|\t|,/).map((cell) => cell.trim()))
+      .filter((row) => row.some(Boolean));
+  }
+
+  if (typeof XLSX === "undefined") {
+    throw new Error("Excel reader failed to load. Refresh the page and try again.");
+  }
+
+  const data = await file.arrayBuffer();
+  const workbook = XLSX.read(data, { type: "array" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+  return XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    defval: "",
+    raw: false
+  });
+}
+
+async function readPdfText(file) {
+  if (typeof pdfjsLib === "undefined") {
+    throw new Error("PDF reader failed to load. Refresh the page and try again.");
+  }
+
+  const data = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const pages = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    pages.push(content.items.map((item) => item.str).join(" "));
+  }
+
+  const text = pages.join("\n").trim();
+  if (text) return text;
+
+  if (typeof Tesseract === "undefined") {
+    throw new Error("PDF text was empty and OCR is unavailable.");
+  }
+
+  const ocrPages = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: context, viewport }).promise;
+    const result = await Tesseract.recognize(canvas, "eng");
+    ocrPages.push(result.data.text || "");
+  }
+  return ocrPages.join("\n");
+}
+
+function parseCycleUploadRows(rows) {
+  const headerIndex = rows.findIndex((row) => row.map(cleanHeader).some((cell) => cell.includes("ITEM")));
+  const headers = (headerIndex >= 0 ? rows[headerIndex] : []).map(cleanHeader);
+  const col = buildFlexibleColumnMap(headers);
+  const start = headerIndex >= 0 ? headerIndex + 1 : 0;
+  const parsed = [];
+
+  for (let i = start; i < rows.length; i++) {
+    const row = rows[i];
+    const item = getFlexibleCell(row, col, ["ITEM #", "ITEM", "ITEM NUMBER", "SKU"]);
+    const description = getFlexibleCell(row, col, ["DESCRIPTION", "DESC"]);
+    const location = getFlexibleCell(row, col, ["LOCATION", "BIN", "BIN LOC", "SLOT"]);
+    const systemQty = toNumber(getFlexibleCell(row, col, ["SYSTEM QTY", "ON HAND QTY", "ON HAND", "QOH"]));
+    const countedQty = toNumber(getFlexibleCell(row, col, ["COUNTED QTY", "COUNT QTY", "COUNTED", "COUNT"]));
+    const variance = countedQty - systemQty;
+    const reason = getFlexibleCell(row, col, ["REASON", "NOTES"]) || (variance === 0 ? "Count Verified" : "Recount Required");
+
+    if (!item && !description && !location) continue;
+    parsed.push({ item, description, location, systemQty, countedQty, variance, reason, done: false });
+  }
+
+  return parsed;
+}
+
+function buildFlexibleColumnMap(headers) {
+  const map = {};
+  headers.forEach((header, index) => {
+    if (header) map[header] = index;
+  });
+  return map;
+}
+
+function getFlexibleCell(row, col, names) {
+  for (const name of names) {
+    const key = cleanHeader(name);
+    if (col[key] !== undefined) return getCell(row, col[key]);
+  }
+  return "";
+}
+
+function fillCycleTableFromUpload(lines) {
+  const rowCount = Math.max(25, lines.length);
+  buildCycleRows(rowCount);
+  const tableRows = [...document.querySelectorAll("#cycleBody tr")];
+
+  lines.forEach((line, index) => {
+    const row = tableRows[index];
+    if (!row) return;
+    setRowValue(row, ".cycle-item", line.item);
+    setRowValue(row, ".cycle-desc", line.description);
+    setRowValue(row, ".cycle-location", line.location);
+    setRowValue(row, ".cycle-system", line.systemQty);
+    setRowValue(row, ".cycle-counted", line.countedQty);
+    setRowValue(row, ".cycle-reason", line.reason);
+    if (row.querySelector(".cycle-done")) row.querySelector(".cycle-done").checked = Boolean(line.done);
+  });
+
+  updateCycleStats();
+}
+
+function setCycleUploadMessage(msg) {
+  if ($("cycleUploadMessage")) $("cycleUploadMessage").textContent = msg || "";
+}
 
 async function loadPickTicketFile() {
   const fileInput = $("pickFileUpload");
@@ -1233,7 +1550,7 @@ function updatePickingStats() {
 
 async function addEmployee() {
   const name = $("employeeName")?.value.trim();
-  const role = $("employeeRole")?.value;
+  const role = isRoleOwner() ? $("employeeRole")?.value : "Worker";
 
   if (!name) return toast("Enter employee name.");
 
@@ -1342,7 +1659,15 @@ function renderEmployees() {
 function populateEmployeeDropdowns() {
   const employees = state.employees.filter((e) => e.active);
 
-  ["putWorker", "cycleWorker", "pickWorker"].forEach((id) => {
+  const workerOptions = $("workerOptions");
+  if (workerOptions) {
+    workerOptions.innerHTML = "";
+    employees.forEach((emp) => {
+      workerOptions.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(emp.name)}"></option>`);
+    });
+  }
+
+  ["cycleWorker", "pickWorker"].forEach((id) => {
     const select = $(id);
     if (!select) return;
 
@@ -1388,10 +1713,8 @@ async function savePutaway() {
       id: createLocalId("put"),
       worker: $("putWorker")?.value || "",
       date: $("putDate")?.value || "",
-      docNumber: $("putDoc")?.value.trim() || "",
-      receivedTime: $("receivedTime")?.value || "",
-      stockedTime: $("stockedTime")?.value || "",
       dockToStockMinutes,
+      timer: { ...state.timer, elapsedMinutes: dockToStockMinutes },
       lines,
       lineCount: lines.length,
       totalQty: lines.reduce((sum, line) => sum + Number(line.qty || 0), 0),
@@ -1405,6 +1728,7 @@ async function savePutaway() {
     persistDemoState();
     renderLogs();
     renderHistory();
+    renderItemHistory();
     clearRows("putawayBody");
     toast("Put away log saved.");
     return;
@@ -1416,10 +1740,8 @@ async function savePutaway() {
     const doc = {
       worker: $("putWorker")?.value || "",
       date: $("putDate")?.value || "",
-      docNumber: $("putDoc")?.value.trim() || "",
-      receivedTime: $("receivedTime")?.value || "",
-      stockedTime: $("stockedTime")?.value || "",
       dockToStockMinutes,
+      timer: { ...state.timer, elapsedMinutes: dockToStockMinutes },
       lines,
       lineCount: lines.length,
       totalQty: lines.reduce((s, x) => s + Number(x.qty || 0), 0),
@@ -1436,6 +1758,7 @@ async function savePutaway() {
     await loadHistory();
 
     renderLogs();
+    renderItemHistory();
     clearRows("putawayBody");
 
     toast("Put away log saved.");
@@ -1487,6 +1810,7 @@ async function saveCycle() {
     persistDemoState();
     renderLogs();
     renderHistory();
+    renderItemHistory();
     clearRows("cycleBody");
     toast("Cycle count saved.");
     return;
@@ -1513,6 +1837,7 @@ async function saveCycle() {
     await loadHistory();
 
     renderLogs();
+    renderItemHistory();
     clearRows("cycleBody");
 
     toast("Cycle count saved.");
@@ -1572,6 +1897,7 @@ async function savePicking() {
     persistDemoState();
     renderLogs();
     renderHistory();
+    renderItemHistory();
     clearRows("pickingBody");
     toast("Picking session saved.");
     return;
@@ -1601,6 +1927,7 @@ async function savePicking() {
     await loadHistory();
 
     renderLogs();
+    renderItemHistory();
     clearRows("pickingBody");
 
     toast("Picking session saved.");
@@ -1633,7 +1960,6 @@ function renderPutawayLogs() {
       <tr>
         <td>${escapeHtml(log.date || "")}</td>
         <td>${escapeHtml(log.worker || "")}</td>
-        <td>${escapeHtml(log.docNumber || "")}</td>
         <td>${log.lineCount || log.lines?.length || 0}</td>
         <td>${log.totalQty || 0}</td>
         <td>${log.dockToStockMinutes || 0} min</td>
@@ -1725,6 +2051,249 @@ function renderHistory() {
   });
 }
 
+function buildItemHistoryRows() {
+  const activityRows = (state.activityLogs || []).map((log) => ({
+    date: log.date || String(log.createdAt || "").slice(0, 10),
+    process: processLabel(log.type),
+    worker: log.employee || "",
+    item: log.item || "",
+    description: log.description || "",
+    qty: log.qty ?? "",
+    location: log.location || "",
+    status: log.status || log.reason || "",
+    notes: log.notes || "",
+    createdAt: log.createdAt || ""
+  }));
+
+  const fallbackRows = [];
+  [
+    ["putaway", state.putawayLogs],
+    ["cycleCount", state.cycleSessions],
+    ["orderPicking", state.pickingSessions]
+  ].forEach(([type, sessions]) => {
+    (sessions || []).forEach((session) => {
+      (session.lines || []).forEach((line) => {
+        fallbackRows.push({
+          date: session.date || String(session.createdAt || "").slice(0, 10),
+          process: processLabel(type),
+          worker: session.worker || session.counter || session.picker || "",
+          item: line.item || "",
+          description: line.description || "",
+          qty: line.qty ?? line.countedQty ?? line.pickedQty ?? "",
+          location: line.location || line.fromSlot || line.slot || "",
+          status: line.status || (Number(line.variance || 0) ? "Variance" : line.done ? "Counted" : ""),
+          notes: line.notes || line.reason || "",
+          createdAt: session.createdAt || ""
+        });
+      });
+    });
+  });
+
+  const seen = new Set();
+  return [...activityRows, ...fallbackRows]
+    .filter((row) => {
+      const key = [row.date, row.process, row.worker, row.item, row.qty, row.location, row.createdAt].join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => String(b.createdAt || b.date).localeCompare(String(a.createdAt || a.date)));
+}
+
+function renderItemHistory() {
+  const body = $("itemHistoryBody");
+  if (!body) return;
+
+  const item = $("itemHistorySearch")?.value.trim().toLowerCase() || "";
+  const worker = $("itemHistoryWorker")?.value.trim().toLowerCase() || "";
+  const process = $("itemHistoryProcess")?.value || "";
+  const start = $("itemHistoryStart")?.value || "";
+  const end = $("itemHistoryEnd")?.value || "";
+
+  state.itemHistoryRows = buildItemHistoryRows().filter((row) => {
+    const date = String(row.date || "").slice(0, 10);
+    if (item && !String(row.item || "").toLowerCase().includes(item)) return false;
+    if (worker && !String(row.worker || "").toLowerCase().includes(worker)) return false;
+    if (process && normalizeProcessValue(row.process) !== normalizeProcessValue(process)) return false;
+    if (start && date < start) return false;
+    if (end && date > end) return false;
+    return true;
+  });
+
+  body.innerHTML = "";
+
+  if (!state.itemHistoryRows.length) {
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No item activity found.</td></tr>`);
+    return;
+  }
+
+  state.itemHistoryRows.forEach((row) => {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
+      <tr>
+        <td>${escapeHtml(row.date || "")}</td>
+        <td>${escapeHtml(row.process || "")}</td>
+        <td>${escapeHtml(row.worker || "")}</td>
+        <td>${escapeHtml(row.item || "")}</td>
+        <td>${escapeHtml(row.description || "")}</td>
+        <td>${escapeHtml(row.qty ?? "")}</td>
+        <td>${escapeHtml(row.location || "")}</td>
+        <td>${escapeHtml(row.status || "")}</td>
+        <td>${escapeHtml(row.notes || "")}</td>
+      </tr>
+    `
+    );
+  });
+}
+
+function exportItemHistory() {
+  if (!state.itemHistoryRows.length) renderItemHistory();
+  if (!state.itemHistoryRows.length) return toast("No item history to export.");
+  downloadCsv(state.itemHistoryRows, `item-history-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+function processLabel(type) {
+  const normalized = normalizeProcessValue(type);
+  if (normalized === "putaway") return "Put Away";
+  if (normalized === "cyclecount" || normalized === "cycle") return "Cycle Count";
+  if (normalized === "orderpicking" || normalized === "picking") return "Order Picking";
+  if (normalized === "receiving") return "Receiving";
+  return type || "";
+}
+
+function normalizeProcessValue(value) {
+  return String(value || "").toLowerCase().replace(/[_\s-]+/g, "");
+}
+
+function historyStateKey(type) {
+  if (type === "putaway") return "putawayLogs";
+  if (type === "cycle") return "cycleSessions";
+  if (type === "picking") return "pickingSessions";
+  return "";
+}
+
+function historyCollection(type) {
+  if (type === "putaway") return COLLECTIONS.putaway;
+  if (type === "cycle") return COLLECTIONS.cycle;
+  if (type === "picking") return COLLECTIONS.picking;
+  return "";
+}
+
+function openHistoryRecord(type, id, mode = "view") {
+  const key = historyStateKey(type);
+  const record = (state[key] || []).find((row) => String(row.id) === String(id));
+  if (!record) return;
+
+  state.editingHistory = { type, id, mode };
+  $("historyModalTitle").textContent = mode === "edit" ? "Edit History Record" : "View History Record";
+  $("historyEditDate").value = record.date || record.completedDate || "";
+  $("historyEditWorker").value = record.worker || record.counter || record.picker || "";
+  $("historyEditReference").value = record.countId || record.orderNumber || "";
+  $("historyEditLines").value = JSON.stringify(record.lines || [], null, 2);
+  $("historyEditMessage").textContent = mode === "view" ? "Viewing saved worksheet lines." : "";
+
+  const editable = mode === "edit";
+  ["historyEditDate", "historyEditWorker", "historyEditReference", "historyEditLines"].forEach((fieldId) => {
+    if ($(fieldId)) $(fieldId).disabled = !editable;
+  });
+  if ($("saveHistoryEditBtn")) $("saveHistoryEditBtn").classList.toggle("hidden", !editable);
+  if ($("deleteHistoryRecordBtn")) $("deleteHistoryRecordBtn").classList.toggle("hidden", false);
+  $("historyModal")?.classList.remove("hidden");
+  $("historyModal")?.setAttribute("aria-hidden", "false");
+}
+
+function closeHistoryModal() {
+  state.editingHistory = null;
+  $("historyModal")?.classList.add("hidden");
+  $("historyModal")?.setAttribute("aria-hidden", "true");
+}
+
+async function saveHistoryEdit() {
+  const context = state.editingHistory;
+  if (!context || context.mode !== "edit") return;
+
+  const key = historyStateKey(context.type);
+  const index = (state[key] || []).findIndex((row) => String(row.id) === String(context.id));
+  if (index < 0) return;
+
+  let lines;
+  try {
+    lines = JSON.parse($("historyEditLines")?.value || "[]");
+    if (!Array.isArray(lines)) throw new Error("Lines must be a JSON array.");
+  } catch (err) {
+    $("historyEditMessage").textContent = "Lines must be valid JSON.";
+    return;
+  }
+
+  const record = { ...state[key][index] };
+  record.date = $("historyEditDate")?.value || record.date || "";
+  record.completedDate = record.date;
+  record.lines = lines;
+  record.lineCount = lines.length;
+
+  if (context.type === "putaway") {
+    record.worker = $("historyEditWorker")?.value.trim() || "";
+    record.totalQty = lines.reduce((sum, line) => sum + Number(line.qty || 0), 0);
+  }
+  if (context.type === "cycle") {
+    record.counter = $("historyEditWorker")?.value.trim() || "";
+    record.countId = $("historyEditReference")?.value.trim() || "";
+    record.varianceLines = lines.filter((line) => Number(line.variance || 0) !== 0).length;
+  }
+  if (context.type === "picking") {
+    record.picker = $("historyEditWorker")?.value.trim() || "";
+    record.orderNumber = $("historyEditReference")?.value.trim() || "";
+    record.totalPicked = lines.reduce((sum, line) => sum + Number(line.pickedQty || 0), 0);
+    record.issueLines = lines.filter((line) => ["Short", "Damaged", "Wrong Slot", "Partial", "Overpicked"].includes(line.status)).length;
+  }
+
+  record.updatedAt = new Date().toISOString();
+  state[key][index] = record;
+
+  if (state.isDemoMode) {
+    persistDemoState();
+  } else {
+    await db.collection(historyCollection(context.type)).doc(context.id).update(record);
+  }
+
+  renderLogs();
+  renderHistory();
+  renderItemHistory();
+  closeHistoryModal();
+  toast("History record updated.");
+}
+
+async function deleteHistoryRecord() {
+  const context = state.editingHistory;
+  if (!context) return;
+  await deleteHistoryRecordByKey(context.type, context.id);
+  closeHistoryModal();
+}
+
+async function deleteHistoryRecordByKey(type, id) {
+  const key = historyStateKey(type);
+  const record = (state[key] || []).find((row) => String(row.id) === String(id));
+  if (!record) return;
+  if (!confirm(`Delete ${processLabel(type)} history record?`)) return;
+
+  state[key] = state[key].filter((row) => String(row.id) !== String(id));
+
+  if (state.isDemoMode) {
+    persistDemoState();
+  } else {
+    await db.collection(historyCollection(type)).doc(id).delete();
+  }
+
+  renderLogs();
+  renderHistory();
+  renderItemHistory();
+  toast("History record deleted.");
+}
+
+window.openHistoryRecord = openHistoryRecord;
+window.deleteHistoryRecordByKey = deleteHistoryRecordByKey;
+
 /* ---------------------------
    CLEAR / EXPORT
 ---------------------------- */
@@ -1732,11 +2301,6 @@ function renderHistory() {
 function clearRows(bodyId) {
   if (bodyId === "putawayBody") {
     buildPutawayRows();
-
-    if ($("receivedTime")) $("receivedTime").value = "";
-    if ($("stockedTime")) $("stockedTime").value = "";
-    if ($("dockToStockMinutes")) $("dockToStockMinutes").value = "";
-    if ($("dockToStockStat")) $("dockToStockStat").textContent = "0";
   }
 
   if (bodyId === "cycleBody") buildCycleRows();
@@ -1778,6 +2342,28 @@ function exportCurrentPicking() {
   downloadCsv(exportRows, `${orderNumber || "picking"}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
+function exportCurrentCycle() {
+  const rows = collectCycleLines();
+
+  if (!rows.length) return toast("No current cycle count rows to export.");
+
+  const countId = $("cycleId")?.value.trim() || "cycle-count";
+  const exportRows = rows.map((line) => ({
+    stockCountId: countId,
+    item: line.item,
+    description: line.description,
+    location: line.location,
+    systemQty: line.systemQty,
+    countedQty: line.countedQty,
+    variance: line.variance,
+    reason: line.reason,
+    done: line.done ? "Yes" : "No",
+    timestamp: new Date().toISOString()
+  }));
+
+  downloadCsv(exportRows, `${countId}-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
 function exportCsv(type) {
   let rows = [];
 
@@ -1800,10 +2386,7 @@ function flattenSessions(sessions, type) {
         type,
         sessionDate: session.date,
         worker: session.worker || session.counter || session.picker,
-        doc: session.docNumber || session.countId || session.orderNumber,
         dockToStockMinutes: session.dockToStockMinutes || "",
-        receivedTime: session.receivedTime || "",
-        stockedTime: session.stockedTime || "",
         ...line
       });
     });
