@@ -257,6 +257,98 @@ button:hover {
   align-items: center;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.row-actions button {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.timer-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(220px, 320px);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.timer-face {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  border: 1px solid #d8e5ff;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.timer-face strong {
+  font-family: "Courier New", monospace;
+  font-size: clamp(42px, 7vw, 72px);
+  line-height: 1;
+}
+
+.kpi-compact {
+  grid-template-columns: 1fr;
+  margin: 0;
+}
+
+.timer-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.timer-meta div {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.timer-meta span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.timer-meta strong {
+  display: block;
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(11, 27, 58, 0.44);
+}
+
+.modal-card {
+  width: min(820px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.24);
+  padding: 20px;
+}
+
+.modal textarea {
+  margin-top: 6px;
+  min-height: 180px;
+  font-family: "Courier New", monospace;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -443,6 +535,11 @@ body.receiver-temp-mode #putawayTab > .card:first-child input {
   }
 
   .history-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .timer-layout,
+  .timer-meta {
     grid-template-columns: 1fr;
   }
 
