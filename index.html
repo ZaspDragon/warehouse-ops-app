@@ -641,6 +641,37 @@
 
   <datalist id="workerOptions"></datalist>
 
+  <div id="termsModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card terms-card" role="dialog" aria-modal="true" aria-labelledby="termsTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="termsTitle">WarehouseOS Terms of Use</h2>
+          <p>Acceptance is required before using this dashboard.</p>
+        </div>
+      </div>
+      <div class="terms-box">
+        <p><strong>Important:</strong> This in-app acknowledgement creates an audit record, but it is not a replacement for attorney-drafted IP, NDA, employment, licensing, patent, copyright, or trade secret documents.</p>
+        <h3>Ownership and Proprietary Technology</h3>
+        <p>WarehouseOS, QR Legends warehouse workflows, receiving timer logic, worksheet designs, history tools, source code, database structure, UI concepts, automations, dashboards, and related documentation are proprietary technology owned by the creator or authorized rights holder. Access does not transfer ownership, copyright, trade secret rights, patent rights, or other intellectual property rights to any employer, company, customer, worker, contractor, or third party.</p>
+        <h3>Limited Permission to Use</h3>
+        <p>Users receive only limited, revocable permission to use the app for authorized warehouse operations. No user or company may copy, clone, reverse engineer, decompile, scrape, export, reproduce, resell, publish, train another system from, or create derivative products from the app or workflows without written permission from the rights holder.</p>
+        <h3>Confidentiality</h3>
+        <p>Users must keep the app, workflows, screenshots, source code, configuration, business logic, and operational designs confidential and may not share them with unauthorized internal teams, outside developers, vendors, competitors, or third parties.</p>
+        <h3>Audit</h3>
+        <p>Acceptance may be logged with account, company, timestamp, browser, and device details for audit purposes.</p>
+      </div>
+      <label class="terms-check">
+        <input id="termsAgree" type="checkbox" />
+        I agree that use does not transfer ownership or IP rights, and copying, reverse engineering, or unauthorized reuse is prohibited.
+      </label>
+      <div class="actions">
+        <button id="acceptTermsBtn" class="primary" disabled>Accept and Continue</button>
+        <button id="declineTermsBtn" class="danger">Decline</button>
+      </div>
+      <p id="termsMessage" class="message">Version: warehouseos-ip-terms-v1</p>
+    </div>
+  </div>
+
   <div id="historyModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
       <div class="section-heading">
