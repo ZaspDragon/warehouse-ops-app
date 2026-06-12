@@ -4,6 +4,8 @@ const DEMO_STORAGE_KEY = "warehouseOpsDemoStateV1";
 const TIMER_STORAGE_KEY = "warehouseOpsReceivingTimerV1";
 const SETTINGS_STORAGE_KEY = "warehouseOpsSettingsV1";
 const TERMS_STORAGE_KEY = "warehouseOpsTermsAcceptanceV1";
+const PUTAWAY_DRAFT_KEY = "warehouseos_putaway_draft_v1";
+const PUTAWAY_AUTOSAVE_DELAY_MS = 400;
 const TERMS_VERSION = "warehouseos-ip-terms-v1";
 const ROLE_OWNER_EMAIL = "brandon.evanshine@chadwellsupply.com";
 const DEMO_USER = {
@@ -22,7 +24,8 @@ const state = {
   itemHistoryRows: [],
   timer: readJson(TIMER_STORAGE_KEY, { status: "idle", elapsedMinutes: 0 }),
   settings: readJson(SETTINGS_STORAGE_KEY, { operatorName: "", operatorRole: "worker" }),
-  editingHistory: null
+  editingHistory: null,
+  putawayAutosaveTimer: null
 };
 
 const COLLECTIONS = {
@@ -53,6 +56,7 @@ function writeJson(key, value) {
 document.addEventListener("DOMContentLoaded", () => {
   setTodayDefaults();
   buildAllTables();
+  initializePutawayDraft();
   wireEvents();
   syncSettingsUi();
   renderReceivingTimer();
@@ -64,11 +68,162 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function setTodayDefaults() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayValue();
 
   ["putDate", "cycleDate", "pickDate"].forEach((id) => {
     if ($(id)) $(id).value = today;
   });
+}
+
+function todayValue() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function initializePutawayDraft() {
+  restorePutawayDraft();
+  updatePutawayStats();
+}
+
+function putawayDraftRows() {
+  return [...document.querySelectorAll("#putawayBody tr")];
+}
+
+function collectPutawayDraft() {
+  return {
+    worker: $("putWorker")?.value.trim() || "",
+    date: $("putDate")?.value || "",
+    dockToStockMinutes: calculateDockToStock(),
+    updatedAt: new Date().toISOString(),
+    lines: putawayDraftRows().map((row, idx) => ({
+      line: idx + 1,
+      item: rowValue(row, ".put-item"),
+      qty: rowValue(row, ".put-qty"),
+      location: rowValue(row, ".put-location"),
+      notes: rowValue(row, ".put-notes")
+    }))
+  };
+}
+
+function hasPutawayDraftData(draft = collectPutawayDraft()) {
+  const hasLines = (draft.lines || []).some((line) =>
+    [line.item, line.qty, line.location, line.notes].some((value) => String(value || "").trim())
+  );
+
+  return Boolean(
+    (draft.worker || "").trim() ||
+      hasLines ||
+      ((draft.date || "").trim() && draft.date !== todayValue())
+  );
+}
+
+function isPutawayDraftField(target) {
+  if (!target?.closest) return false;
+
+  if (target.id === "putWorker" || target.id === "putDate") return true;
+  return Boolean(target.closest("#putawayBody"));
+}
+
+function debouncedSavePutawayDraft() {
+  window.clearTimeout(state.putawayAutosaveTimer);
+  state.putawayAutosaveTimer = window.setTimeout(() => {
+    savePutawayDraft({ statusMessage: "Auto-saved just now" });
+  }, PUTAWAY_AUTOSAVE_DELAY_MS);
+}
+
+function flushPutawayDraftSave(options = {}) {
+  window.clearTimeout(state.putawayAutosaveTimer);
+  state.putawayAutosaveTimer = null;
+  savePutawayDraft(options);
+}
+
+function savePutawayDraft(options = {}) {
+  const { force = false, statusMessage = "Auto-saved just now" } = options;
+  const draft = collectPutawayDraft();
+
+  if (!force && !hasPutawayDraftData(draft)) {
+    clearPutawayDraft({ keepStatus: false });
+    return false;
+  }
+
+  if (force && !hasPutawayDraftData(draft)) {
+    return false;
+  }
+
+  try {
+    window.localStorage.setItem(PUTAWAY_DRAFT_KEY, JSON.stringify(draft));
+    setPutawayAutosaveStatus(statusMessage);
+    return true;
+  } catch (err) {
+    console.error("Put Away draft save failed:", err);
+    setPutawayAutosaveStatus("Auto-save failed");
+    return false;
+  }
+}
+
+function restorePutawayDraft() {
+  if (!putawayDraftRows().length || hasPutawayDraftData()) {
+    return false;
+  }
+
+  let draft = null;
+
+  try {
+    const raw = window.localStorage.getItem(PUTAWAY_DRAFT_KEY);
+    draft = raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    console.error("Put Away draft restore failed:", err);
+    setPutawayAutosaveStatus("Auto-save failed");
+    return false;
+  }
+
+  if (!draft || !hasPutawayDraftData(draft)) {
+    setPutawayAutosaveStatus("All changes saved");
+    return false;
+  }
+
+  if ($("putWorker")) $("putWorker").value = draft.worker || "";
+  if ($("putDate")) $("putDate").value = draft.date || todayValue();
+
+  putawayDraftRows().forEach((row, idx) => {
+    const line = draft.lines?.[idx] || {};
+    setRowValue(row, ".put-item", line.item || "");
+    setRowValue(row, ".put-qty", line.qty || "");
+    setRowValue(row, ".put-location", line.location || "");
+    setRowValue(row, ".put-notes", line.notes || "");
+  });
+
+  updatePutawayStats();
+  setPutawayAutosaveStatus("Draft restored");
+  return true;
+}
+
+function clearPutawayDraft(options = {}) {
+  const { keepStatus = false } = options;
+
+  window.clearTimeout(state.putawayAutosaveTimer);
+  state.putawayAutosaveTimer = null;
+
+  try {
+    window.localStorage.removeItem(PUTAWAY_DRAFT_KEY);
+  } catch (err) {
+    console.error("Put Away draft clear failed:", err);
+  }
+
+  if (!keepStatus) {
+    setPutawayAutosaveStatus("All changes saved");
+  }
+}
+
+function setPutawayAutosaveStatus(message) {
+  const el = $("putawayAutosaveStatus");
+  if (!el) return;
+
+  el.textContent = message;
+  el.dataset.state = /failed/i.test(message)
+    ? "error"
+    : /restored/i.test(message)
+      ? "info"
+      : "saved";
 }
 
 function wireEvents() {
@@ -94,7 +249,7 @@ function wireEvents() {
   $("addEmployeeBtn")?.addEventListener("click", addEmployee);
 
   $("savePutawayBtn")?.addEventListener("click", savePutaway);
-  $("clearPutawayBtn")?.addEventListener("click", () => clearRows("putawayBody"));
+  $("clearPutawayBtn")?.addEventListener("click", confirmClearPutawayForm);
 
   $("saveCycleBtn")?.addEventListener("click", saveCycle);
   $("clearCycleBtn")?.addEventListener("click", () => clearRows("cycleBody"));
@@ -122,6 +277,7 @@ function wireEvents() {
 
   document.addEventListener("input", (e) => {
     if (e.target.closest("#putawayBody")) updatePutawayStats();
+    if (isPutawayDraftField(e.target)) debouncedSavePutawayDraft();
     if (e.target.closest("#cycleBody")) updateCycleStats();
 
     if (e.target.closest("#pickingBody")) {
@@ -134,8 +290,36 @@ function wireEvents() {
   });
 
   document.addEventListener("change", (e) => {
+    if (isPutawayDraftField(e.target)) {
+      updatePutawayStats();
+      flushPutawayDraftSave();
+    }
     if (e.target.closest("#pickingBody")) updatePickingStats();
     if (e.target.closest("#cycleBody")) updateCycleStats();
+  });
+
+  document.addEventListener(
+    "blur",
+    (e) => {
+      if (isPutawayDraftField(e.target)) {
+        flushPutawayDraftSave();
+      }
+    },
+    true
+  );
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
+  });
+
+  window.addEventListener("beforeunload", () => {
+    flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
   });
 }
 
@@ -151,6 +335,7 @@ function switchTab(tab) {
   const panel = $(`${tab}Tab`);
   if (panel) panel.classList.add("active");
 
+  if (tab === "putaway") restorePutawayDraft();
   if (tab === "history") loadHistory();
   if (tab === "itemHistory") renderItemHistory();
   if (tab === "settings") syncSettingsUi();
@@ -239,6 +424,7 @@ function syncShell() {
 
   document.body.classList.toggle("demo-mode", state.isDemoMode);
   syncSettingsUi();
+  if (signedIn) restorePutawayDraft();
   if (signedIn) showTermsModal();
 }
 
@@ -988,12 +1174,12 @@ function buildPutawayRows() {
     body.insertAdjacentHTML(
       "beforeend",
       `
-      <tr>
-        <td>${i}</td>
-        <td><input class="item-input put-item" placeholder="Item #" /></td>
-        <td><input class="qty-input put-qty" type="number" min="0" placeholder="Qty" /></td>
-        <td><input class="loc-input put-location" placeholder="Location" /></td>
-        <td><input class="desc-input put-notes" placeholder="Notes" /></td>
+      <tr class="putaway-row">
+        <td data-label="Line" class="putaway-line-number">${i}</td>
+        <td data-label="Item #"><input class="item-input put-item" placeholder="Item #" /></td>
+        <td data-label="Qty"><input class="qty-input put-qty" type="number" min="0" placeholder="Qty" /></td>
+        <td data-label="Location"><input class="loc-input put-location" placeholder="Location" /></td>
+        <td data-label="Notes"><input class="desc-input put-notes" placeholder="Notes" /></td>
       </tr>
     `
     );
@@ -1485,6 +1671,7 @@ function updatePutawayStats() {
 
   if ($("putUsed")) $("putUsed").textContent = used;
   if ($("putQty")) $("putQty").textContent = qty;
+  calculateDockToStock();
 }
 
 function updateCycleStats() {
@@ -1757,7 +1944,20 @@ function collectPutawayLines() {
     .filter((x) => x.item || x.qty || x.location || x.notes);
 }
 
+function confirmClearPutawayForm() {
+  const hasCurrentData = hasPutawayDraftData();
+  const hasSavedDraft = Boolean(readJson(PUTAWAY_DRAFT_KEY, null));
+
+  if ((hasCurrentData || hasSavedDraft) && !confirm("Clear the current Put Away draft? Unsaved entries will be removed.")) {
+    return;
+  }
+
+  clearPutawayDraft();
+  clearRows("putawayBody");
+}
+
 async function savePutaway() {
+  flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
   const lines = collectPutawayLines();
 
   if (!lines.length) return toast("Enter at least one put away line.");
@@ -1784,7 +1984,9 @@ async function savePutaway() {
     renderLogs();
     renderHistory();
     renderItemHistory();
+    clearPutawayDraft({ keepStatus: true });
     clearRows("putawayBody");
+    setPutawayAutosaveStatus("All changes saved");
     toast("Put away log saved.");
     return;
   }
@@ -1814,7 +2016,9 @@ async function savePutaway() {
 
     renderLogs();
     renderItemHistory();
+    clearPutawayDraft({ keepStatus: true });
     clearRows("putawayBody");
+    setPutawayAutosaveStatus("All changes saved");
 
     toast("Put away log saved.");
   } catch (err) {
@@ -2356,6 +2560,8 @@ window.deleteHistoryRecordByKey = deleteHistoryRecordByKey;
 function clearRows(bodyId) {
   if (bodyId === "putawayBody") {
     buildPutawayRows();
+    if ($("putWorker")) $("putWorker").value = "";
+    if ($("putDate")) $("putDate").value = todayValue();
   }
 
   if (bodyId === "cycleBody") buildCycleRows();

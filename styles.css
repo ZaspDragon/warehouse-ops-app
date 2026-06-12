@@ -404,6 +404,25 @@ button:hover {
   font-size: 13px;
 }
 
+#putawayAutosaveStatus {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#putawayAutosaveStatus[data-state="saved"] {
+  color: var(--green);
+}
+
+#putawayAutosaveStatus[data-state="info"] {
+  color: var(--blue);
+}
+
+#putawayAutosaveStatus[data-state="error"] {
+  color: var(--danger);
+}
+
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);
@@ -620,5 +639,103 @@ body.receiver-temp-mode #putawayTab > .card:first-child input {
     width: 100%;
     min-height: 52px;
     font-size: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  #putawayTab .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  #putawayTab .stats div {
+    padding: 12px;
+  }
+
+  #putawayTab .stats div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .putaway-entry-table {
+    min-width: 100%;
+  }
+
+  .putaway-entry-table thead {
+    display: none;
+  }
+
+  .putaway-entry-table,
+  .putaway-entry-table tbody,
+  .putaway-entry-table tr,
+  .putaway-entry-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .putaway-entry-table tr {
+    margin-bottom: 14px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #ffffff;
+  }
+
+  .putaway-entry-table td {
+    border: 0;
+    padding: 6px 0;
+  }
+
+  .putaway-entry-table input {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .putaway-entry-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .putaway-entry-table .putaway-line-number {
+    color: #0b1b3a;
+    font-weight: 800;
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+
+  .putaway-entry-table .putaway-line-number::before {
+    content: "Line ";
+    display: inline;
+    margin: 0;
+    color: inherit;
+    font-size: inherit;
+    text-transform: none;
+  }
+
+  .putaway-form-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 10px;
+    border-top: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  .putaway-form-actions button {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .putaway-form-actions #putawayAutosaveStatus {
+    text-align: center;
   }
 }
