@@ -6,7 +6,7 @@
 
   <title>WarehouseOS Inventory Control Dashboard</title>
 
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260612-3" />
   <link rel="stylesheet" href="responsive-upgrade.css?v=20260604-1" />
   <link rel="stylesheet" href="responsive-fix.css?v=20260604-1" />
 
@@ -690,7 +690,29 @@
           <input id="historyEditReference" />
         </label>
       </div>
-      <label>Lines
+      <section id="historyLinesView" class="history-lines-view hidden" aria-label="Saved worksheet lines">
+        <h3>Lines</h3>
+        <div class="table-wrap history-lines-table-wrap">
+          <table class="history-lines-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th>Location</th>
+                <th>Qty</th>
+                <th>Line</th>
+              </tr>
+            </thead>
+            <tbody id="historyLinesTableBody"></tbody>
+          </table>
+        </div>
+
+        <section class="history-lines-notes" aria-labelledby="historyLinesNotesTitle">
+          <h3 id="historyLinesNotesTitle">Notes</h3>
+          <div id="historyLinesNotesBody"></div>
+        </section>
+      </section>
+      <label id="historyLinesEditField">Lines
         <textarea id="historyEditLines" rows="8"></textarea>
       </label>
       <div class="actions">
@@ -703,7 +725,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20260612-2"></script>
+  <script src="app.js?v=20260612-3"></script>
   <script src="history-upgrade.js"></script>
   <script src="responsive-ui.js?v=20260604-1"></script>
 </body>

@@ -349,6 +349,60 @@ button:hover {
   font-family: "Courier New", monospace;
 }
 
+.history-lines-view {
+  margin-top: 18px;
+}
+
+.history-lines-view > h3,
+.history-lines-notes h3 {
+  margin: 0 0 10px;
+}
+
+.history-lines-table-wrap {
+  overflow-x: auto;
+}
+
+.history-lines-table {
+  min-width: 620px;
+}
+
+.history-lines-table th,
+.history-lines-table td {
+  padding: 12px;
+}
+
+.history-lines-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.history-lines-notes {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.history-note-row {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-note-row:last-child {
+  border-bottom: 0;
+}
+
+.history-note-row p,
+.history-no-notes {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .terms-card {
   width: min(900px, 100%);
 }
@@ -639,6 +693,67 @@ body.receiver-temp-mode #putawayTab > .card:first-child input {
     width: 100%;
     min-height: 52px;
     font-size: 16px;
+  }
+
+  #historyModal {
+    align-items: end;
+    padding: 10px;
+  }
+
+  #historyModal .modal-card {
+    width: 100%;
+    max-height: calc(100vh - 20px);
+    border-radius: 18px 18px 10px 10px;
+    padding: 16px;
+  }
+
+  #historyModal .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-lines-table {
+    min-width: 100%;
+  }
+
+  .history-lines-table thead {
+    display: none;
+  }
+
+  .history-lines-table,
+  .history-lines-table tbody,
+  .history-lines-table tr,
+  .history-lines-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .history-lines-table tr {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #ffffff;
+  }
+
+  .history-lines-table td {
+    display: grid;
+    grid-template-columns: minmax(72px, 0.4fr) 1fr;
+    gap: 10px;
+    border: 0;
+    padding: 7px 0;
+  }
+
+  .history-lines-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .history-note-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }
 

@@ -2432,20 +2432,103 @@ function historyCollection(type) {
   return "";
 }
 
+function parseHistoryLines(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn("History lines could not be parsed:", err);
+    return [];
+  }
+}
+
+function historyLineValue(line, keys, fallback = "") {
+  for (const key of keys) {
+    const value = line?.[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+
+  return fallback;
+}
+
+function renderHistoryLinesView(lines) {
+  const body = $("historyLinesTableBody");
+  const notesBody = $("historyLinesNotesBody");
+  if (!body || !notesBody) return;
+
+  body.innerHTML = "";
+  notesBody.innerHTML = "";
+
+  if (!lines.length) {
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="5">No saved worksheet lines found.</td></tr>`);
+  } else {
+    lines.forEach((line, index) => {
+      const lineNumber = historyLineValue(line, ["line", "lineNumber"], index + 1);
+      const item = historyLineValue(line, ["item", "itemNumber", "sku"]);
+      const location = historyLineValue(line, ["location", "fromSlot", "slot", "bin"]);
+      const qty = historyLineValue(line, ["qty", "countedQty", "pickedQty", "requiredQty"], 0);
+
+      body.insertAdjacentHTML(
+        "beforeend",
+        `
+        <tr>
+          <td data-label="#">${index + 1}</td>
+          <td data-label="Item">${escapeHtml(item)}</td>
+          <td data-label="Location">${escapeHtml(location)}</td>
+          <td data-label="Qty">${escapeHtml(qty)}</td>
+          <td data-label="Line">${escapeHtml(lineNumber)}</td>
+        </tr>
+      `
+      );
+    });
+  }
+
+  const notes = lines
+    .map((line, index) => ({
+      line: historyLineValue(line, ["line", "lineNumber"], index + 1),
+      notes: String(historyLineValue(line, ["notes", "note"], "")).trim()
+    }))
+    .filter((entry) => entry.notes);
+
+  if (!notes.length) {
+    notesBody.innerHTML = `<p class="history-no-notes">No notes available for this record.</p>`;
+    return;
+  }
+
+  notes.forEach((entry) => {
+    notesBody.insertAdjacentHTML(
+      "beforeend",
+      `
+      <div class="history-note-row">
+        <strong>Line ${escapeHtml(entry.line)}</strong>
+        <p>${escapeHtml(entry.notes)}</p>
+      </div>
+    `
+    );
+  });
+}
+
 function openHistoryRecord(type, id, mode = "view") {
   const key = historyStateKey(type);
   const record = (state[key] || []).find((row) => String(row.id) === String(id));
   if (!record) return;
 
+  const lines = parseHistoryLines(record.lines);
   state.editingHistory = { type, id, mode };
   $("historyModalTitle").textContent = mode === "edit" ? "Edit History Record" : "View History Record";
   $("historyEditDate").value = record.date || record.completedDate || "";
   $("historyEditWorker").value = record.worker || record.counter || record.picker || "";
   $("historyEditReference").value = record.countId || record.orderNumber || "";
-  $("historyEditLines").value = JSON.stringify(record.lines || [], null, 2);
+  $("historyEditLines").value = JSON.stringify(lines, null, 2);
   $("historyEditMessage").textContent = mode === "view" ? "Viewing saved worksheet lines." : "";
 
   const editable = mode === "edit";
+  $("historyLinesView")?.classList.toggle("hidden", editable);
+  $("historyLinesEditField")?.classList.toggle("hidden", !editable);
+  if (!editable) renderHistoryLinesView(lines);
   ["historyEditDate", "historyEditWorker", "historyEditReference", "historyEditLines"].forEach((fieldId) => {
     if ($(fieldId)) $(fieldId).disabled = !editable;
   });
