@@ -2522,13 +2522,30 @@ function openHistoryRecord(type, id, mode = "view") {
   $("historyEditDate").value = record.date || record.completedDate || "";
   $("historyEditWorker").value = record.worker || record.counter || record.picker || "";
   $("historyEditReference").value = record.countId || record.orderNumber || "";
-  $("historyEditLines").value = JSON.stringify(lines, null, 2);
   $("historyEditMessage").textContent = mode === "view" ? "Viewing saved worksheet lines." : "";
 
   const editable = mode === "edit";
-  $("historyLinesView")?.classList.toggle("hidden", editable);
-  $("historyLinesEditField")?.classList.toggle("hidden", !editable);
-  if (!editable) renderHistoryLinesView(lines);
+  const linesView = $("historyLinesView");
+  const linesEditField = $("historyLinesEditField");
+  const linesEditor = $("historyEditLines");
+
+  if (linesView) {
+    linesView.hidden = editable;
+    linesView.classList.toggle("hidden", editable);
+  }
+
+  if (linesEditField) {
+    linesEditField.hidden = !editable;
+    linesEditField.classList.toggle("hidden", !editable);
+  }
+
+  if (editable) {
+    if (linesEditor) linesEditor.value = JSON.stringify(lines, null, 2);
+  } else {
+    if (linesEditor) linesEditor.value = "";
+    renderHistoryLinesView(lines);
+  }
+
   ["historyEditDate", "historyEditWorker", "historyEditReference", "historyEditLines"].forEach((fieldId) => {
     if ($(fieldId)) $(fieldId).disabled = !editable;
   });
