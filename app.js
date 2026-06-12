@@ -137,17 +137,8 @@ function flushPutawayDraftSave(options = {}) {
 }
 
 function savePutawayDraft(options = {}) {
-  const { force = false, statusMessage = "Auto-saved just now" } = options;
+  const { statusMessage = "Auto-saved just now" } = options;
   const draft = collectPutawayDraft();
-
-  if (!force && !hasPutawayDraftData(draft)) {
-    clearPutawayDraft({ keepStatus: false });
-    return false;
-  }
-
-  if (force && !hasPutawayDraftData(draft)) {
-    return false;
-  }
 
   try {
     window.localStorage.setItem(PUTAWAY_DRAFT_KEY, JSON.stringify(draft));
@@ -276,8 +267,10 @@ function wireEvents() {
   });
 
   document.addEventListener("input", (e) => {
-    if (e.target.closest("#putawayBody")) updatePutawayStats();
-    if (isPutawayDraftField(e.target)) debouncedSavePutawayDraft();
+    if (isPutawayDraftField(e.target)) {
+      if (e.target.closest("#putawayBody")) updatePutawayStats();
+      savePutawayDraft({ statusMessage: "Auto-saved just now" });
+    }
     if (e.target.closest("#cycleBody")) updateCycleStats();
 
     if (e.target.closest("#pickingBody")) {
@@ -292,7 +285,7 @@ function wireEvents() {
   document.addEventListener("change", (e) => {
     if (isPutawayDraftField(e.target)) {
       updatePutawayStats();
-      flushPutawayDraftSave();
+      savePutawayDraft({ statusMessage: "All changes saved" });
     }
     if (e.target.closest("#pickingBody")) updatePickingStats();
     if (e.target.closest("#cycleBody")) updateCycleStats();
@@ -1946,7 +1939,7 @@ function collectPutawayLines() {
 
 function confirmClearPutawayForm() {
   const hasCurrentData = hasPutawayDraftData();
-  const hasSavedDraft = Boolean(readJson(PUTAWAY_DRAFT_KEY, null));
+  const hasSavedDraft = hasPutawayDraftData(readJson(PUTAWAY_DRAFT_KEY, {}));
 
   if ((hasCurrentData || hasSavedDraft) && !confirm("Clear the current Put Away draft? Unsaved entries will be removed.")) {
     return;
