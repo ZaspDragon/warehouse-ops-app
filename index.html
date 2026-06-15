@@ -6,8 +6,8 @@
 
   <title>WarehouseOS Inventory Control Dashboard</title>
 
-  <link rel="stylesheet" href="styles.css?v=20260612-3" />
-  <link rel="stylesheet" href="responsive-upgrade.css?v=20260604-1" />
+  <link rel="stylesheet" href="styles.css?v=20260615-1" />
+  <link rel="stylesheet" href="responsive-upgrade.css?v=20260615-1" />
   <link rel="stylesheet" href="responsive-fix.css?v=20260604-1" />
 
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -60,8 +60,16 @@
         <input id="passwordInput" type="password" placeholder="Password" />
       </label>
 
+      <label class="legal-consent">
+        <input id="legalConsent" type="checkbox" required />
+        <span>
+          I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms of Use</a> and
+          <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.
+        </span>
+      </label>
+
       <div class="actions">
-        <button id="loginBtn" class="primary">Login</button>
+        <button id="loginBtn" class="primary" disabled>Login</button>
         <button id="resetPasswordBtn">Reset Password</button>
       </div>
 
@@ -69,11 +77,16 @@
         <h3>Try the demo</h3>
         <p>Open the app with sample warehouse data. Demo changes stay only in this browser.</p>
         <div class="actions">
-          <button id="demoLoginBtn">Start Demo Mode</button>
+          <button id="demoLoginBtn" disabled>Start Demo Mode</button>
         </div>
       </div>
 
       <p id="loginMessage" class="message"></p>
+      <p class="login-legal-links">
+        <a href="terms.html" target="_blank" rel="noopener">Terms of Use</a>
+        <span aria-hidden="true">|</span>
+        <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
+      </p>
     </section>
 
     <section id="appPanel" class="hidden">
@@ -87,6 +100,10 @@
           <button id="resetDemoBtn">Reset Demo Data</button>
         </div>
       </section>
+
+      <aside class="proprietary-notice" role="note">
+        This system is proprietary software owned by Brandon Evanshine. Unauthorized copying or use is prohibited.
+      </aside>
 
       <nav class="tabs">
         <button class="tab active" data-tab="putaway">Put Away Log</button>
@@ -640,6 +657,14 @@
     </section>
   </main>
 
+  <footer class="site-footer">
+    <p>&copy; 2026 WarehouseOS. Built and owned by Brandon Evanshine. All rights reserved.</p>
+    <nav aria-label="Legal">
+      <a href="terms.html">Terms of Use</a>
+      <a href="privacy.html">Privacy Policy</a>
+    </nav>
+  </footer>
+
   <datalist id="workerOptions"></datalist>
 
   <div id="termsModal" class="modal hidden" aria-hidden="true">
@@ -651,25 +676,28 @@
         </div>
       </div>
       <div class="terms-box">
-        <p><strong>Important:</strong> This in-app acknowledgement creates an audit record, but it is not a replacement for attorney-drafted IP, NDA, employment, licensing, patent, copyright, or trade secret documents.</p>
-        <h3>Ownership and Proprietary Technology</h3>
-        <p>WarehouseOS, QR Legends warehouse workflows, receiving timer logic, worksheet designs, history tools, source code, database structure, UI concepts, automations, dashboards, and related documentation are proprietary technology owned by the creator or authorized rights holder. Access does not transfer ownership, copyright, trade secret rights, patent rights, or other intellectual property rights to any employer, company, customer, worker, contractor, or third party.</p>
+        <h3>Ownership</h3>
+        <p>The software, design, workflows, code structure, branding, dashboards, reports, forms, QR systems, and database logic are owned by Brandon Evanshine unless otherwise stated.</p>
         <h3>Limited Permission to Use</h3>
-        <p>Users receive only limited, revocable permission to use the app for authorized warehouse operations. No user or company may copy, clone, reverse engineer, decompile, scrape, export, reproduce, resell, publish, train another system from, or create derivative products from the app or workflows without written permission from the rights holder.</p>
-        <h3>Confidentiality</h3>
-        <p>Users must keep the app, workflows, screenshots, source code, configuration, business logic, and operational designs confidential and may not share them with unauthorized internal teams, outside developers, vendors, competitors, or third parties.</p>
-        <h3>Audit</h3>
-        <p>Acceptance may be logged with account, company, timestamp, browser, and device details for audit purposes.</p>
+        <p>Users are granted permission to use the system only for approved business purposes. Login access does not transfer ownership or licensing rights.</p>
+        <h3>Restrictions</h3>
+        <p>No one may copy, resell, reverse engineer, recreate, scrape, clone, modify, or distribute the system without written permission from Brandon Evanshine.</p>
+        <h3>Software Service</h3>
+        <p>Any company using the system acknowledges that it is being provided as a software tool or service. Unauthorized use may result in account removal and legal action.</p>
+        <p>Review the complete <a href="terms.html" target="_blank" rel="noopener">Terms of Use</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
       </div>
       <label class="terms-check">
         <input id="termsAgree" type="checkbox" />
-        I agree that use does not transfer ownership or IP rights, and copying, reverse engineering, or unauthorized reuse is prohibited.
+        <span>
+          I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms of Use</a> and
+          <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.
+        </span>
       </label>
       <div class="actions">
         <button id="acceptTermsBtn" class="primary" disabled>Accept and Continue</button>
         <button id="declineTermsBtn" class="danger">Decline</button>
       </div>
-      <p id="termsMessage" class="message">Version: warehouseos-ip-terms-v1</p>
+      <p id="termsMessage" class="message">Acceptance is required to continue.</p>
     </div>
   </div>
 
@@ -725,7 +753,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20260612-4"></script>
+  <script src="app.js?v=20260615-1"></script>
   <script src="history-upgrade.js"></script>
   <script src="responsive-ui.js?v=20260604-1"></script>
 </body>

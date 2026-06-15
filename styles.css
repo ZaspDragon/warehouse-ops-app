@@ -16,6 +16,7 @@
 
 body {
   margin: 0;
+  min-height: 100vh;
   font-family: Arial, Helvetica, sans-serif;
   background: var(--bg);
   color: var(--ink);
@@ -239,6 +240,12 @@ button:hover {
   filter: brightness(0.96);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: none;
+}
+
 .primary {
   background: var(--blue);
   color: #ffffff;
@@ -432,6 +439,119 @@ button:hover {
 .terms-check input {
   width: auto;
   margin-top: 3px;
+}
+
+.legal-consent {
+  display: flex;
+  grid-template-columns: none;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 14px;
+  line-height: 1.45;
+}
+
+.legal-consent input {
+  width: auto;
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.legal-consent a,
+.terms-check a,
+.login-legal-links a,
+.site-footer a,
+.legal-document a {
+  color: var(--blue);
+  font-weight: 800;
+}
+
+.login-legal-links {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.proprietary-notice {
+  margin-bottom: 16px;
+  border: 1px solid #f1cf82;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #fff8e5;
+  color: #68480b;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 22px;
+  border-top: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+.site-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  padding: 11px 14px;
+  background: #e8eefc;
+  color: #0b1b3a;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.legal-page {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.legal-main {
+  width: 100%;
+  max-width: 920px;
+  flex: 1;
+}
+
+.legal-document {
+  line-height: 1.65;
+}
+
+.legal-document h2 {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 40px);
+}
+
+.legal-document h3 {
+  margin: 24px 0 6px;
+}
+
+.legal-document p {
+  margin: 0 0 12px;
+}
+
+.legal-updated {
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .stats {

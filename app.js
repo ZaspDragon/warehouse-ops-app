@@ -6,7 +6,7 @@ const SETTINGS_STORAGE_KEY = "warehouseOpsSettingsV1";
 const TERMS_STORAGE_KEY = "warehouseOpsTermsAcceptanceV1";
 const PUTAWAY_DRAFT_KEY = "warehouseos_putaway_draft_v1";
 const PUTAWAY_AUTOSAVE_DELAY_MS = 400;
-const TERMS_VERSION = "warehouseos-ip-terms-v1";
+const TERMS_VERSION = "warehouseos-legal-2026-v1";
 const ROLE_OWNER_EMAIL = "brandon.evanshine@chadwellsupply.com";
 const DEMO_USER = {
   uid: "demo-user",
@@ -27,6 +27,8 @@ const state = {
   editingHistory: null,
   putawayAutosaveTimer: null
 };
+
+let pendingLegalConsent = false;
 
 const COLLECTIONS = {
   employees: "employees",
@@ -219,7 +221,14 @@ function setPutawayAutosaveStatus(message) {
 
 function wireEvents() {
   $("loginBtn")?.addEventListener("click", login);
-  $("demoLoginBtn")?.addEventListener("click", () => enterDemoMode());
+  $("demoLoginBtn")?.addEventListener("click", () => {
+    if (!hasLoginConsent()) {
+      setLoginMessage("You must agree to the Terms of Use and Privacy Policy.");
+      return;
+    }
+
+    enterDemoMode({ consentGiven: true });
+  });
   $("resetPasswordBtn")?.addEventListener("click", resetPassword);
   $("logoutBtn")?.addEventListener("click", logoutCurrentUser);
   $("resetDemoBtn")?.addEventListener("click", () => resetDemoData());
@@ -253,6 +262,7 @@ function wireEvents() {
   $("searchItemHistoryBtn")?.addEventListener("click", renderItemHistory);
   $("exportItemHistoryBtn")?.addEventListener("click", exportItemHistory);
   $("saveSettingsBtn")?.addEventListener("click", saveSettings);
+  $("legalConsent")?.addEventListener("change", syncLoginConsent);
   $("termsAgree")?.addEventListener("change", () => {
     if ($("acceptTermsBtn")) $("acceptTermsBtn").disabled = !$("termsAgree").checked;
   });
@@ -314,6 +324,8 @@ function wireEvents() {
   window.addEventListener("beforeunload", () => {
     flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
   });
+
+  syncLoginConsent();
 }
 
 function switchTab(tab) {
@@ -334,13 +346,38 @@ function switchTab(tab) {
   if (tab === "settings") syncSettingsUi();
 }
 
-function hasAcceptedTerms() {
+function legalUserId(user = state.user) {
+  return String(user?.uid || user?.email || "");
+}
+
+function hasAcceptedTerms(user = state.user) {
   const record = readJson(TERMS_STORAGE_KEY, null);
-  return Boolean(record?.accepted && record.version === TERMS_VERSION);
+  return Boolean(
+    record?.accepted &&
+    record.version === TERMS_VERSION &&
+    record.userId === legalUserId(user)
+  );
+}
+
+function hasLoginConsent() {
+  return Boolean($("legalConsent")?.checked);
+}
+
+function syncLoginConsent() {
+  const accepted = hasLoginConsent();
+  if ($("loginBtn")) $("loginBtn").disabled = !accepted;
+  if ($("demoLoginBtn")) $("demoLoginBtn").disabled = !accepted;
+}
+
+function resetLoginConsent() {
+  if ($("legalConsent")) $("legalConsent").checked = false;
+  syncLoginConsent();
 }
 
 function showTermsModal() {
-  if (hasAcceptedTerms()) return;
+  if (hasAcceptedTerms(state.user)) return;
+  if ($("termsAgree")) $("termsAgree").checked = false;
+  if ($("acceptTermsBtn")) $("acceptTermsBtn").disabled = true;
   $("termsModal")?.classList.remove("hidden");
   $("termsModal")?.setAttribute("aria-hidden", "false");
 }
@@ -350,29 +387,42 @@ function hideTermsModal() {
   $("termsModal")?.setAttribute("aria-hidden", "true");
 }
 
-async function acceptTerms() {
+async function recordTermsAcceptance(user = state.user) {
   const record = {
     accepted: true,
     version: TERMS_VERSION,
     acceptedAt: new Date().toISOString(),
-    userEmail: state.user?.email || "",
-    userId: state.user?.uid || ""
+    userEmail: user?.email || "",
+    userId: legalUserId(user)
   };
 
   writeJson(TERMS_STORAGE_KEY, record);
-  hideTermsModal();
 
-  if (!state.isDemoMode && window.db) {
+  if (!state.isDemoMode && user?.uid && window.db) {
     try {
-      const ref = await db.collection("termsAcceptances").add({
+      const acceptanceId = `${user.uid}_${TERMS_VERSION}`;
+      await db.collection("termsAcceptances").doc(acceptanceId).set({
         ...record,
         userAgent: navigator.userAgent,
-        termsSummary: "WarehouseOS proprietary-use, non-transfer, confidentiality, and no-copy terms accepted."
-      });
-      writeJson(TERMS_STORAGE_KEY, { ...record, serverAcceptanceId: ref.id });
+        termsSummary: "WarehouseOS Terms of Use and Privacy Policy accepted."
+      }, { merge: true });
+      writeJson(TERMS_STORAGE_KEY, { ...record, serverAcceptanceId: acceptanceId });
     } catch (err) {
       console.warn("Terms acceptance saved locally only:", err);
     }
+  }
+
+  return record;
+}
+
+async function acceptTerms() {
+  if (!$("termsAgree")?.checked) return;
+
+  await recordTermsAcceptance(state.user);
+  hideTermsModal();
+
+  if (!state.isDemoMode && state.user) {
+    await loadAllData();
   }
 }
 
@@ -389,10 +439,25 @@ function watchAuth() {
     syncShell();
 
     if (user) {
+      if (pendingLegalConsent) {
+        await recordTermsAcceptance(user);
+        pendingLegalConsent = false;
+        resetLoginConsent();
+      }
+
+      if (!hasAcceptedTerms(user)) {
+        clearLoadedState();
+        showTermsModal();
+        return;
+      }
+
+      hideTermsModal();
       await loadAllData();
       return;
     }
 
+    pendingLegalConsent = false;
+    hideTermsModal();
     clearLoadedState();
   });
 }
@@ -418,7 +483,6 @@ function syncShell() {
   document.body.classList.toggle("demo-mode", state.isDemoMode);
   syncSettingsUi();
   if (signedIn) restorePutawayDraft();
-  if (signedIn) showTermsModal();
 }
 
 function clearLoadedState() {
@@ -456,7 +520,7 @@ function logoutCurrentUser() {
 }
 
 function enterDemoMode(options = {}) {
-  const { silent = false } = options;
+  const { silent = false, consentGiven = false } = options;
   const savedState = readDemoState();
 
   state.isDemoMode = true;
@@ -475,6 +539,14 @@ function enterDemoMode(options = {}) {
   setLoginMessage("");
   updateDemoUrl(true);
 
+  if (consentGiven) {
+    recordTermsAcceptance(state.user);
+    resetLoginConsent();
+    hideTermsModal();
+  } else if (!hasAcceptedTerms(state.user)) {
+    showTermsModal();
+  }
+
   if (!silent) {
     toast("Demo mode loaded.");
   }
@@ -485,8 +557,11 @@ function exitDemoMode() {
   state.user = auth.currentUser || null;
 
   syncShell();
-  if (state.user) {
+  if (state.user && hasAcceptedTerms(state.user)) {
     loadAllData();
+  } else if (state.user) {
+    clearLoadedState();
+    showTermsModal();
   } else {
     clearLoadedState();
   }
@@ -854,11 +929,16 @@ async function login() {
   const password = $("passwordInput")?.value;
 
   if (!email || !password) return setLoginMessage("Enter email and password.");
+  if (!hasLoginConsent()) {
+    return setLoginMessage("You must agree to the Terms of Use and Privacy Policy.");
+  }
 
   try {
+    pendingLegalConsent = true;
     await auth.signInWithEmailAndPassword(email, password);
     setLoginMessage("");
   } catch (err) {
+    pendingLegalConsent = false;
     setLoginMessage(err.message);
   }
 }
