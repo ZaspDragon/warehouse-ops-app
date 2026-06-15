@@ -50,4 +50,6 @@ warehouse-ops-app/
 
 ## License
 
-MIT
+Copyright 2026 Brandon Evanshine. All rights reserved.
+
+This repository and deployed software may not be copied, reused, distributed, sold, or modified without written permission. See [COPYRIGHT.md](COPYRIGHT.md).
