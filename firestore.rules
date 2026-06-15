@@ -218,6 +218,19 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // LEGAL ACCEPTANCE AUDIT
+    match /termsAcceptances/{acceptanceId} {
+      allow read: if isAdmin();
+
+      allow create, update: if signedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.accepted == true &&
+        request.resource.data.acceptedAt is string &&
+        request.resource.data.version is string;
+
+      allow delete: if false;
+    }
+
     // TASKS
     match /tasks/{taskId} {
       allow read: if signedIn();

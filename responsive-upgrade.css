@@ -441,6 +441,10 @@ body.receiver-temp-mode #putawayTab > .card:first-child .table-wrap table {
     grid-column: 1 / -1;
   }
 
+  #appPanel > .proprietary-notice {
+    grid-column: 1 / -1;
+  }
+
   .mobile-menu-btn,
   .nav-scrim {
     display: none;
@@ -502,6 +506,10 @@ body.receiver-temp-mode #putawayTab > .card:first-child .table-wrap table {
   }
 
   #appPanel > .demo-banner {
+    grid-column: 1 / -1;
+  }
+
+  #appPanel > .proprietary-notice {
     grid-column: 1 / -1;
   }
 
@@ -571,5 +579,18 @@ body.receiver-temp-mode #putawayTab > .card:first-child .table-wrap table {
 
   main {
     max-width: 1680px;
+  }
+}
+
+@media (max-width: 640px) {
+  .site-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px 18px;
+  }
+
+  .legal-page .topbar {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
