@@ -16,8 +16,10 @@ const HOLD_BATCH_KEY = "warehouseOps_holdBatchLog_v1";
 const HIGH_RISK_KEY = "warehouseOps_highRiskInventory_v1";
 const ROOT_CAUSE_KEY = "warehouseOps_rootCauseLog_v1";
 const DATA_BACKUP_META_KEY = "warehouseOps_dataBackups_v1";
+const DEMO_PRODUCTION_CLEANUP_KEY = "warehouseOps_demoProductionCleanup_v1";
 const ROLE_OWNER_EMAIL = "brandon.evanshine@chadwellsupply.com";
 const DAILY_COUNT_GOAL = 200;
+const DEMO_PRODUCTION_USER_EMAILS = new Set(["ilevanshine@gmail.com", "putawaysreceiving@gmail.com"]);
 const DEMO_USER = {
   uid: "demo-user",
   email: "demo@warehouse-ops-app.local"
@@ -693,7 +695,15 @@ function readDemoState() {
       putawayLogs: parsed.putawayLogs || [],
       cycleSessions: parsed.cycleSessions || [],
       pickingSessions: parsed.pickingSessions || [],
-      activityLogs: parsed.activityLogs || []
+      activityLogs: parsed.activityLogs || [],
+      cycleTimers: parsed.cycleTimers || null,
+      cycleProduction: parsed.cycleProduction || null,
+      countCreationLog: parsed.countCreationLog || null,
+      varianceResearchLog: parsed.varianceResearchLog || null,
+      holdBatchLog: parsed.holdBatchLog || null,
+      highRiskInventory: parsed.highRiskInventory || null,
+      rootCauseLog: parsed.rootCauseLog || null,
+      cycleAuditLog: parsed.cycleAuditLog || null
     };
   } catch (err) {
     console.warn("Demo state load failed:", err);
@@ -707,7 +717,15 @@ function snapshotDemoState() {
     putawayLogs: state.putawayLogs,
     cycleSessions: state.cycleSessions,
     pickingSessions: state.pickingSessions,
-    activityLogs: state.activityLogs
+    activityLogs: state.activityLogs,
+    cycleTimers: state.cycleTimers,
+    cycleProduction: state.cycleProduction,
+    countCreationLog: state.countCreationLog,
+    varianceResearchLog: state.varianceResearchLog,
+    holdBatchLog: state.holdBatchLog,
+    highRiskInventory: state.highRiskInventory,
+    rootCauseLog: state.rootCauseLog,
+    cycleAuditLog: state.cycleAuditLog
   };
 }
 
@@ -717,12 +735,25 @@ function applyDemoState(data) {
   state.cycleSessions = sortByCreatedAtDesc(data.cycleSessions || []);
   state.pickingSessions = sortByCreatedAtDesc(data.pickingSessions || []);
   state.activityLogs = sortByCreatedAtDesc(data.activityLogs || []);
+  applyDemoCycleProductionState(data);
 
   renderEmployees();
   renderLogs();
   renderHistory();
   renderItemHistory();
   populateEmployeeDropdowns();
+}
+
+function applyDemoCycleProductionState(data = {}) {
+  const fallback = buildDemoCycleProductionState();
+  state.cycleTimers = Array.isArray(data.cycleTimers) ? data.cycleTimers : fallback.cycleTimers;
+  state.cycleProduction = Array.isArray(data.cycleProduction) ? data.cycleProduction : fallback.cycleProduction;
+  state.countCreationLog = Array.isArray(data.countCreationLog) ? data.countCreationLog : fallback.countCreationLog;
+  state.varianceResearchLog = Array.isArray(data.varianceResearchLog) ? data.varianceResearchLog : fallback.varianceResearchLog;
+  state.holdBatchLog = Array.isArray(data.holdBatchLog) ? data.holdBatchLog : fallback.holdBatchLog;
+  state.highRiskInventory = Array.isArray(data.highRiskInventory) ? data.highRiskInventory : fallback.highRiskInventory;
+  state.rootCauseLog = Array.isArray(data.rootCauseLog) ? data.rootCauseLog : fallback.rootCauseLog;
+  state.cycleAuditLog = Array.isArray(data.cycleAuditLog) ? data.cycleAuditLog : fallback.cycleAuditLog;
 }
 
 function buildDemoState() {
@@ -921,7 +952,8 @@ function buildDemoState() {
     putawayLogs,
     cycleSessions,
     pickingSessions,
-    activityLogs: buildDemoActivityLogs(putawayLogs, cycleSessions, pickingSessions)
+    activityLogs: buildDemoActivityLogs(putawayLogs, cycleSessions, pickingSessions),
+    ...buildDemoCycleProductionState()
   };
 }
 
@@ -1052,6 +1084,9 @@ async function loadAllData() {
     renderHistory();
     renderItemHistory();
     populateEmployeeDropdowns();
+    initializeCycleProductionData();
+    renderCyclePacketTimer();
+    renderCycleProductionDashboard();
   } catch (err) {
     console.error("Load data failed:", err);
     toast("Load failed: " + err.message);
@@ -2855,8 +2890,26 @@ function allWarehouseStorageKeys() {
     VARIANCE_RESEARCH_KEY,
     HOLD_BATCH_KEY,
     HIGH_RISK_KEY,
+    ROOT_CAUSE_KEY,
+    DEMO_PRODUCTION_CLEANUP_KEY
+  ];
+}
+
+function cycleProductionStorageKeys() {
+  return [
+    CYCLE_TIMER_KEY,
+    CYCLE_AUDIT_KEY,
+    CYCLE_PRODUCTION_KEY,
+    COUNT_CREATION_KEY,
+    VARIANCE_RESEARCH_KEY,
+    HOLD_BATCH_KEY,
+    HIGH_RISK_KEY,
     ROOT_CAUSE_KEY
   ];
+}
+
+function isCycleProductionStorageKey(key) {
+  return cycleProductionStorageKeys().includes(key);
 }
 
 function initializeDataProtection() {
@@ -2926,6 +2979,11 @@ function safeWriteStorageKey(key, value, reason) {
 
 function safeSaveArray(key, stateKey, rows, reason) {
   const safeRows = Array.isArray(rows) ? rows : [];
+  if (state.isDemoMode && isCycleProductionStorageKey(key)) {
+    state[stateKey] = safeRows;
+    persistDemoState();
+    return;
+  }
   safeWriteStorageKey(key, safeRows, reason);
   state[stateKey] = safeRows;
 }
@@ -2936,7 +2994,9 @@ function safeUpsertArrayRecord(key, stateKey, record, reason) {
     toast("Record was not saved because its ID was invalid.");
     return null;
   }
-  const rows = readArrayJson(key);
+  const rows = state.isDemoMode && isCycleProductionStorageKey(key)
+    ? (Array.isArray(state[stateKey]) ? state[stateKey] : [])
+    : readArrayJson(key);
   const index = rows.findIndex((row) => row.id === record.id);
   const merged = index >= 0
     ? { ...rows[index], ...record, updatedAt: new Date().toISOString() }
@@ -2953,6 +3013,13 @@ function validateRecordId(id) {
 }
 
 function reloadCycleProductionState() {
+  if (state.isDemoMode) {
+    const savedDemoState = readDemoState();
+    applyDemoCycleProductionState(savedDemoState || buildDemoState());
+    return;
+  }
+
+  removeDemoCycleProductionFromStandardStorage();
   state.cycleTimers = readArrayJson(CYCLE_TIMER_KEY);
   state.cycleProduction = readArrayJson(CYCLE_PRODUCTION_KEY);
   state.countCreationLog = readArrayJson(COUNT_CREATION_KEY);
@@ -2969,25 +3036,97 @@ function initializeCycleProductionData() {
   ["creationDate", "varianceDate", "holdDate", "riskDate"].forEach((id) => {
     if ($(id) && !$(id).value) $(id).value = today;
   });
-  const seeds = buildCycleProductionDemoRecords();
-  seedStorageKey(CYCLE_TIMER_KEY, "cycleTimers", seeds.timers);
-  seedStorageKey(COUNT_CREATION_KEY, "countCreationLog", seeds.creation);
-  seedStorageKey(VARIANCE_RESEARCH_KEY, "varianceResearchLog", seeds.variance);
-  seedStorageKey(HOLD_BATCH_KEY, "holdBatchLog", seeds.holdBatch);
-  seedStorageKey(HIGH_RISK_KEY, "highRiskInventory", seeds.highRisk);
-  seedStorageKey(ROOT_CAUSE_KEY, "rootCauseLog", seeds.rootCause);
-  seedStorageKey(CYCLE_AUDIT_KEY, "cycleAuditLog", seeds.audit);
-  seedStorageKey(CYCLE_PRODUCTION_KEY, "cycleProduction", []);
+  if (state.isDemoMode) {
+    applyDemoCycleProductionState(readDemoState() || buildDemoState());
+  } else {
+    reloadCycleProductionState();
+  }
   syncSupervisorControls();
 }
 
-function seedStorageKey(key, stateKey, seedRows) {
-  const current = readArrayJson(key);
-  if (current.length) {
-    state[stateKey] = current;
-    return;
+function removeDemoCycleProductionFromStandardStorage() {
+  if (state.isDemoMode) return 0;
+  const userEmail = String(state.user?.email || "").toLowerCase();
+  const cleanupReason = DEMO_PRODUCTION_USER_EMAILS.has(userEmail)
+    ? `demo_cleanup_${userEmail}`
+    : "demo_cleanup_standard_mode";
+  const targets = [
+    { key: CYCLE_TIMER_KEY, stateKey: "cycleTimers" },
+    { key: CYCLE_AUDIT_KEY, stateKey: "cycleAuditLog" },
+    { key: CYCLE_PRODUCTION_KEY, stateKey: "cycleProduction" },
+    { key: COUNT_CREATION_KEY, stateKey: "countCreationLog" },
+    { key: VARIANCE_RESEARCH_KEY, stateKey: "varianceResearchLog" },
+    { key: HOLD_BATCH_KEY, stateKey: "holdBatchLog" },
+    { key: HIGH_RISK_KEY, stateKey: "highRiskInventory" },
+    { key: ROOT_CAUSE_KEY, stateKey: "rootCauseLog" }
+  ];
+  let removedTotal = 0;
+
+  targets.forEach(({ key, stateKey }) => {
+    const rows = readArrayJson(key);
+    if (!rows.length) {
+      state[stateKey] = rows;
+      return;
+    }
+
+    const keptRows = rows.filter((row) => !isDemoCycleProductionRecord(row));
+    const removed = rows.length - keptRows.length;
+    removedTotal += removed;
+
+    if (removed > 0) {
+      safeSaveArray(key, stateKey, keptRows, cleanupReason);
+    } else {
+      state[stateKey] = rows;
+    }
+  });
+
+  if (removedTotal > 0) {
+    writeDemoProductionCleanupReceipt(userEmail || "standard_mode", removedTotal);
   }
-  safeSaveArray(key, stateKey, seedRows, `seed_${key}`);
+
+  return removedTotal;
+}
+
+function writeDemoProductionCleanupReceipt(userEmail, removedTotal) {
+  const receipts = readArrayJson(DEMO_PRODUCTION_CLEANUP_KEY);
+  safeWriteStorageKey(DEMO_PRODUCTION_CLEANUP_KEY, [
+    {
+      id: createLocalId("demo-cleanup"),
+      userEmail,
+      removedTotal,
+      timestamp: new Date().toISOString(),
+      note: "Removed seeded cycle count production demo records from standard app storage only."
+    },
+    ...receipts
+  ].slice(0, 50), "demo_production_cleanup_receipt");
+}
+
+function isDemoCycleProductionRecord(row = {}) {
+  const id = String(row.id || "").toLowerCase();
+  const stockCountId = String(row.stockCountId || row.countId || "").toUpperCase();
+  const employee = String(row.employee || "").toLowerCase();
+  const startedBy = String(row.timing?.startedBy || row.startedBy || "").toLowerCase();
+  const finishedBy = String(row.timing?.finishedBy || row.finishedBy || "").toLowerCase();
+  const demoEmployees = ["ava patel", "diego martinez", "jordan lee", "maya chen"];
+  const demoIdPrefixes = ["timer-demo-", "creation-demo-", "variance-demo-", "hold-demo-", "risk-demo-", "audit-demo-", "demo-"];
+
+  return demoIdPrefixes.some((prefix) => id.startsWith(prefix))
+    || stockCountId.startsWith("COUNT-DEMO")
+    || (demoEmployees.includes(employee) && (startedBy === DEMO_USER.email || finishedBy === DEMO_USER.email));
+}
+
+function buildDemoCycleProductionState() {
+  const seeds = buildCycleProductionDemoRecords();
+  return {
+    cycleTimers: seeds.timers,
+    cycleProduction: [],
+    countCreationLog: seeds.creation,
+    varianceResearchLog: seeds.variance,
+    holdBatchLog: seeds.holdBatch,
+    highRiskInventory: seeds.highRisk,
+    rootCauseLog: seeds.rootCause,
+    cycleAuditLog: seeds.audit
+  };
 }
 
 function buildCycleProductionDemoRecords() {
