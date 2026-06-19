@@ -108,6 +108,7 @@
       <nav class="tabs">
         <button class="tab active" data-tab="putaway">Put Away Log</button>
         <button class="tab" data-tab="cycle">Cycle Count</button>
+        <button class="tab" data-tab="cycleProduction">Cycle Count Production</button>
         <button class="tab" data-tab="picking">Order Picking</button>
         <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
@@ -226,6 +227,72 @@
             </label>
           </div>
 
+          <div class="upload-card cycle-timer-card">
+            <div class="section-heading">
+              <div>
+                <h3>Cycle Count Packet Timer</h3>
+                <p class="hint">Counters can start a packet, finish a packet, and add delay notes. Supervisor controls stay separate.</p>
+              </div>
+              <span id="cycleTimerStatusBadge" class="status-pill inactive">Inactive</span>
+            </div>
+            <div class="grid">
+              <label>Employee / Counter
+                <select id="cycleTimerEmployee"></select>
+              </label>
+              <label>Stock Count ID
+                <input id="cycleTimerCountId" placeholder="COUNT-001" />
+              </label>
+              <label>Date
+                <input id="cycleTimerDate" type="date" />
+              </label>
+              <label>Packet #
+                <input id="cycleTimerPacket" placeholder="Optional" />
+              </label>
+            </div>
+            <div class="timer-layout packet-timer-layout">
+              <div class="timer-face small-timer-face">
+                <strong id="cyclePacketClock">00:00:00</strong>
+              </div>
+              <div class="stacked-status">
+                <div><span>Started</span><strong id="cyclePacketStartedAt">-</strong></div>
+                <div><span>Finished</span><strong id="cyclePacketFinishedAt">-</strong></div>
+              </div>
+            </div>
+            <div class="actions">
+              <button id="startCyclePacketBtn" class="primary">Start Packet</button>
+              <button id="finishCyclePacketBtn">Finish Packet</button>
+              <button id="resetCyclePacketBtn" class="danger supervisor-only-action">Reset Timer</button>
+              <button id="voidCyclePacketBtn" class="danger supervisor-only-action">Void Timer</button>
+            </div>
+            <div class="grid">
+              <label>Delay Reason
+                <select id="cycleDelayReason">
+                  <option>Normal</option>
+                  <option>Mixed Product</option>
+                  <option>Wrong Bin</option>
+                  <option>Product Not Found</option>
+                  <option>Multiple Locations</option>
+                  <option>Damaged Product</option>
+                  <option>UOM Issue</option>
+                  <option>Waiting For Lift</option>
+                  <option>Waiting For Supervisor</option>
+                  <option>Hold Batch Research</option>
+                  <option>Overstock Investigation</option>
+                  <option>Count Sheet Issue</option>
+                  <option>GP/System Issue</option>
+                  <option>Other</option>
+                </select>
+              </label>
+              <label class="wide-field">Delay Notes
+                <textarea id="cycleDelayNote" rows="3" placeholder="Quick note about what slowed the packet down"></textarea>
+              </label>
+            </div>
+            <div class="actions">
+              <button id="addCycleDelayBtn">Add Delay Note</button>
+            </div>
+            <p id="cycleTimerMessage" class="message"></p>
+          </div>
+
           <div class="upload-card">
             <h3>Upload Cycle Count Sheet</h3>
             <p class="hint">Upload .xlsx, .xls, or .csv. The worksheet stays editable after import.</p>
@@ -237,8 +304,8 @@
             <p id="cycleUploadMessage" class="message"></p>
           </div>
 
-          <div class="table-wrap">
-            <table>
+          <div class="table-wrap cycle-entry-wrap">
+            <table class="cycle-entry-table">
               <thead>
                 <tr>
                   <th>#</th>
@@ -250,6 +317,8 @@
                   <th>Variance</th>
                   <th>Reason</th>
                   <th>Done</th>
+                  <th>Item Timing</th>
+                  <th>Item Delay</th>
                 </tr>
               </thead>
               <tbody id="cycleBody"></tbody>
@@ -302,6 +371,215 @@
               </thead>
               <tbody id="cycleLogBody"></tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- CYCLE COUNT PRODUCTION -->
+      <section id="cycleProductionTab" class="tab-panel">
+        <div class="card">
+          <div class="section-heading">
+            <div>
+              <h2>Cycle Count Production</h2>
+              <p class="hint">Supervisor-friendly production, delay, root cause, and high-risk inventory tracking.</p>
+            </div>
+            <button id="rollbackCycleProductionBtn" class="danger supervisor-only-action">Rollback From Latest Backup</button>
+          </div>
+
+          <div class="grid production-filters">
+            <label>Date
+              <input id="prodFilterDate" type="date" />
+            </label>
+            <label>Start Date
+              <input id="prodFilterStart" type="date" />
+            </label>
+            <label>End Date
+              <input id="prodFilterEnd" type="date" />
+            </label>
+            <label>Employee
+              <select id="prodFilterEmployee"></select>
+            </label>
+            <label>Role / Function
+              <select id="prodFilterRole">
+                <option value="">All</option>
+                <option>Counter</option>
+                <option>Count Creator</option>
+                <option>Variance Research</option>
+                <option>Hold Batch Research</option>
+                <option>Lift Driver</option>
+              </select>
+            </label>
+            <label>Stock Count ID
+              <input id="prodFilterCountId" placeholder="COUNT-001" />
+            </label>
+            <label>Delay Reason
+              <select id="prodFilterDelay">
+                <option value="">All</option>
+                <option>Normal</option>
+                <option>Mixed Product</option>
+                <option>Wrong Bin</option>
+                <option>Product Not Found</option>
+                <option>Multiple Locations</option>
+                <option>Damaged Product</option>
+                <option>UOM Issue</option>
+                <option>Waiting For Lift</option>
+                <option>Waiting For Supervisor</option>
+                <option>Hold Batch Research</option>
+                <option>Overstock Investigation</option>
+                <option>Count Sheet Issue</option>
+                <option>GP/System Issue</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label>Root Cause
+              <select id="prodFilterRootCause">
+                <option value="">All</option>
+                <option>Receiving Error</option>
+                <option>Putaway Error</option>
+                <option>Picking Error</option>
+                <option>Replenishment Error</option>
+                <option>Transfer Error</option>
+                <option>GP/System Error</option>
+                <option>Mixed Product</option>
+                <option>Wrong Bin</option>
+                <option>Damaged Product</option>
+                <option>UOM Issue</option>
+                <option>Unknown</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label>Flag Status
+              <select id="prodFilterFlag">
+                <option value="">All</option>
+                <option value="flagged">Flagged</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="unreviewed">Unreviewed</option>
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button id="applyProductionFiltersBtn" class="primary">Apply Filters</button>
+            <button id="clearProductionFiltersBtn">Clear Filters</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Production Summary</h3>
+          <div class="stats production-stats">
+            <div><strong id="dailyProductionLines">0</strong><span>Daily Lines</span></div>
+            <div><strong id="weeklyProductionLines">0</strong><span>Weekly Lines</span></div>
+            <div><strong id="packetsCompleted">0</strong><span>Packets Completed</span></div>
+            <div><strong id="countsPerHour">0</strong><span>Counts / Hour</span></div>
+            <div><strong id="goalPercent">0%</strong><span>Goal Percent</span></div>
+            <div><strong id="flaggedRecords">0</strong><span>Flagged Records</span></div>
+          </div>
+          <div class="actions export-actions">
+            <button class="productionExportBtn" data-export="daily">Export Daily Production CSV</button>
+            <button class="productionExportBtn" data-export="weekly">Export Weekly Production CSV</button>
+            <button class="productionExportBtn" data-export="employee">Export Employee Production CSV</button>
+            <button class="productionExportBtn" data-export="delays">Export Delay Reasons CSV</button>
+            <button class="productionExportBtn" data-export="rootCauses">Export Root Causes CSV</button>
+            <button class="productionExportBtn" data-export="creation">Export Count Creation CSV</button>
+            <button class="productionExportBtn" data-export="variance">Export Variance Research CSV</button>
+            <button class="productionExportBtn" data-export="holdBatch">Export Hold Batch CSV</button>
+            <button class="productionExportBtn" data-export="highRisk">Export High-Risk Inventory CSV</button>
+            <button class="productionExportBtn" data-export="flags">Export Flagged Records CSV</button>
+            <button class="productionExportBtn supervisor-only-action" data-export="audit">Export Audit Log CSV</button>
+          </div>
+        </div>
+
+        <div class="panel-grid two-column-production">
+          <div class="card">
+            <h3>Count Creation Log</h3>
+            <div class="grid">
+              <label>Date<input id="creationDate" type="date" /></label>
+              <label>Employee<select id="creationEmployee"></select></label>
+              <label>Stock Count ID<input id="creationCountId" placeholder="COUNT-001" /></label>
+              <label>Packets Created<input id="creationPackets" type="number" min="0" /></label>
+              <label>Count Lines Created<input id="creationLines" type="number" min="0" /></label>
+              <label>Reason for Count
+                <select id="creationReason">
+                  <option>Hold Batch</option><option>Variance</option><option>ABC Count</option><option>Negative Quantity</option>
+                  <option>Location Audit</option><option>Overstock</option><option>Supervisor Request</option><option>High-Dollar Item</option>
+                  <option>Fast Mover</option><option>Other</option>
+                </select>
+              </label>
+              <label class="wide-field">Notes<textarea id="creationNotes" rows="2"></textarea></label>
+            </div>
+            <div class="actions"><button id="saveCreationLogBtn" class="primary">Save Count Creation</button></div>
+          </div>
+
+          <div class="card">
+            <h3>Variance Research Log</h3>
+            <div class="grid">
+              <label>Date<input id="varianceDate" type="date" /></label>
+              <label>Employee<select id="varianceEmployee"></select></label>
+              <label>Stock Count ID<input id="varianceCountId" /></label>
+              <label>Item Number<input id="varianceItem" /></label>
+              <label>Bin Location<input id="varianceBin" /></label>
+              <label>Variance Qty<input id="varianceQty" type="number" /></label>
+              <label>Variance $<input id="varianceDollars" type="number" step="0.01" /></label>
+              <label>Status<select id="varianceStatus"><option>Open</option><option>Researching</option><option>Corrected</option><option>Needs Supervisor Review</option><option>Closed</option></select></label>
+              <label>Root Cause<select id="varianceRootCause"><option>Receiving Error</option><option>Putaway Error</option><option>Picking Error</option><option>Replenishment Error</option><option>Transfer Error</option><option>GP/System Error</option><option>Mixed Product</option><option>Wrong Bin</option><option>Damaged Product</option><option>UOM Issue</option><option>Unknown</option><option>Other</option></select></label>
+              <label>Action Taken<select id="varianceAction"><option>Recounted</option><option>Bin Corrected</option><option>Quantity Adjusted</option><option>Item Moved</option><option>Sent To Supervisor</option><option>No Adjustment Needed</option><option>Other</option></select></label>
+              <label class="wide-field">Notes<textarea id="varianceNotes" rows="2"></textarea></label>
+            </div>
+            <div class="actions"><button id="saveVarianceLogBtn" class="primary">Save Variance Research</button></div>
+          </div>
+
+          <div class="card">
+            <h3>Hold Batch Log</h3>
+            <div class="grid">
+              <label>Date<input id="holdDate" type="date" /></label>
+              <label>Employee<select id="holdEmployee"></select></label>
+              <label>Batch ID<input id="holdBatchId" /></label>
+              <label>Item Number<input id="holdItem" /></label>
+              <label>Bin Location<input id="holdBin" /></label>
+              <label>Issue Type<select id="holdIssue"><option>Negative Quantity</option><option>Allocation Issue</option><option>Bin Mismatch</option><option>Transfer Issue</option><option>Receiving Issue</option><option>Picking Issue</option><option>GP/System Issue</option><option>Other</option></select></label>
+              <label>Status<select id="holdStatus"><option>Open</option><option>Researching</option><option>Corrected</option><option>Needs Supervisor Review</option><option>Closed</option></select></label>
+              <label>Action Taken<input id="holdAction" /></label>
+              <label class="wide-field">Notes<textarea id="holdNotes" rows="2"></textarea></label>
+            </div>
+            <div class="actions"><button id="saveHoldBatchBtn" class="primary">Save Hold Batch</button></div>
+          </div>
+
+          <div class="card">
+            <h3>High-Risk Inventory</h3>
+            <div class="grid">
+              <label>Date Added<input id="riskDate" type="date" /></label>
+              <label>Item Number<input id="riskItem" /></label>
+              <label>Bin Location<input id="riskBin" /></label>
+              <label>Aisle<input id="riskAisle" /></label>
+              <label>Risk Type<select id="riskType"><option>High Dollar</option><option>Fast Mover</option><option>Repeated Variance</option><option>Negative Quantity</option><option>Mixed Product</option><option>Overstock Issue</option><option>Damaged Product</option><option>Frequent Hold Batch</option><option>Supervisor Request</option><option>Other</option></select></label>
+              <label>Priority<select id="riskPriority"><option>Low</option><option>Medium</option><option>High</option></select></label>
+              <label>Last Count Date<input id="riskLastCount" type="date" /></label>
+              <label>Next Recommended Count<input id="riskNextCount" type="date" /></label>
+              <label>Status<select id="riskStatus"><option>Active</option><option>Count Scheduled</option><option>Counted</option><option>Resolved</option></select></label>
+              <label class="wide-field">Notes<textarea id="riskNotes" rows="2"></textarea></label>
+            </div>
+            <div class="actions"><button id="saveHighRiskBtn" class="primary">Save High-Risk Item</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Root Causes, Flags, and Recent Records</h3>
+          <div class="production-dashboard-grid">
+            <div>
+              <h4>Root Cause Totals</h4>
+              <div id="rootCauseSummary" class="summary-list"></div>
+            </div>
+            <div>
+              <h4>Flagged / Suspicious Records</h4>
+              <div id="flaggedRecordList" class="summary-list"></div>
+            </div>
+            <div>
+              <h4>Delay Note Review</h4>
+              <div id="delayReviewList" class="summary-list"></div>
+            </div>
+            <div>
+              <h4>Recent Production Records</h4>
+              <div id="productionRecordList" class="summary-list"></div>
+            </div>
           </div>
         </div>
       </section>

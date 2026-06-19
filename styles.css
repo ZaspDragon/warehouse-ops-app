@@ -264,6 +264,148 @@ button:disabled {
   align-items: center;
 }
 
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.panel-grid.two-column-production,
+.production-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.production-dashboard-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cycle-timer-card {
+  border-color: #b7cdfc;
+  background: linear-gradient(135deg, #f8fbff, #ffffff);
+}
+
+.packet-timer-layout {
+  grid-template-columns: minmax(200px, 320px) 1fr;
+  margin-top: 14px;
+}
+
+.small-timer-face {
+  min-height: 110px;
+}
+
+.small-timer-face strong {
+  font-size: clamp(30px, 5vw, 46px);
+}
+
+.stacked-status {
+  display: grid;
+  gap: 10px;
+}
+
+.stacked-status div {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.stacked-status span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stacked-status strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: #e8eefc;
+  color: #0b1b3a;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.status-pill.active {
+  background: #fff5cf;
+  color: #7a4d00;
+}
+
+.status-pill.finished,
+.status-pill.supervisor_adjusted {
+  background: #ddf7e8;
+  color: #0d6b35;
+}
+
+.status-pill.voided {
+  background: #fdeaea;
+  color: var(--danger);
+}
+
+.production-stats strong {
+  color: var(--navy);
+}
+
+.summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.summary-row {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.summary-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.item-timing-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.item-timing-actions button {
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.item-minutes {
+  align-self: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.cycle-entry-wrap {
+  overflow-x: auto;
+}
+
+.cycle-entry-table {
+  min-width: 1320px;
+}
+
+.cycle-entry-table .cycle-item-delay,
+.cycle-entry-table .cycle-item-delay-notes {
+  min-width: 170px;
+}
+
 .row-actions {
   display: flex;
   flex-wrap: wrap;

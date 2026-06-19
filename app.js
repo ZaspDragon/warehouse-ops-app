@@ -7,7 +7,17 @@ const TERMS_STORAGE_KEY = "warehouseOpsTermsAcceptanceV1";
 const PUTAWAY_DRAFT_KEY = "warehouseos_putaway_draft_v1";
 const PUTAWAY_AUTOSAVE_DELAY_MS = 400;
 const TERMS_VERSION = "warehouseos-legal-2026-v1";
+const CYCLE_TIMER_KEY = "warehouseOps_cycleCountTimers_v1";
+const CYCLE_AUDIT_KEY = "warehouseOps_cycleCountAudit_v1";
+const CYCLE_PRODUCTION_KEY = "warehouseOps_cycleCountProduction_v1";
+const COUNT_CREATION_KEY = "warehouseOps_countCreationLog_v1";
+const VARIANCE_RESEARCH_KEY = "warehouseOps_varianceResearchLog_v1";
+const HOLD_BATCH_KEY = "warehouseOps_holdBatchLog_v1";
+const HIGH_RISK_KEY = "warehouseOps_highRiskInventory_v1";
+const ROOT_CAUSE_KEY = "warehouseOps_rootCauseLog_v1";
+const DATA_BACKUP_META_KEY = "warehouseOps_dataBackups_v1";
 const ROLE_OWNER_EMAIL = "brandon.evanshine@chadwellsupply.com";
+const DAILY_COUNT_GOAL = 200;
 const DEMO_USER = {
   uid: "demo-user",
   email: "demo@warehouse-ops-app.local"
@@ -24,11 +34,20 @@ const state = {
   itemHistoryRows: [],
   timer: readJson(TIMER_STORAGE_KEY, { status: "idle", elapsedMinutes: 0 }),
   settings: readJson(SETTINGS_STORAGE_KEY, { operatorName: "", operatorRole: "worker" }),
+  cycleTimers: readArrayJson(CYCLE_TIMER_KEY),
+  cycleProduction: readArrayJson(CYCLE_PRODUCTION_KEY),
+  countCreationLog: readArrayJson(COUNT_CREATION_KEY),
+  varianceResearchLog: readArrayJson(VARIANCE_RESEARCH_KEY),
+  holdBatchLog: readArrayJson(HOLD_BATCH_KEY),
+  highRiskInventory: readArrayJson(HIGH_RISK_KEY),
+  rootCauseLog: readArrayJson(ROOT_CAUSE_KEY),
+  cycleAuditLog: readArrayJson(CYCLE_AUDIT_KEY),
   editingHistory: null,
   putawayAutosaveTimer: null
 };
 
 let pendingLegalConsent = false;
+let storageBackupCreatedThisSession = false;
 
 const COLLECTIONS = {
   employees: "employees",
@@ -55,14 +74,24 @@ function writeJson(key, value) {
   }
 }
 
+function readArrayJson(key) {
+  const value = readJson(key, []);
+  return Array.isArray(value) ? value : [];
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   setTodayDefaults();
   buildAllTables();
+  initializeDataProtection();
+  initializeCycleProductionData();
   initializePutawayDraft();
   wireEvents();
   syncSettingsUi();
   renderReceivingTimer();
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
   window.setInterval(renderReceivingTimer, 1000);
+  window.setInterval(renderCyclePacketTimer, 1000);
   watchAuth();
   if (new URLSearchParams(window.location.search).get("demo") === "1") {
     enterDemoMode({ silent: true });
@@ -72,7 +101,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function setTodayDefaults() {
   const today = todayValue();
 
-  ["putDate", "cycleDate", "pickDate"].forEach((id) => {
+  ["putDate", "cycleDate", "pickDate", "cycleTimerDate", "creationDate", "varianceDate", "holdDate", "riskDate"].forEach((id) => {
     if ($(id)) $(id).value = today;
   });
 }
@@ -239,6 +268,18 @@ function wireEvents() {
 
   $("loadCycleFileBtn")?.addEventListener("click", loadCycleCountFile);
   $("exportCurrentCycleBtn")?.addEventListener("click", exportCurrentCycle);
+  $("startCyclePacketBtn")?.addEventListener("click", startCyclePacket);
+  $("finishCyclePacketBtn")?.addEventListener("click", finishCyclePacket);
+  $("addCycleDelayBtn")?.addEventListener("click", addCycleDelayNote);
+  $("resetCyclePacketBtn")?.addEventListener("click", resetCyclePacketBySupervisor);
+  $("voidCyclePacketBtn")?.addEventListener("click", voidCyclePacketBySupervisor);
+  $("applyProductionFiltersBtn")?.addEventListener("click", renderCycleProductionDashboard);
+  $("clearProductionFiltersBtn")?.addEventListener("click", clearProductionFilters);
+  $("saveCreationLogBtn")?.addEventListener("click", saveCountCreationLog);
+  $("saveVarianceLogBtn")?.addEventListener("click", saveVarianceResearchLog);
+  $("saveHoldBatchBtn")?.addEventListener("click", saveHoldBatchLog);
+  $("saveHighRiskBtn")?.addEventListener("click", saveHighRiskInventory);
+  $("rollbackCycleProductionBtn")?.addEventListener("click", rollbackLatestWarehouseOpsBackup);
   $("loadPickFileBtn")?.addEventListener("click", loadPickTicketFile);
   $("exportCurrentPickingBtn")?.addEventListener("click", exportCurrentPicking);
 
@@ -276,12 +317,19 @@ function wireEvents() {
     btn.addEventListener("click", () => exportCsv(btn.dataset.export));
   });
 
+  document.querySelectorAll(".productionExportBtn").forEach((btn) => {
+    btn.addEventListener("click", () => exportProductionCsv(btn.dataset.export));
+  });
+
   document.addEventListener("input", (e) => {
     if (isPutawayDraftField(e.target)) {
       if (e.target.closest("#putawayBody")) updatePutawayStats();
       savePutawayDraft({ statusMessage: "Auto-saved just now" });
     }
     if (e.target.closest("#cycleBody")) updateCycleStats();
+    if (e.target.id === "cycleWorker" && $("cycleTimerEmployee")) $("cycleTimerEmployee").value = e.target.value;
+    if (e.target.id === "cycleId" && $("cycleTimerCountId")) $("cycleTimerCountId").value = e.target.value;
+    if (e.target.id === "cycleDate" && $("cycleTimerDate")) $("cycleTimerDate").value = e.target.value;
 
     if (e.target.closest("#pickingBody")) {
       if (e.target.classList.contains("pick-picked") || e.target.classList.contains("pick-required")) {
@@ -293,12 +341,34 @@ function wireEvents() {
   });
 
   document.addEventListener("change", (e) => {
+    if (e.target.id === "cycleWorker" && $("cycleTimerEmployee")) $("cycleTimerEmployee").value = e.target.value;
+    if (e.target.id === "cycleId" && $("cycleTimerCountId")) $("cycleTimerCountId").value = e.target.value;
+    if (e.target.id === "cycleDate" && $("cycleTimerDate")) $("cycleTimerDate").value = e.target.value;
     if (isPutawayDraftField(e.target)) {
       updatePutawayStats();
       savePutawayDraft({ statusMessage: "All changes saved" });
     }
     if (e.target.closest("#pickingBody")) updatePickingStats();
     if (e.target.closest("#cycleBody")) updateCycleStats();
+  });
+
+  document.addEventListener("click", (e) => {
+    const startItemBtn = e.target.closest(".startItemTimerBtn");
+    if (startItemBtn) {
+      startCycleItemTimer(startItemBtn.closest("tr"));
+      return;
+    }
+
+    const endItemBtn = e.target.closest(".endItemTimerBtn");
+    if (endItemBtn) {
+      endCycleItemTimer(endItemBtn.closest("tr"));
+      return;
+    }
+
+    const reviewBtn = e.target.closest(".delayReviewBtn");
+    if (reviewBtn) {
+      reviewDelayNote(reviewBtn.dataset.timerId, reviewBtn.dataset.delayId, reviewBtn.dataset.status);
+    }
   });
 
   document.addEventListener(
@@ -344,6 +414,7 @@ function switchTab(tab) {
   if (tab === "history") loadHistory();
   if (tab === "itemHistory") renderItemHistory();
   if (tab === "settings") syncSettingsUi();
+  if (tab === "cycleProduction") renderCycleProductionDashboard();
 }
 
 function legalUserId(user = state.user) {
@@ -1291,6 +1362,32 @@ function buildCycleRows(rowCount = 25) {
           </select>
         </td>
         <td><input class="cycle-done" type="checkbox" /></td>
+        <td>
+          <div class="row-actions item-timing-actions">
+            <button class="startItemTimerBtn" type="button">Start</button>
+            <button class="endItemTimerBtn" type="button">End</button>
+            <span class="item-minutes">0 min</span>
+          </div>
+        </td>
+        <td>
+          <select class="cycle-item-delay">
+            <option>Normal</option>
+            <option>Mixed Product</option>
+            <option>Wrong Bin</option>
+            <option>Product Not Found</option>
+            <option>Multiple Locations</option>
+            <option>Damaged Product</option>
+            <option>UOM Issue</option>
+            <option>Waiting For Lift</option>
+            <option>Waiting For Supervisor</option>
+            <option>Hold Batch Research</option>
+            <option>Overstock Investigation</option>
+            <option>Count Sheet Issue</option>
+            <option>GP/System Issue</option>
+            <option>Other</option>
+          </select>
+          <input class="desc-input cycle-item-delay-notes" placeholder="Item delay notes" />
+        </td>
       </tr>
     `
     );
@@ -1982,7 +2079,15 @@ function populateEmployeeDropdowns() {
     });
   }
 
-  ["cycleWorker", "pickWorker"].forEach((id) => {
+  [
+    "cycleWorker",
+    "cycleTimerEmployee",
+    "pickWorker",
+    "prodFilterEmployee",
+    "creationEmployee",
+    "varianceEmployee",
+    "holdEmployee"
+  ].forEach((id) => {
     const select = $(id);
     if (!select) return;
 
@@ -2111,7 +2216,12 @@ function collectCycleLines() {
       countedQty: rowNumber(row, ".cycle-counted"),
       variance: rowNumber(row, ".cycle-counted") - rowNumber(row, ".cycle-system"),
       reason: rowValue(row, ".cycle-reason"),
-      done: row.querySelector(".cycle-done")?.checked || false
+      done: row.querySelector(".cycle-done")?.checked || false,
+      itemStartedAt: row.dataset.itemStartedAt || null,
+      itemFinishedAt: row.dataset.itemFinishedAt || null,
+      itemMinutes: row.dataset.itemMinutes ? Number(row.dataset.itemMinutes) : null,
+      itemDelayReason: rowValue(row, ".cycle-item-delay") || "Normal",
+      itemDelayNotes: rowValue(row, ".cycle-item-delay-notes") || ""
     }))
     .filter((x) => x.item || x.location || x.systemQty || x.countedQty);
 }
@@ -2727,6 +2837,617 @@ window.openHistoryRecord = openHistoryRecord;
 window.deleteHistoryRecordByKey = deleteHistoryRecordByKey;
 
 /* ---------------------------
+   CYCLE COUNT PRODUCTION
+   Additive storage only. Existing keys and old records are preserved.
+---------------------------- */
+
+function allWarehouseStorageKeys() {
+  return [
+    DEMO_STORAGE_KEY,
+    TIMER_STORAGE_KEY,
+    SETTINGS_STORAGE_KEY,
+    TERMS_STORAGE_KEY,
+    PUTAWAY_DRAFT_KEY,
+    CYCLE_TIMER_KEY,
+    CYCLE_AUDIT_KEY,
+    CYCLE_PRODUCTION_KEY,
+    COUNT_CREATION_KEY,
+    VARIANCE_RESEARCH_KEY,
+    HOLD_BATCH_KEY,
+    HIGH_RISK_KEY,
+    ROOT_CAUSE_KEY
+  ];
+}
+
+function initializeDataProtection() {
+  window.warehouseOpsRollbackLatestBackup = rollbackLatestWarehouseOpsBackup;
+  backupKnownStorageKeys("startup");
+  storageBackupCreatedThisSession = true;
+}
+
+function backupKnownStorageKeys(reason = "manual") {
+  const created = [];
+  const timestamp = new Date().toISOString();
+
+  allWarehouseStorageKeys().forEach((key) => {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return;
+    const backupKey = nextBackupKey(key);
+    window.localStorage.setItem(backupKey, raw);
+    created.push({ key, backupKey, timestamp, reason });
+  });
+
+  if (created.length) {
+    const metadata = readArrayJson(DATA_BACKUP_META_KEY);
+    window.localStorage.setItem(DATA_BACKUP_META_KEY, JSON.stringify([...created, ...metadata].slice(0, 250)));
+  }
+
+  return created;
+}
+
+function nextBackupKey(key) {
+  let version = 1;
+  while (window.localStorage.getItem(`${key}_backup_v${version}`) !== null) {
+    version += 1;
+  }
+  return `${key}_backup_v${version}`;
+}
+
+function rollbackLatestWarehouseOpsBackup() {
+  if (!canResetTimer()) return toast("Only Supervisor/Admin can run rollback.");
+  if (!confirm("Restore latest localStorage backups for WarehouseOS keys? Current values will be backed up first.")) return;
+
+  backupKnownStorageKeys("pre_rollback");
+  const metadata = readArrayJson(DATA_BACKUP_META_KEY);
+  const restored = [];
+
+  allWarehouseStorageKeys().forEach((key) => {
+    const latest = metadata.find((entry) => entry.key === key && entry.backupKey);
+    if (!latest) return;
+    const raw = window.localStorage.getItem(latest.backupKey);
+    if (raw === null) return;
+    window.localStorage.setItem(key, raw);
+    restored.push(key);
+  });
+
+  reloadCycleProductionState();
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+  toast(restored.length ? `Rollback restored ${restored.length} keys.` : "No backups were available to restore.");
+}
+
+function safeWriteStorageKey(key, value, reason) {
+  if (!storageBackupCreatedThisSession) {
+    backupKnownStorageKeys(reason);
+    storageBackupCreatedThisSession = true;
+  }
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function safeSaveArray(key, stateKey, rows, reason) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  safeWriteStorageKey(key, safeRows, reason);
+  state[stateKey] = safeRows;
+}
+
+function safeUpsertArrayRecord(key, stateKey, record, reason) {
+  if (!record || !validateRecordId(record.id)) {
+    console.error("Invalid record blocked:", record);
+    toast("Record was not saved because its ID was invalid.");
+    return null;
+  }
+  const rows = readArrayJson(key);
+  const index = rows.findIndex((row) => row.id === record.id);
+  const merged = index >= 0
+    ? { ...rows[index], ...record, updatedAt: new Date().toISOString() }
+    : { ...record, createdAt: record.createdAt || new Date().toISOString() };
+  const nextRows = index >= 0
+    ? rows.map((row, idx) => (idx === index ? merged : row))
+    : [merged, ...rows];
+  safeSaveArray(key, stateKey, nextRows, reason);
+  return merged;
+}
+
+function validateRecordId(id) {
+  return typeof id === "string" && /^[a-z0-9_-]{3,}$/i.test(id);
+}
+
+function reloadCycleProductionState() {
+  state.cycleTimers = readArrayJson(CYCLE_TIMER_KEY);
+  state.cycleProduction = readArrayJson(CYCLE_PRODUCTION_KEY);
+  state.countCreationLog = readArrayJson(COUNT_CREATION_KEY);
+  state.varianceResearchLog = readArrayJson(VARIANCE_RESEARCH_KEY);
+  state.holdBatchLog = readArrayJson(HOLD_BATCH_KEY);
+  state.highRiskInventory = readArrayJson(HIGH_RISK_KEY);
+  state.rootCauseLog = readArrayJson(ROOT_CAUSE_KEY);
+  state.cycleAuditLog = readArrayJson(CYCLE_AUDIT_KEY);
+}
+
+function initializeCycleProductionData() {
+  const today = todayValue();
+  if ($("cycleTimerDate")) $("cycleTimerDate").value = today;
+  ["creationDate", "varianceDate", "holdDate", "riskDate"].forEach((id) => {
+    if ($(id) && !$(id).value) $(id).value = today;
+  });
+  const seeds = buildCycleProductionDemoRecords();
+  seedStorageKey(CYCLE_TIMER_KEY, "cycleTimers", seeds.timers);
+  seedStorageKey(COUNT_CREATION_KEY, "countCreationLog", seeds.creation);
+  seedStorageKey(VARIANCE_RESEARCH_KEY, "varianceResearchLog", seeds.variance);
+  seedStorageKey(HOLD_BATCH_KEY, "holdBatchLog", seeds.holdBatch);
+  seedStorageKey(HIGH_RISK_KEY, "highRiskInventory", seeds.highRisk);
+  seedStorageKey(ROOT_CAUSE_KEY, "rootCauseLog", seeds.rootCause);
+  seedStorageKey(CYCLE_AUDIT_KEY, "cycleAuditLog", seeds.audit);
+  seedStorageKey(CYCLE_PRODUCTION_KEY, "cycleProduction", []);
+  syncSupervisorControls();
+}
+
+function seedStorageKey(key, stateKey, seedRows) {
+  const current = readArrayJson(key);
+  if (current.length) {
+    state[stateKey] = current;
+    return;
+  }
+  safeSaveArray(key, stateKey, seedRows, `seed_${key}`);
+}
+
+function buildCycleProductionDemoRecords() {
+  const baseDate = todayValue();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+  const now = Date.now();
+  const adjusted = demoTimer("timer-demo-adjusted", "Maya Chen", "COUNT-DEMO-105", twoDaysAgo, "2", demoTimestamp(2, 12, 0), demoTimestamp(2, 14, 20), 118, []);
+  adjusted.timing.status = "supervisor_adjusted";
+  adjusted.supervisorNote = "Adjusted for confirmed lunch overlap.";
+  return {
+    timers: [
+      demoTimer("timer-demo-normal", "Diego Martinez", "COUNT-DEMO-100", baseDate, "1", new Date(now - 105 * 60000).toISOString(), new Date(now - 30 * 60000).toISOString(), 100, []),
+      demoTimer("timer-demo-mixed", "Maya Chen", "COUNT-DEMO-101", yesterday, "1", demoTimestamp(1, 8, 0), demoTimestamp(1, 9, 25), 86, [demoDelay("Mixed Product", "Mixed cartons in A3-07 needed sort before count.")]),
+      demoTimer("timer-demo-lift", "Diego Martinez", "COUNT-DEMO-102", yesterday, "2", demoTimestamp(1, 10, 0), demoTimestamp(1, 11, 40), 92, [demoDelay("Waiting For Lift", "Needed lift driver to pull top rack pallet.")]),
+      { ...demoTimer("timer-demo-flag", "Jordan Lee", "COUNT-DEMO-103", twoDaysAgo, "1", demoTimestamp(2, 7, 0), demoTimestamp(2, 7, 3), 60, []), flags: [buildFlag("packet_under_5_minutes", "high", "Packet finished in under 5 minutes.")] },
+      {
+        id: "timer-demo-active",
+        employee: "Ava Patel",
+        stockCountId: "COUNT-DEMO-104",
+        date: baseDate,
+        packetNumber: "3",
+        lineCount: 0,
+        timing: { packetStartedAt: new Date(now - 42 * 60000).toISOString(), packetFinishedAt: null, totalElapsedMinutes: null, activeMinutes: null, startedBy: "demo@warehouse-ops-app.local", finishedBy: "", status: "active", deviceInfo: deviceInfo() },
+        delayNotes: [],
+        flags: [],
+        createdAt: new Date(now - 42 * 60000).toISOString()
+      },
+      adjusted
+    ],
+    creation: [{ id: "creation-demo-1", date: baseDate, employee: "Maya Chen", stockCountId: "COUNT-DEMO-100", packetsCreated: 2, countLinesCreated: 205, reason: "ABC Count", notes: "GP packet created for fast movers.", createdAt: new Date().toISOString() }],
+    variance: [{ id: "variance-demo-1", date: baseDate, employee: "Diego Martinez", stockCountId: "COUNT-DEMO-101", itemNumber: "SKU-7720", binLocation: "C1-02", varianceQuantity: -2, varianceDollarAmount: 184, status: "Researching", rootCause: "Picking Error", actionTaken: "Recounted", notes: "Found short-pick pattern in history.", createdAt: new Date().toISOString() }],
+    holdBatch: [{ id: "hold-demo-1", date: baseDate, employee: "Ava Patel", batchId: "HB-4451", itemNumber: "SKU-2207", binLocation: "A3-07", issueType: "Negative Quantity", status: "Open", actionTaken: "Sent To Supervisor", notes: "Needs GP quantity review.", createdAt: new Date().toISOString() }],
+    highRisk: [{ id: "risk-demo-1", dateAdded: baseDate, itemNumber: "SKU-1188", binLocation: "B2-09", aisle: "B", riskType: "Fast Mover", priority: "High", notes: "Count weekly until variance trend stabilizes.", lastCountDate: yesterday, nextRecommendedCountDate: baseDate, status: "Active", createdAt: new Date().toISOString() }],
+    rootCause: [],
+    audit: []
+  };
+}
+
+function demoTimer(id, employee, stockCountId, date, packetNumber, startedAt, finishedAt, lineCount, delayNotes) {
+  const minutes = Math.max(0, Math.round((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 60000));
+  return { id, employee, stockCountId, date, packetNumber, lineCount, timing: { packetStartedAt: startedAt, packetFinishedAt: finishedAt, totalElapsedMinutes: minutes, activeMinutes: minutes, startedBy: "demo@warehouse-ops-app.local", finishedBy: "demo@warehouse-ops-app.local", status: "finished", deviceInfo: deviceInfo() }, delayNotes, flags: [], createdAt: startedAt };
+}
+
+function demoDelay(reason, note) {
+  return { id: createLocalId("delay"), timestamp: new Date().toISOString(), employee: "Demo User", reason, note, approvalStatus: "pending", supervisorNote: "", reviewedBy: "", reviewedAt: "" };
+}
+
+function currentRole() {
+  return String(state.settings.operatorRole || "worker").toLowerCase();
+}
+
+function syncSupervisorControls() {
+  const supervisor = canResetTimer();
+  document.querySelectorAll(".supervisor-only-action").forEach((el) => {
+    el.disabled = !supervisor;
+    el.classList.toggle("hidden", !supervisor);
+  });
+}
+
+function cycleTimerFormValues() {
+  return { employee: $("cycleTimerEmployee")?.value || $("cycleWorker")?.value || currentOperatorName(), stockCountId: $("cycleTimerCountId")?.value.trim() || $("cycleId")?.value.trim() || "", date: $("cycleTimerDate")?.value || $("cycleDate")?.value || todayValue(), packetNumber: $("cycleTimerPacket")?.value.trim() || "" };
+}
+
+function findActiveCycleTimer(values = cycleTimerFormValues()) {
+  return state.cycleTimers.find((timer) => timer.timing?.status === "active" && timer.employee === values.employee && (!values.stockCountId || timer.stockCountId === values.stockCountId));
+}
+
+function startCyclePacket() {
+  const values = cycleTimerFormValues();
+  if (!values.employee || !values.stockCountId || !values.date) return toast("Employee, Stock Count ID, and Date are required.");
+  if (state.cycleTimers.some((timer) => timer.timing?.status === "active" && timer.employee === values.employee)) return toast("This employee already has an active unfinished packet.");
+  const startedAt = new Date().toISOString();
+  const record = { id: createLocalId("cycle-timer"), ...values, lineCount: 0, timing: { packetStartedAt: startedAt, packetFinishedAt: null, totalElapsedMinutes: null, activeMinutes: null, startedBy: state.user?.email || "", finishedBy: "", status: "active", deviceInfo: deviceInfo() }, delayNotes: [], flags: [], createdAt: startedAt };
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", record, "cycle_packet_started");
+  writeCycleAudit("packet_started", record, null, record);
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+  toast("Cycle count packet started.");
+}
+
+function finishCyclePacket() {
+  const active = findActiveCycleTimer(cycleTimerFormValues());
+  if (!active) return toast("Start a packet before finishing.");
+  const startedMs = new Date(active.timing.packetStartedAt).getTime();
+  if (!startedMs || Number.isNaN(startedMs)) return toast("Invalid start timestamp. Supervisor review required.");
+  const lines = collectCycleLines();
+  const minutes = Math.max(0, Math.round((Date.now() - startedMs) / 60000));
+  const next = { ...active, lineCount: lines.length, varianceLines: lines.filter((line) => Number(line.variance || 0) !== 0).length, timing: { ...active.timing, packetFinishedAt: new Date().toISOString(), totalElapsedMinutes: minutes, activeMinutes: minutes, finishedBy: state.user?.email || "", status: "finished" } };
+  next.flags = buildCycleFlags(next);
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, "cycle_packet_finished");
+  writeCycleAudit("packet_finished", next, active, next);
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+  toast("Cycle count packet finished.");
+}
+
+function addCycleDelayNote() {
+  const active = findActiveCycleTimer(cycleTimerFormValues());
+  if (!active) return toast("Start a packet before adding delay notes.");
+  const reason = $("cycleDelayReason")?.value || "Normal";
+  const note = $("cycleDelayNote")?.value.trim() || "";
+  if (reason === "Other" && !note) return toast("Notes are required when Delay Reason is Other.");
+  const delay = { id: createLocalId("delay"), timestamp: new Date().toISOString(), employee: active.employee, reason, note, approvalStatus: "pending", supervisorNote: "", reviewedBy: "", reviewedAt: "" };
+  const next = { ...active, delayNotes: [...(active.delayNotes || []), delay] };
+  next.flags = buildCycleFlags(next);
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, "cycle_delay_added");
+  writeCycleAudit("delay_added", next, null, delay);
+  if ($("cycleDelayNote")) $("cycleDelayNote").value = "";
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+}
+
+function resetCyclePacketBySupervisor() {
+  if (!canResetTimer()) return toast("Only Supervisor/Admin can reset cycle timers.");
+  const active = findActiveCycleTimer();
+  if (!active) return toast("No active matching packet to reset.");
+  const next = { ...active, timing: { ...active.timing, status: "supervisor_adjusted", packetFinishedAt: null, totalElapsedMinutes: null, activeMinutes: null }, supervisorNote: "Timer reset by Supervisor/Admin.", flags: [...(active.flags || []), buildFlag("timer_reset_by_admin", "medium", "Timer reset by Supervisor/Admin.")] };
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, "cycle_timer_reset");
+  writeCycleAudit("timer_reset_by_admin", next, active, next);
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+}
+
+function voidCyclePacketBySupervisor() {
+  if (!canResetTimer()) return toast("Only Supervisor/Admin can void cycle timers.");
+  const values = cycleTimerFormValues();
+  const timer = findActiveCycleTimer(values) || state.cycleTimers.find((row) => row.employee === values.employee && row.stockCountId === values.stockCountId);
+  if (!timer) return toast("No matching packet found.");
+  const next = { ...timer, timing: { ...(timer.timing || {}), status: "voided" }, flags: [...(timer.flags || []), buildFlag("record_voided_by_admin", "high", "Record voided by Supervisor/Admin.")] };
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, "cycle_timer_voided");
+  writeCycleAudit("record_voided_by_admin", next, timer, next);
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+}
+
+function renderCyclePacketTimer() {
+  syncSupervisorControls();
+  const values = cycleTimerFormValues();
+  const active = findActiveCycleTimer(values) || state.cycleTimers.find((timer) => timer.timing?.status === "active" && timer.employee === values.employee);
+  const status = active?.timing?.status || "inactive";
+  if ($("cycleTimerStatusBadge")) {
+    $("cycleTimerStatusBadge").textContent = titleCase(status);
+    $("cycleTimerStatusBadge").className = `status-pill ${status}`;
+  }
+  if ($("cyclePacketClock")) {
+    const startedMs = active?.timing?.packetStartedAt ? new Date(active.timing.packetStartedAt).getTime() : 0;
+    $("cyclePacketClock").textContent = startedMs ? formatDuration(Date.now() - startedMs) : "00:00:00";
+  }
+  if ($("cyclePacketStartedAt")) $("cyclePacketStartedAt").textContent = active?.timing?.packetStartedAt ? formatDateTime(active.timing.packetStartedAt) : "-";
+  if ($("cyclePacketFinishedAt")) $("cyclePacketFinishedAt").textContent = active?.timing?.packetFinishedAt ? formatDateTime(active.timing.packetFinishedAt) : "-";
+  if ($("finishCyclePacketBtn")) $("finishCyclePacketBtn").disabled = !active;
+  if ($("cycleTimerMessage")) $("cycleTimerMessage").textContent = active ? `Active packet for ${active.employee} / ${active.stockCountId}.` : "No active packet selected.";
+}
+
+function startCycleItemTimer(row) {
+  if (!row) return;
+  row.dataset.itemStartedAt = new Date().toISOString();
+  row.dataset.itemFinishedAt = "";
+  row.dataset.itemMinutes = "";
+  updateItemTimerDisplay(row);
+  writeCycleAudit("item_started", { stockCountId: $("cycleId")?.value || "" }, null, collectCycleLineFromRow(row));
+}
+
+function endCycleItemTimer(row) {
+  if (!row) return;
+  if (!row.dataset.itemStartedAt) return toast("Start item before ending item.");
+  row.dataset.itemFinishedAt = new Date().toISOString();
+  row.dataset.itemMinutes = String(Math.max(0, Math.round((new Date(row.dataset.itemFinishedAt) - new Date(row.dataset.itemStartedAt)) / 60000)));
+  updateItemTimerDisplay(row);
+  writeCycleAudit("item_finished", { stockCountId: $("cycleId")?.value || "" }, null, collectCycleLineFromRow(row));
+}
+
+function updateItemTimerDisplay(row) {
+  const el = row.querySelector(".item-minutes");
+  if (el) el.textContent = row.dataset.itemMinutes ? `${row.dataset.itemMinutes} min` : row.dataset.itemStartedAt ? "Running" : "0 min";
+}
+
+function collectCycleLineFromRow(row) {
+  return { item: rowValue(row, ".cycle-item"), location: rowValue(row, ".cycle-location"), itemStartedAt: row.dataset.itemStartedAt || null, itemFinishedAt: row.dataset.itemFinishedAt || null, itemMinutes: row.dataset.itemMinutes || null };
+}
+
+function buildCycleFlags(record) {
+  const flags = [...(record.flags || [])];
+  const add = (type, severity, message) => {
+    if (!flags.some((flag) => flag.type === type)) flags.push(buildFlag(type, severity, message));
+  };
+  const minutes = Number(record.timing?.activeMinutes ?? record.timing?.totalElapsedMinutes ?? 0);
+  const lineCount = Number(record.lineCount || 0);
+  const countsPerHour = minutes > 0 ? lineCount / minutes * 60 : 0;
+  if (record.timing?.status === "finished" && minutes < 5) add("packet_under_5_minutes", "high", "Packet finished in under 5 minutes.");
+  if (record.timing?.status === "active" && elapsedMinutes(record.timing.packetStartedAt) > 240) add("packet_over_4_hours", "high", "Packet active over 4 hours.");
+  if (record.timing?.status === "active" && !record.timing?.packetFinishedAt) add("missing_finish_time", "medium", "Packet is active with no finish time.");
+  if ((record.delayNotes || []).some((note) => note.reason === "Other" && !note.note)) add("other_delay_no_notes", "medium", "Other delay reason has no notes.");
+  if ((record.delayNotes || []).length > 3) add("more_than_3_delay_notes", "medium", "More than 3 delay notes on one packet.");
+  if (record.timing?.status === "finished" && lineCount === 0) add("finished_zero_lines", "high", "Finished packet has 0 count lines.");
+  if (countsPerHour > 300) add("counts_per_hour_high", "medium", "Counts per hour unusually high.");
+  if (record.timing?.status === "finished" && countsPerHour > 0 && countsPerHour < 25) add("counts_per_hour_low", "medium", "Counts per hour unusually low.");
+  return flags;
+}
+
+function buildFlag(type, severity, message) {
+  return { type, severity, message, createdAt: new Date().toISOString(), reviewed: false, reviewedBy: "", reviewedAt: "", supervisorNote: "" };
+}
+
+function elapsedMinutes(iso) {
+  const ms = iso ? new Date(iso).getTime() : 0;
+  return ms ? Math.round((Date.now() - ms) / 60000) : 0;
+}
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  return `${pad(Math.floor(totalSeconds / 3600))}:${pad(Math.floor((totalSeconds % 3600) / 60))}:${pad(totalSeconds % 60)}`;
+}
+
+function deviceInfo() {
+  return { userAgent: navigator.userAgent, platform: navigator.platform || "", capturedAt: new Date().toISOString() };
+}
+
+function writeCycleAudit(actionType, context = {}, oldValue = null, newValue = null) {
+  const entry = { id: createLocalId("audit"), timestamp: new Date().toISOString(), actionType, employee: context.employee || currentOperatorName(), role: currentRole(), stockCountId: context.stockCountId || context.countId || $("cycleId")?.value || "", itemNumber: newValue?.item || newValue?.itemNumber || "", oldValue, newValue, notes: context.supervisorNote || "", deviceInfo: deviceInfo() };
+  safeUpsertArrayRecord(CYCLE_AUDIT_KEY, "cycleAuditLog", entry, `audit_${actionType}`);
+}
+
+function currentRole() {
+  return String(state.settings.operatorRole || "worker").toLowerCase();
+}
+
+function saveCountCreationLog() {
+  const record = { id: createLocalId("creation"), date: $("creationDate")?.value || todayValue(), employee: $("creationEmployee")?.value || currentOperatorName(), stockCountId: $("creationCountId")?.value.trim() || "", packetsCreated: Number($("creationPackets")?.value || 0), countLinesCreated: Number($("creationLines")?.value || 0), reason: $("creationReason")?.value || "Other", notes: $("creationNotes")?.value.trim() || "" };
+  if (!record.employee || !record.stockCountId) return toast("Employee and Stock Count ID are required.");
+  safeUpsertArrayRecord(COUNT_CREATION_KEY, "countCreationLog", record, "count_creation_added");
+  writeCycleAudit("count_creation_added", record, null, record);
+  renderCycleProductionDashboard();
+}
+
+function saveVarianceResearchLog() {
+  const record = { id: createLocalId("variance"), date: $("varianceDate")?.value || todayValue(), employee: $("varianceEmployee")?.value || currentOperatorName(), stockCountId: $("varianceCountId")?.value.trim() || "", itemNumber: $("varianceItem")?.value.trim() || "", binLocation: $("varianceBin")?.value.trim() || "", varianceQuantity: Number($("varianceQty")?.value || 0), varianceDollarAmount: Number($("varianceDollars")?.value || 0), status: $("varianceStatus")?.value || "Open", rootCause: $("varianceRootCause")?.value || "Unknown", actionTaken: $("varianceAction")?.value || "", notes: $("varianceNotes")?.value.trim() || "" };
+  if (!record.employee || !record.stockCountId || !record.itemNumber) return toast("Employee, Stock Count ID, and Item Number are required.");
+  safeUpsertArrayRecord(VARIANCE_RESEARCH_KEY, "varianceResearchLog", record, "variance_log_added");
+  writeCycleAudit("variance_log_added", record, null, record);
+  renderCycleProductionDashboard();
+}
+
+function saveHoldBatchLog() {
+  const record = { id: createLocalId("hold"), date: $("holdDate")?.value || todayValue(), employee: $("holdEmployee")?.value || currentOperatorName(), batchId: $("holdBatchId")?.value.trim() || "", itemNumber: $("holdItem")?.value.trim() || "", binLocation: $("holdBin")?.value.trim() || "", issueType: $("holdIssue")?.value || "Other", status: $("holdStatus")?.value || "Open", actionTaken: $("holdAction")?.value.trim() || "", notes: $("holdNotes")?.value.trim() || "" };
+  if (!record.employee || !record.batchId) return toast("Employee and Batch ID are required.");
+  safeUpsertArrayRecord(HOLD_BATCH_KEY, "holdBatchLog", record, "hold_batch_added");
+  writeCycleAudit("hold_batch_added", record, null, record);
+  renderCycleProductionDashboard();
+}
+
+function saveHighRiskInventory() {
+  const record = { id: createLocalId("risk"), dateAdded: $("riskDate")?.value || todayValue(), itemNumber: $("riskItem")?.value.trim() || "", binLocation: $("riskBin")?.value.trim() || "", aisle: $("riskAisle")?.value.trim() || "", riskType: $("riskType")?.value || "Other", priority: $("riskPriority")?.value || "Medium", notes: $("riskNotes")?.value.trim() || "", lastCountDate: $("riskLastCount")?.value || "", nextRecommendedCountDate: $("riskNextCount")?.value || "", status: $("riskStatus")?.value || "Active" };
+  if (!record.itemNumber && !record.binLocation) return toast("Item Number or Bin Location is required.");
+  safeUpsertArrayRecord(HIGH_RISK_KEY, "highRiskInventory", record, "high_risk_item_added");
+  writeCycleAudit("high_risk_item_added", record, null, record);
+  renderCycleProductionDashboard();
+}
+
+function clearProductionFilters() {
+  ["prodFilterDate", "prodFilterStart", "prodFilterEnd", "prodFilterEmployee", "prodFilterRole", "prodFilterCountId", "prodFilterDelay", "prodFilterRootCause", "prodFilterFlag"].forEach((id) => {
+    if ($(id)) $(id).value = "";
+  });
+  renderCycleProductionDashboard();
+}
+
+function filteredCycleTimers() {
+  const date = $("prodFilterDate")?.value || "";
+  const start = $("prodFilterStart")?.value || "";
+  const end = $("prodFilterEnd")?.value || "";
+  const employee = $("prodFilterEmployee")?.value || "";
+  const countId = ($("prodFilterCountId")?.value || "").toLowerCase();
+  const delay = $("prodFilterDelay")?.value || "";
+  const flag = $("prodFilterFlag")?.value || "";
+  return state.cycleTimers.filter((row) => {
+    const rowDate = row.date || "";
+    const hasDelay = !delay || (row.delayNotes || []).some((note) => note.reason === delay);
+    const hasFlag = (row.flags || []).length > 0;
+    const reviewed = (row.flags || []).some((f) => f.reviewed);
+    return (!date || rowDate === date) && (!start || rowDate >= start) && (!end || rowDate <= end) && (!employee || row.employee === employee) && (!countId || String(row.stockCountId || "").toLowerCase().includes(countId)) && hasDelay && (!flag || (flag === "flagged" && hasFlag) || (flag === "reviewed" && reviewed) || (flag === "unreviewed" && hasFlag && !reviewed));
+  });
+}
+
+function renderCycleProductionDashboard() {
+  reloadCycleProductionState();
+  populateProductionFilterOptions();
+  syncSupervisorControls();
+  const rows = filteredCycleTimers();
+  const finishedRows = rows.filter((row) => ["finished", "supervisor_adjusted"].includes(row.timing?.status));
+  const today = todayValue();
+  const weekStart = getWeekStart(today);
+  const dailyLines = finishedRows.filter((row) => row.date === today).reduce((sum, row) => sum + Number(row.lineCount || 0), 0);
+  const weeklyLines = finishedRows.filter((row) => row.date >= weekStart).reduce((sum, row) => sum + Number(row.lineCount || 0), 0);
+  const totalMinutes = finishedRows.reduce((sum, row) => sum + Number(row.timing?.activeMinutes || row.timing?.totalElapsedMinutes || 0), 0);
+  const totalLines = finishedRows.reduce((sum, row) => sum + Number(row.lineCount || 0), 0);
+  setText("dailyProductionLines", dailyLines);
+  setText("weeklyProductionLines", weeklyLines);
+  setText("packetsCompleted", finishedRows.length);
+  setText("countsPerHour", totalMinutes ? Math.round(totalLines / totalMinutes * 60) : 0);
+  setText("goalPercent", `${Math.round(dailyLines / DAILY_COUNT_GOAL * 100)}%`);
+  setText("flaggedRecords", rows.filter((row) => (row.flags || []).length).length);
+  renderRootCauseSummary();
+  renderFlaggedRecords(rows);
+  renderDelayReviewList(rows);
+  renderProductionRecords(rows);
+}
+
+function populateProductionFilterOptions() {
+  populateSimpleSelect("prodFilterEmployee", state.employees.filter((e) => e.active).map((e) => e.name), "All");
+}
+
+function populateSimpleSelect(id, values, blankLabel = "Select") {
+  const select = $(id);
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = `<option value="">${blankLabel}</option>`;
+  [...new Set(values.filter(Boolean))].sort().forEach((value) => {
+    select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`);
+  });
+  select.value = current;
+}
+
+function renderRootCauseSummary() {
+  const rootCauses = {};
+  state.varianceResearchLog.forEach((row) => {
+    rootCauses[row.rootCause || "Unknown"] = (rootCauses[row.rootCause || "Unknown"] || 0) + 1;
+  });
+  renderSummaryList("rootCauseSummary", Object.entries(rootCauses).map(([label, count]) => ({ label, value: `${count}` })), "No root causes logged.");
+}
+
+function renderFlaggedRecords(rows) {
+  const flagged = rows.flatMap((row) => (row.flags || []).map((flag) => ({ label: `${row.employee} / ${row.stockCountId}`, value: `${flag.severity}: ${flag.message}` })));
+  renderSummaryList("flaggedRecordList", flagged, "No flagged records.");
+}
+
+function renderDelayReviewList(rows) {
+  const el = $("delayReviewList");
+  if (!el) return;
+  const notes = rows.flatMap((row) => (row.delayNotes || [])
+    .filter((note) => note.approvalStatus === "pending")
+    .map((note) => ({ row, note })));
+  if (!notes.length) {
+    el.innerHTML = '<div class="empty-state">No pending delay notes.</div>';
+    return;
+  }
+  el.innerHTML = notes.map(({ row, note }) => `
+    <div class="summary-row">
+      <strong>${escapeHtml(row.employee)} / ${escapeHtml(row.stockCountId)}</strong>
+      <span>${escapeHtml(note.reason)}: ${escapeHtml(note.note || "No note")}</span>
+      <div class="row-actions">
+        <button class="delayReviewBtn" data-timer-id="${escapeHtml(row.id)}" data-delay-id="${escapeHtml(note.id)}" data-status="approved" type="button">Approve</button>
+        <button class="delayReviewBtn danger" data-timer-id="${escapeHtml(row.id)}" data-delay-id="${escapeHtml(note.id)}" data-status="rejected" type="button">Reject</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function reviewDelayNote(timerId, delayId, status) {
+  if (!canResetTimer()) return toast("Only Supervisor/Admin can review delay notes.");
+  const timer = state.cycleTimers.find((row) => row.id === timerId);
+  if (!timer) return toast("Timer record not found.");
+  const delayNotes = (timer.delayNotes || []).map((note) => {
+    if (note.id !== delayId) return note;
+    return {
+      ...note,
+      approvalStatus: status,
+      reviewedBy: currentOperatorName(),
+      reviewedAt: new Date().toISOString()
+    };
+  });
+  const next = { ...timer, delayNotes };
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, status === "approved" ? "delay_approved" : "delay_rejected");
+  writeCycleAudit(status === "approved" ? "delay_approved" : "delay_rejected", next, timer, next);
+  renderCycleProductionDashboard();
+}
+
+function renderProductionRecords(rows) {
+  const items = rows.slice(0, 10).map((row) => ({ label: `${row.date || "-"} ${row.employee || "-"}`, value: `${row.stockCountId || "-"} / ${row.lineCount || 0} lines / ${row.timing?.status || "-"}` }));
+  renderSummaryList("productionRecordList", items, "No production records.");
+}
+
+function renderSummaryList(id, rows, emptyText) {
+  const el = $(id);
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty-state">${escapeHtml(emptyText)}</div>`;
+    return;
+  }
+  el.innerHTML = rows.map((row) => `<div class="summary-row"><strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(row.value)}</span></div>`).join("");
+}
+
+function setText(id, value) {
+  if ($(id)) $(id).textContent = value;
+}
+
+function getWeekStart(dateText) {
+  const date = new Date(`${dateText}T00:00:00`);
+  const day = date.getDay();
+  date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+  return date.toISOString().slice(0, 10);
+}
+
+function exportProductionCsv(type) {
+  let rows = [];
+  if (type === "daily") rows = filteredCycleTimers().filter((row) => row.date === todayValue());
+  if (type === "weekly") rows = filteredCycleTimers().filter((row) => row.date >= getWeekStart(todayValue()));
+  if (type === "employee") rows = employeeProductionRows(filteredCycleTimers());
+  if (type === "delays") rows = delayReasonRows(filteredCycleTimers());
+  if (type === "rootCauses") rows = state.varianceResearchLog;
+  if (type === "creation") rows = state.countCreationLog;
+  if (type === "variance") rows = state.varianceResearchLog;
+  if (type === "holdBatch") rows = state.holdBatchLog;
+  if (type === "highRisk") rows = state.highRiskInventory;
+  if (type === "flags") rows = flagExportRows(filteredCycleTimers());
+  if (type === "audit") {
+    if (!canResetTimer()) return toast("Only Supervisor/Admin can export audit log.");
+    rows = state.cycleAuditLog;
+  }
+  if (!rows.length) return toast("No production data to export.");
+  downloadCsv(rows.map(flattenProductionRow), `cycle-${type}-${todayValue()}.csv`);
+}
+
+function employeeProductionRows(rows) {
+  const map = {};
+  rows.forEach((row) => {
+    const key = row.employee || "Unknown";
+    map[key] ||= { employee: key, countLinesCompleted: 0, packetsCompleted: 0, activeMinutes: 0, delayNotes: 0, varianceLines: 0 };
+    map[key].countLinesCompleted += Number(row.lineCount || 0);
+    map[key].packetsCompleted += ["finished", "supervisor_adjusted"].includes(row.timing?.status) ? 1 : 0;
+    map[key].activeMinutes += Number(row.timing?.activeMinutes || row.timing?.totalElapsedMinutes || 0);
+    map[key].delayNotes += (row.delayNotes || []).length;
+    map[key].varianceLines += Number(row.varianceLines || 0);
+  });
+  return Object.values(map).map((row) => ({ ...row, countsPerHour: row.activeMinutes ? Math.round(row.countLinesCompleted / row.activeMinutes * 60) : 0, goalPercent: Math.round(row.countLinesCompleted / DAILY_COUNT_GOAL * 100) }));
+}
+
+function delayReasonRows(rows) {
+  return rows.flatMap((row) => (row.delayNotes || []).map((note) => ({ stockCountId: row.stockCountId, employee: row.employee, date: row.date, ...note })));
+}
+
+function flagExportRows(rows) {
+  return rows.flatMap((row) => (row.flags || []).map((flag) => ({ stockCountId: row.stockCountId, employee: row.employee, date: row.date, ...flag })));
+}
+
+function flattenProductionRow(row) {
+  const out = { ...row };
+  if (row.timing) {
+    Object.entries(row.timing).forEach(([key, value]) => {
+      out[`timing_${key}`] = typeof value === "object" ? JSON.stringify(value) : value;
+    });
+    delete out.timing;
+  }
+  if (Array.isArray(row.delayNotes)) out.delayNotes = JSON.stringify(row.delayNotes);
+  if (Array.isArray(row.flags)) out.flags = JSON.stringify(row.flags);
+  if (row.deviceInfo && typeof row.deviceInfo === "object") out.deviceInfo = JSON.stringify(row.deviceInfo);
+  return out;
+}
+
+/* ---------------------------
    CLEAR / EXPORT
 ---------------------------- */
 
@@ -2792,6 +3513,11 @@ function exportCurrentCycle() {
     variance: line.variance,
     reason: line.reason,
     done: line.done ? "Yes" : "No",
+    itemStartedAt: line.itemStartedAt || "",
+    itemFinishedAt: line.itemFinishedAt || "",
+    itemMinutes: line.itemMinutes ?? "",
+    itemDelayReason: line.itemDelayReason || "",
+    itemDelayNotes: line.itemDelayNotes || "",
     timestamp: new Date().toISOString()
   }));
 
