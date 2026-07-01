@@ -7,6 +7,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function authEmail() {
+      return signedIn() && request.auth.token.email is string
+        ? request.auth.token.email.lower()
+        : '';
+    }
+
     function userDocPath() {
       return /databases/$(database)/documents/users/$(request.auth.uid);
     }
@@ -24,23 +30,15 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() &&
-        myRole() in ['admin', 'lead', 'platformOwner'];
+      return signedIn() && myRole() in ['admin', 'lead', 'platformOwner'];
     }
 
     function isReceiverTemp() {
-      return signedIn() &&
-        myRole() == 'receiverTemp';
+      return signedIn() && myRole() == 'receiverTemp';
     }
 
     function isCounterRole() {
-      return signedIn() &&
-        myRole() in ['counter', 'worker', 'admin', 'lead', 'platformOwner'];
-    }
-
-    function isPlatformOwner() {
-      return signedIn() &&
-        myRole() == 'platformOwner';
+      return signedIn() && myRole() in ['counter', 'worker', 'admin', 'lead', 'platformOwner'];
     }
 
     function isOwner(userId) {
@@ -53,6 +51,34 @@ service cloud.firestore {
         request.resource.data.createdByEmail is string;
     }
 
+    function isMyTenant(data) {
+      return signedIn() &&
+        (
+          (data.ownerEmail is string && data.ownerEmail.lower() == authEmail()) ||
+          (data.createdByEmail is string && data.createdByEmail.lower() == authEmail())
+        );
+    }
+
+    function createsMyTenant() {
+      return signedIn() &&
+        request.resource.data.ownerEmail is string &&
+        request.resource.data.ownerEmail.lower() == authEmail();
+    }
+
+    function keepsMyTenant() {
+      return isMyTenant(resource.data) &&
+        request.resource.data.ownerEmail is string &&
+        request.resource.data.ownerEmail.lower() == authEmail();
+    }
+
+    function hasPutawaySubmitFields() {
+      return request.resource.data.worker is string &&
+        request.resource.data.worker.size() > 0 &&
+        request.resource.data.submittedAt is string &&
+        request.resource.data.submittedDate is string &&
+        request.resource.data.submittedTime is string;
+    }
+
     function mySite() {
       return userExists() ? myUserDoc().data.site : null;
     }
@@ -62,8 +88,7 @@ service cloud.firestore {
     }
 
     function matchesMySiteDepartment(data) {
-      return data.site == mySite() &&
-        data.department == myDepartment();
+      return data.site == mySite() && data.department == myDepartment();
     }
 
     function hasNoReceiverTempAdminFields() {
@@ -83,13 +108,7 @@ service cloud.firestore {
 
     // USERS
     match /users/{userId} {
-      // Users can read their own profile.
-      // Admins/leads/platformOwner can read all user profiles.
       allow read: if isOwner(userId) || isAdmin();
-
-      // First-time user profile creation:
-      // Allows a signed-in user to create only their own user profile,
-      // but forces default worker-level role unless admin creates it.
       allow create: if
         (
           isOwner(userId) &&
@@ -97,29 +116,23 @@ service cloud.firestore {
           request.resource.data.uid == request.auth.uid
         )
         || isAdmin();
-
-      // Users cannot promote themselves.
-      // Admins can update users.
       allow update: if isAdmin();
-
-      // No client-side deletes.
       allow delete: if false;
     }
 
-    // EMPLOYEES
+    // EMPLOYEES - isolated per logged-in email/account.
     match /employees/{employeeId} {
-      allow read: if signedIn();
-      allow create, update: if isAdmin();
+      allow read: if isMyTenant(resource.data);
+      allow create: if isAdmin() && createsMyTenant();
+      allow update: if isAdmin() && keepsMyTenant();
       allow delete: if false;
     }
 
-    // PUT AWAY LOGS
+    // PUT AWAY LOGS - isolated per logged-in email/account and requires worker + submit timestamp.
     match /putAwayLogs/{logId} {
-      allow read: if signedIn();
-
-      allow create: if signedIn() && !isReceiverTemp();
-
-      allow update, delete: if isAdmin();
+      allow read: if isMyTenant(resource.data);
+      allow create: if signedIn() && !isReceiverTemp() && createsMyTenant() && hasPutawaySubmitFields();
+      allow update, delete: if isAdmin() && keepsMyTenant();
     }
 
     // RECEIVING LINE ENTRY
@@ -139,95 +152,46 @@ service cloud.firestore {
         hasNoReceiverTempAdminFields();
 
       allow update: if isAdmin();
-
       allow delete: if false;
     }
 
-    // CYCLE COUNT SESSIONS
+    // RETIRED WORKFLOWS - disabled because Cycle Count, Cycle Count Production, and Order Picking are removed.
     match /cycleCountSessions/{sessionId} {
-      allow read: if signedIn();
-
-      allow create: if signedIn();
-
-      allow update, delete: if isAdmin();
+      allow read, write: if false;
     }
 
-    // CYCLE COUNT TEXT IMPORTS
     match /cycleCountImports/{importId} {
-      allow read: if isAdmin() ||
-        (
-          isCounterRole() &&
-          resource.data.createdBy == request.auth.uid
-        );
-
-      allow create: if
-        (
-          isCounterRole() &&
-          !isAdmin() &&
-          hasCreatedFields() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.rows is list &&
-          request.resource.data.status in ['Draft', 'Pending Review']
-        )
-        ||
-        (
-          isAdmin() &&
-          hasCreatedFields() &&
-          request.resource.data.rows is list &&
-          request.resource.data.status in ['Draft', 'Pending Review', 'Approved', 'Finalized']
-        );
-
-      allow update: if isAdmin() ||
-        (
-          isCounterRole() &&
-          resource.data.createdBy == request.auth.uid &&
-          resource.data.status in ['Draft', 'Pending Review'] &&
-          request.resource.data.status in ['Draft', 'Pending Review'] &&
-          request.resource.data.createdBy == resource.data.createdBy
-        );
-
-      allow delete: if isAdmin();
+      allow read, write: if false;
     }
 
-    // ORDER PICKING SESSIONS
     match /orderPickingSessions/{sessionId} {
-      allow read: if signedIn();
-
-      allow create: if signedIn();
-
-      allow update, delete: if isAdmin();
+      allow read, write: if false;
     }
 
-    // ACTIVITY LOGS
+    // ACTIVITY LOGS - isolated per logged-in email/account.
     match /activityLogs/{activityId} {
-      allow read: if signedIn();
-
-      allow create: if signedIn();
-
-      allow update, delete: if isAdmin();
+      allow read: if isMyTenant(resource.data);
+      allow create: if signedIn() && createsMyTenant();
+      allow update, delete: if isAdmin() && keepsMyTenant();
     }
 
     // AUDIT LOGS
     match /auditLogs/{auditId} {
       allow read: if isAdmin();
-
       allow create: if signedIn() &&
         request.resource.data.createdBy == request.auth.uid &&
         request.resource.data.createdAt is string;
-
       allow update, delete: if false;
     }
 
     // LEGAL ACCEPTANCE AUDIT
     match /termsAcceptances/{acceptanceId} {
       allow read: if isAdmin();
-
       allow create, update: if signedIn() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.accepted == true &&
         request.resource.data.acceptedAt is string &&
         request.resource.data.version is string;
-
       allow delete: if false;
     }
 
@@ -248,9 +212,7 @@ service cloud.firestore {
     // INVENTORY COUNTS
     match /inventoryCounts/{countId} {
       allow read: if signedIn();
-
       allow create: if signedIn();
-
       allow update, delete: if isAdmin();
     }
 
