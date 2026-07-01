@@ -110,6 +110,7 @@
         <button class="tab" data-tab="cycle">Cycle Count</button>
         <button class="tab" data-tab="cycleProduction">Cycle Count Production</button>
         <button class="tab" data-tab="picking">Order Picking</button>
+        <button class="tab" data-tab="leaderboard">Leaderboard</button>
         <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
         <button class="tab" data-tab="history">History</button>
@@ -685,6 +686,60 @@
                 </tr>
               </thead>
               <tbody id="pickingLogBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- LEADERBOARD -->
+      <section id="leaderboardTab" class="tab-panel">
+        <div class="card leaderboard-card">
+          <div class="section-heading">
+            <div>
+              <h2>Leaderboard</h2>
+              <p class="hint">Rankings use saved Put Away, Cycle Count, and Transfer Order records.</p>
+            </div>
+            <button id="exportLeaderboardBtn" class="primary">Export CSV</button>
+          </div>
+
+          <nav class="leaderboard-tabs" aria-label="Leaderboard categories">
+            <button class="leaderboard-tab active" data-leaderboard-view="putaway">Putaway</button>
+            <button class="leaderboard-tab" data-leaderboard-view="cycle">Cycle Counts</button>
+            <button class="leaderboard-tab" data-leaderboard-view="transfer">Transfer Orders</button>
+            <button class="leaderboard-tab" data-leaderboard-view="overall">Overall</button>
+          </nav>
+
+          <div class="leaderboard-filters">
+            <label>Date Range
+              <select id="leaderboardRangePreset">
+                <option value="today">Today</option>
+                <option value="week">This week</option>
+                <option value="month">This month</option>
+                <option value="custom">Custom date range</option>
+                <option value="all">Overall / all time</option>
+              </select>
+            </label>
+            <label>Start Date
+              <input id="leaderboardStartDate" type="date" disabled />
+            </label>
+            <label>End Date
+              <input id="leaderboardEndDate" type="date" disabled />
+            </label>
+            <label>Employee Search
+              <input id="leaderboardSearch" placeholder="Filter by employee name" />
+            </label>
+          </div>
+
+          <div class="leaderboard-summary stats">
+            <div><strong id="leaderboardEmployeeCount">0</strong><span>Employees Ranked</span></div>
+            <div><strong id="leaderboardRecordCount">0</strong><span>Records Included</span></div>
+            <div><strong id="leaderboardRangeLabel">Today</strong><span>Date Range</span></div>
+          </div>
+
+          <div class="table-wrap leaderboard-table-wrap">
+            <table id="leaderboardTable">
+              <thead id="leaderboardTableHead"></thead>
+              <tbody id="leaderboardTableBody"></tbody>
             </table>
           </div>
         </div>
