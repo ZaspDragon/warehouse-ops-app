@@ -34,6 +34,7 @@ const state = {
   pickingSessions: [],
   activityLogs: [],
   itemHistoryRows: [],
+  leaderboard: { activeView: "putaway", rows: [], recordCount: 0 },
   timer: readJson(TIMER_STORAGE_KEY, { status: "idle", elapsedMinutes: 0 }),
   settings: readJson(SETTINGS_STORAGE_KEY, { operatorName: "", operatorRole: "worker" }),
   cycleTimers: readArrayJson(CYCLE_TIMER_KEY),
@@ -88,6 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeCycleProductionData();
   initializePutawayDraft();
   wireEvents();
+  syncLeaderboardDateControls();
   syncSettingsUi();
   renderReceivingTimer();
   renderCyclePacketTimer();
@@ -304,6 +306,11 @@ function wireEvents() {
   $("exportHistoryBtn")?.addEventListener("click", () => exportCsv("history"));
   $("searchItemHistoryBtn")?.addEventListener("click", renderItemHistory);
   $("exportItemHistoryBtn")?.addEventListener("click", exportItemHistory);
+  $("leaderboardRangePreset")?.addEventListener("change", syncLeaderboardDateControls);
+  $("leaderboardStartDate")?.addEventListener("change", renderLeaderboard);
+  $("leaderboardEndDate")?.addEventListener("change", renderLeaderboard);
+  $("leaderboardSearch")?.addEventListener("input", renderLeaderboard);
+  $("exportLeaderboardBtn")?.addEventListener("click", exportLeaderboardCsv);
   $("saveSettingsBtn")?.addEventListener("click", saveSettings);
   $("legalConsent")?.addEventListener("change", syncLoginConsent);
   $("termsAgree")?.addEventListener("change", () => {
@@ -321,6 +328,10 @@ function wireEvents() {
 
   document.querySelectorAll(".productionExportBtn").forEach((btn) => {
     btn.addEventListener("click", () => exportProductionCsv(btn.dataset.export));
+  });
+
+  document.querySelectorAll(".leaderboard-tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchLeaderboardView(btn.dataset.leaderboardView));
   });
 
   document.addEventListener("input", (e) => {
@@ -415,6 +426,7 @@ function switchTab(tab) {
   if (tab === "putaway") restorePutawayDraft();
   if (tab === "history") loadHistory();
   if (tab === "itemHistory") renderItemHistory();
+  if (tab === "leaderboard") renderLeaderboard();
   if (tab === "settings") syncSettingsUi();
   if (tab === "cycleProduction") renderCycleProductionDashboard();
 }
@@ -2415,6 +2427,420 @@ async function savePicking() {
 }
 
 /* ---------------------------
+   LEADERBOARD
+---------------------------- */
+
+function normalizeLeaderboardDate(value) {
+  if (!value) return "";
+
+  if (typeof value === "object" && typeof value.toDate === "function") {
+    return value.toDate().toISOString().slice(0, 10);
+  }
+
+  if (typeof value === "object" && Number.isFinite(value.seconds)) {
+    return new Date(value.seconds * 1000).toISOString().slice(0, 10);
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const text = String(value).trim();
+  if (!text) return "";
+
+  const isoMatch = text.match(/\d{4}-\d{2}-\d{2}/);
+  if (isoMatch) return isoMatch[0];
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+
+function getRecordDate(record) {
+  return (
+    normalizeLeaderboardDate(record?.completedDate) ||
+    normalizeLeaderboardDate(record?.date) ||
+    normalizeLeaderboardDate(record?.timestamp) ||
+    normalizeLeaderboardDate(record?.createdAt) ||
+    normalizeLeaderboardDate(record?.savedAt)
+  );
+}
+
+function getRecordsByDateRange(records, startDate, endDate, options = {}) {
+  const start = normalizeLeaderboardDate(startDate);
+  const end = normalizeLeaderboardDate(endDate);
+  const includeUndated = Boolean(options.includeUndated || (!start && !end));
+
+  return [...(records || [])].filter((record) => {
+    const recordDate = getRecordDate(record);
+    if (!recordDate) return includeUndated;
+    if (start && recordDate < start) return false;
+    if (end && recordDate > end) return false;
+    return true;
+  });
+}
+
+function normalizeEmployeeName(value) {
+  const name = String(value || "").trim();
+  return name || "Unknown";
+}
+
+function getRecordEmployee(record, fields) {
+  const keys = fields?.length ? fields : ["worker", "counter", "picker", "employee"];
+  for (const key of keys) {
+    if (record?.[key]) return normalizeEmployeeName(record[key]);
+  }
+  return normalizeEmployeeName(record?.createdByEmail || record?.createdBy);
+}
+
+function groupRecordsByEmployee(records, fields) {
+  return (records || []).reduce((groups, record) => {
+    const employee = getRecordEmployee(record, fields);
+    groups[employee] ||= [];
+    groups[employee].push(record);
+    return groups;
+  }, {});
+}
+
+function numericValue(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizedLineCount(record) {
+  const savedCount = numericValue(record?.lineCount, NaN);
+  if (Number.isFinite(savedCount) && savedCount >= 0) return savedCount;
+  return Array.isArray(record?.lines) ? record.lines.length : 0;
+}
+
+function distinctWorkDays(records) {
+  const dates = new Set((records || []).map(getRecordDate).filter(Boolean));
+  return Math.max(dates.size, records?.length ? 1 : 0);
+}
+
+function lastActivityDate(records) {
+  const dates = (records || []).map(getRecordDate).filter(Boolean).sort();
+  return dates.length ? dates[dates.length - 1] : "Unknown";
+}
+
+function averagePerDay(total, records) {
+  const days = distinctWorkDays(records);
+  return days ? total / days : 0;
+}
+
+function sortLeaderboardRows(rows, primaryField) {
+  return [...rows].sort((a, b) => {
+    const scoreDiff = numericValue(b[primaryField]) - numericValue(a[primaryField]);
+    if (scoreDiff !== 0) return scoreDiff;
+    return String(a.employee || "").localeCompare(String(b.employee || ""));
+  });
+}
+
+function calculatePutawayStats(records) {
+  const groups = groupRecordsByEmployee(records, ["worker", "employee"]);
+
+  return sortLeaderboardRows(
+    Object.entries(groups).map(([employee, employeeRecords]) => {
+      const totalLines = employeeRecords.reduce((sum, record) => sum + normalizedLineCount(record), 0);
+      return {
+        employee,
+        totalLines,
+        totalTickets: employeeRecords.length,
+        averageLinesPerDay: averagePerDay(totalLines, employeeRecords),
+        lastActivityDate: lastActivityDate(employeeRecords)
+      };
+    }),
+    "totalLines"
+  );
+}
+
+function cycleCompletedCount(record) {
+  const lines = Array.isArray(record?.lines) ? record.lines : [];
+  const doneLines = lines.filter((line) => line.done === true || String(line.status || "").toLowerCase() === "done").length;
+  if (doneLines) return doneLines;
+  return normalizedLineCount(record);
+}
+
+function cycleVarianceCount(record) {
+  const saved = numericValue(record?.varianceItems ?? record?.varianceLines, NaN);
+  if (Number.isFinite(saved) && saved >= 0) return saved;
+
+  const lines = Array.isArray(record?.lines) ? record.lines : [];
+  return lines.filter((line) => numericValue(line.variance) !== 0).length;
+}
+
+function calculateCycleCountStats(records) {
+  const groups = groupRecordsByEmployee(records, ["counter", "worker", "employee"]);
+
+  return sortLeaderboardRows(
+    Object.entries(groups).map(([employee, employeeRecords]) => {
+      const totalCounts = employeeRecords.reduce((sum, record) => sum + cycleCompletedCount(record), 0);
+      const varianceItems = employeeRecords.reduce((sum, record) => sum + cycleVarianceCount(record), 0);
+      const accuracyPercentage = totalCounts ? Math.max(0, Math.min(100, ((totalCounts - varianceItems) / totalCounts) * 100)) : null;
+      return {
+        employee,
+        totalCounts,
+        varianceItems,
+        accuracyPercentage,
+        averageCountsPerDay: averagePerDay(totalCounts, employeeRecords),
+        lastActivityDate: lastActivityDate(employeeRecords)
+      };
+    }),
+    "totalCounts"
+  );
+}
+
+function transferOrderKey(record) {
+  return String(record?.orderNumber || record?.transferNumber || record?.transferOrder || record?.id || "").trim();
+}
+
+function calculateTransferStats(records) {
+  const groups = groupRecordsByEmployee(records, ["picker", "worker", "employee"]);
+
+  return sortLeaderboardRows(
+    Object.entries(groups).map(([employee, employeeRecords]) => {
+      const totalTransferLines = employeeRecords.reduce((sum, record) => sum + normalizedLineCount(record), 0);
+      const orderKeys = new Set();
+      let missingOrderKeys = 0;
+
+      employeeRecords.forEach((record) => {
+        const key = transferOrderKey(record);
+        if (key) orderKeys.add(key);
+        else missingOrderKeys += 1;
+      });
+
+      return {
+        employee,
+        totalTransferLines,
+        totalTransferOrders: orderKeys.size + missingOrderKeys,
+        averageTransferLinesPerDay: averagePerDay(totalTransferLines, employeeRecords),
+        lastActivityDate: lastActivityDate(employeeRecords)
+      };
+    }),
+    "totalTransferLines"
+  );
+}
+
+function calculateOverallLeaderboard(putawayRows, cycleRows, transferRows) {
+  const byEmployee = {};
+
+  putawayRows.forEach((row) => {
+    byEmployee[row.employee] ||= { employee: row.employee, putawayLines: 0, cycleCounts: 0, transferLines: 0, totalScore: 0 };
+    byEmployee[row.employee].putawayLines += numericValue(row.totalLines);
+  });
+
+  cycleRows.forEach((row) => {
+    byEmployee[row.employee] ||= { employee: row.employee, putawayLines: 0, cycleCounts: 0, transferLines: 0, totalScore: 0 };
+    byEmployee[row.employee].cycleCounts += numericValue(row.totalCounts);
+  });
+
+  transferRows.forEach((row) => {
+    byEmployee[row.employee] ||= { employee: row.employee, putawayLines: 0, cycleCounts: 0, transferLines: 0, totalScore: 0 };
+    byEmployee[row.employee].transferLines += numericValue(row.totalTransferLines);
+  });
+
+  Object.values(byEmployee).forEach((row) => {
+    row.totalScore = row.putawayLines + row.cycleCounts + row.transferLines;
+  });
+
+  return sortLeaderboardRows(Object.values(byEmployee), "totalScore");
+}
+
+function getLeaderboardDateRange() {
+  const preset = $("leaderboardRangePreset")?.value || "today";
+  const today = new Date();
+  const todayText = today.toISOString().slice(0, 10);
+
+  if (preset === "all") {
+    return { preset, start: "", end: "", label: "All time", includeUndated: true };
+  }
+
+  if (preset === "custom") {
+    const start = $("leaderboardStartDate")?.value || "";
+    const end = $("leaderboardEndDate")?.value || start;
+    return { preset, start, end, label: start && end ? `${start} to ${end}` : "Custom", includeUndated: false };
+  }
+
+  if (preset === "week") {
+    const start = new Date(today);
+    start.setDate(today.getDate() - today.getDay());
+    return { preset, start: start.toISOString().slice(0, 10), end: todayText, label: "This week", includeUndated: false };
+  }
+
+  if (preset === "month") {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { preset, start: start.toISOString().slice(0, 10), end: todayText, label: "This month", includeUndated: false };
+  }
+
+  return { preset: "today", start: todayText, end: todayText, label: "Today", includeUndated: false };
+}
+
+function syncLeaderboardDateControls() {
+  const preset = $("leaderboardRangePreset")?.value || "today";
+  const custom = preset === "custom";
+
+  ["leaderboardStartDate", "leaderboardEndDate"].forEach((id) => {
+    const input = $(id);
+    if (!input) return;
+    input.disabled = !custom;
+    if (!custom) input.value = "";
+  });
+
+  renderLeaderboard();
+}
+
+function switchLeaderboardView(view) {
+  state.leaderboard.activeView = view || "putaway";
+  document.querySelectorAll(".leaderboard-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.leaderboardView === state.leaderboard.activeView);
+  });
+  renderLeaderboard();
+}
+
+function getLeaderboardSourceRecords(range) {
+  return {
+    putaway: getRecordsByDateRange(state.putawayLogs, range.start, range.end, { includeUndated: range.includeUndated }),
+    cycle: getRecordsByDateRange(state.cycleSessions, range.start, range.end, { includeUndated: range.includeUndated }),
+    transfer: getRecordsByDateRange(state.pickingSessions, range.start, range.end, { includeUndated: range.includeUndated })
+  };
+}
+
+function buildLeaderboardRows(range) {
+  const records = getLeaderboardSourceRecords(range);
+  const putawayRows = calculatePutawayStats(records.putaway);
+  const cycleRows = calculateCycleCountStats(records.cycle);
+  const transferRows = calculateTransferStats(records.transfer);
+
+  const view = state.leaderboard.activeView || "putaway";
+  const rowsByView = {
+    putaway: putawayRows,
+    cycle: cycleRows,
+    transfer: transferRows,
+    overall: calculateOverallLeaderboard(putawayRows, cycleRows, transferRows)
+  };
+
+  const recordCounts = {
+    putaway: records.putaway.length,
+    cycle: records.cycle.length,
+    transfer: records.transfer.length,
+    overall: records.putaway.length + records.cycle.length + records.transfer.length
+  };
+
+  return { rows: rowsByView[view] || [], recordCount: recordCounts[view] || 0 };
+}
+
+function leaderboardColumns(view) {
+  if (view === "cycle") {
+    return [
+      ["employee", "Employee"],
+      ["totalCounts", "Counts Completed"],
+      ["varianceItems", "Variance Items"],
+      ["accuracyPercentage", "Accuracy"],
+      ["averageCountsPerDay", "Avg Counts / Day"],
+      ["lastActivityDate", "Last Activity"]
+    ];
+  }
+
+  if (view === "transfer") {
+    return [
+      ["employee", "Employee"],
+      ["totalTransferLines", "Transfer Lines"],
+      ["totalTransferOrders", "Transfer Orders"],
+      ["averageTransferLinesPerDay", "Avg Lines / Day"],
+      ["lastActivityDate", "Last Activity"]
+    ];
+  }
+
+  if (view === "overall") {
+    return [
+      ["employee", "Employee"],
+      ["totalScore", "Total Score"],
+      ["putawayLines", "Putaway Lines"],
+      ["cycleCounts", "Cycle Counts"],
+      ["transferLines", "Transfer Lines"]
+    ];
+  }
+
+  return [
+    ["employee", "Employee"],
+    ["totalLines", "Putaway Lines"],
+    ["totalTickets", "Tickets / Orders"],
+    ["averageLinesPerDay", "Avg Lines / Day"],
+    ["lastActivityDate", "Last Activity"]
+  ];
+}
+
+function formatLeaderboardValue(key, value) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (key === "accuracyPercentage") return `${Number(value).toFixed(1)}%`;
+  if (key.startsWith("average")) return Number(value).toFixed(1);
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return String(value);
+}
+
+function renderLeaderboard() {
+  const body = $("leaderboardTableBody");
+  const head = $("leaderboardTableHead");
+  if (!body || !head) return;
+
+  const range = getLeaderboardDateRange();
+  const view = state.leaderboard.activeView || "putaway";
+  const search = $("leaderboardSearch")?.value.trim().toLowerCase() || "";
+  const result = buildLeaderboardRows(range);
+  const rows = result.rows.filter((row) => !search || String(row.employee || "").toLowerCase().includes(search));
+  const columns = leaderboardColumns(view);
+
+  state.leaderboard.rows = rows;
+  state.leaderboard.recordCount = result.recordCount;
+
+  if ($("leaderboardEmployeeCount")) $("leaderboardEmployeeCount").textContent = rows.length;
+  if ($("leaderboardRecordCount")) $("leaderboardRecordCount").textContent = result.recordCount;
+  if ($("leaderboardRangeLabel")) $("leaderboardRangeLabel").textContent = range.label;
+
+  head.innerHTML = `
+    <tr>
+      <th>Rank</th>
+      ${columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("")}
+    </tr>
+  `;
+
+  body.innerHTML = "";
+
+  if (!rows.length) {
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="${columns.length + 1}">No data found for this date range.</td></tr>`);
+    return;
+  }
+
+  rows.forEach((row, index) => {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
+      <tr>
+        <td>${index + 1}</td>
+        ${columns.map(([key]) => `<td>${escapeHtml(formatLeaderboardValue(key, row[key]))}</td>`).join("")}
+      </tr>
+    `
+    );
+  });
+}
+
+function exportLeaderboardCsv() {
+  const view = state.leaderboard.activeView || "putaway";
+  if (!state.leaderboard.rows.length) renderLeaderboard();
+  if (!state.leaderboard.rows.length) return toast("No leaderboard data to export.");
+
+  const columns = leaderboardColumns(view);
+  const rows = state.leaderboard.rows.map((row, index) => {
+    const out = { rank: index + 1 };
+    columns.forEach(([key, label]) => {
+      out[label] = formatLeaderboardValue(key, row[key]);
+    });
+    return out;
+  });
+
+  downloadCsv(rows, `leaderboard-${view}-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+/* ---------------------------
    RENDER LOGS
 ---------------------------- */
 
@@ -2422,6 +2848,7 @@ function renderLogs() {
   renderPutawayLogs();
   renderCycleLogs();
   renderPickingLogs();
+  renderLeaderboard();
 }
 
 function renderPutawayLogs() {

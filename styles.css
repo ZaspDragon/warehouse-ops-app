@@ -186,6 +186,42 @@ main {
   display: block;
 }
 
+.leaderboard-card .hint {
+  margin: 6px 0 0;
+}
+
+.leaderboard-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.leaderboard-tab {
+  background: #e8eefc;
+}
+
+.leaderboard-tab.active {
+  background: var(--blue);
+  color: #ffffff;
+}
+
+.leaderboard-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.leaderboard-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.leaderboard-table-wrap table {
+  min-width: 860px;
+}
+
 .history-toolbar {
   display: grid;
   grid-template-columns: repeat(2, minmax(180px, 260px)) 1fr;
@@ -892,6 +928,17 @@ body.receiver-temp-mode #putawayTab > .card:first-child input {
   .history-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .leaderboard-tabs,
+  .leaderboard-filters,
+  .leaderboard-summary {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .leaderboard-tab {
+    width: 100%;
   }
 
   .history-tab {
