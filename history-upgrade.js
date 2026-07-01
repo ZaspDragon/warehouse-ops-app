@@ -2,6 +2,11 @@
   const RETIRED_TABS = ["cycle", "cycleProduction", "picking"];
   const RETIRED_COLLECTIONS = new Set(["cycleCountSessions", "orderPickingSessions"]);
   const TENANT_COLLECTIONS = new Set(["employees", "putAwayLogs", "activityLogs"]);
+  const COLLECTION_NAMES = {
+    employees: "employees",
+    putaway: "putAwayLogs",
+    activity: "activityLogs"
+  };
 
   document.addEventListener("DOMContentLoaded", () => {
     installTenantWritePatch();
@@ -12,8 +17,12 @@
     renderTenantBadge();
   });
 
+  function appState() {
+    return typeof state !== "undefined" ? state : window.state;
+  }
+
   function currentEmail() {
-    return String(window.state?.user?.email || window.auth?.currentUser?.email || "").trim().toLowerCase();
+    return String(appState()?.user?.email || window.auth?.currentUser?.email || "").trim().toLowerCase();
   }
 
   function currentTenantKey() {
@@ -147,35 +156,40 @@
     if (window.__tenantLoadPatched) return;
 
     window.loadCollection = async function tenantLoadCollection(collectionName, key) {
+      const app = appState();
+
       if (RETIRED_COLLECTIONS.has(collectionName) || ["cycleSessions", "pickingSessions"].includes(key)) {
-        if (window.state) window.state[key] = [];
+        if (app) app[key] = [];
         return;
       }
 
       if (TENANT_COLLECTIONS.has(collectionName)) {
-        if (window.state) window.state[key] = await queryTenantRows(collectionName);
+        if (app) app[key] = await queryTenantRows(collectionName);
         return;
       }
 
       const snap = await window.db.collection(collectionName).limit(200).get();
-      if (window.state) {
-        window.state[key] = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      if (app) {
+        app[key] = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       }
     };
 
     window.loadAllData = async function tenantLoadAllData() {
-      if (window.state?.isDemoMode) return;
+      const app = appState();
+      if (app?.isDemoMode) return;
 
       try {
         await Promise.all([
-          window.loadCollection(window.COLLECTIONS.employees, "employees"),
-          window.loadCollection(window.COLLECTIONS.putaway, "putawayLogs"),
-          window.loadCollection(window.COLLECTIONS.activity, "activityLogs")
+          window.loadCollection(COLLECTION_NAMES.employees, "employees"),
+          window.loadCollection(COLLECTION_NAMES.putaway, "putawayLogs"),
+          window.loadCollection(COLLECTION_NAMES.activity, "activityLogs")
         ]);
 
-        if (window.state) {
-          window.state.cycleSessions = [];
-          window.state.pickingSessions = [];
+        if (app) {
+          app.cycleSessions = [];
+          app.pickingSessions = [];
+          app.cycleProduction = [];
+          app.cycleTimers = [];
         }
 
         window.renderEmployees?.();
@@ -209,8 +223,9 @@
 
       await originalSave();
 
-      if (window.state?.putawayLogs?.length) {
-        const latest = window.state.putawayLogs[0];
+      const app = appState();
+      if (app?.putawayLogs?.length) {
+        const latest = app.putawayLogs[0];
         latest.worker = worker;
         latest.submittedAt = latest.submittedAt || nowIso();
         latest.submittedDate = latest.submittedDate || latest.submittedAt.slice(0, 10);
@@ -236,11 +251,12 @@
 
     document.querySelectorAll('[data-export="cycle"], [data-export="picking"], .productionExportBtn').forEach((el) => el.remove());
 
-    if (window.state) {
-      window.state.cycleSessions = [];
-      window.state.pickingSessions = [];
-      window.state.cycleProduction = [];
-      window.state.cycleTimers = [];
+    const app = appState();
+    if (app) {
+      app.cycleSessions = [];
+      app.pickingSessions = [];
+      app.cycleProduction = [];
+      app.cycleTimers = [];
     }
 
     const subtitle = document.querySelector(".topbar p");
@@ -256,9 +272,10 @@
       document.querySelectorAll('.history-tab[data-history-tab="cycle"], .history-tab[data-history-tab="picking"]').forEach((el) => el.remove());
 
       const body = document.getElementById("putawayHistoryBody") || document.getElementById("historyBody");
-      if (!body || !window.state) return;
+      const app = appState();
+      if (!body || !app) return;
 
-      const logs = [...(window.state.putawayLogs || [])].sort((a, b) => String(b.submittedAt || b.createdAt || "").localeCompare(String(a.submittedAt || a.createdAt || "")));
+      const logs = [...(app.putawayLogs || [])].sort((a, b) => String(b.submittedAt || b.createdAt || "").localeCompare(String(a.submittedAt || a.createdAt || "")));
       body.innerHTML = "";
 
       if (!logs.length) {
