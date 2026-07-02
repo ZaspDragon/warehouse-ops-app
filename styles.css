@@ -775,6 +775,44 @@ button:disabled {
   color: var(--danger);
 }
 
+.putaway-log-filters {
+  align-items: end;
+  margin: 12px 0 16px;
+}
+
+.filter-actions {
+  align-self: end;
+}
+
+.gap-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.gap-badge.alert {
+  background: #fff1f2;
+  color: var(--danger);
+}
+
+.downtime-label {
+  display: block;
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+tr.downtime-flag td {
+  background: #fff7ed;
+}
+
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);

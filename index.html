@@ -157,14 +157,36 @@
         </div>
 
         <div class="card">
-          <h3>Recent Put Away Logs</h3>
-          <button class="exportBtn" data-export="putaway">Export CSV</button>
+          <div class="section-heading">
+            <div>
+              <h3>Recent Put Away Logs</h3>
+              <p class="hint">Filter saved putaway by worker and completed date.</p>
+            </div>
+            <button class="exportBtn" data-export="putaway">Export CSV</button>
+          </div>
+
+          <div class="grid putaway-log-filters">
+            <label>Employee
+              <input id="putawayLogEmployeeFilter" list="workerOptions" placeholder="All employees" />
+            </label>
+            <label>Start Date
+              <input id="putawayLogStartFilter" type="date" />
+            </label>
+            <label>End Date
+              <input id="putawayLogEndFilter" type="date" />
+            </label>
+            <div class="actions filter-actions">
+              <button id="applyPutawayLogFiltersBtn" class="primary" type="button">Apply</button>
+              <button id="clearPutawayLogFiltersBtn" type="button">Clear</button>
+            </div>
+          </div>
 
           <div class="table-wrap small">
             <table>
               <thead>
                 <tr>
                   <th>Completed Date</th>
+                  <th>Last Submitted</th>
                   <th>Worker</th>
                   <th>Lines</th>
                   <th>Total Qty</th>
@@ -425,7 +447,9 @@
               <th>Item Number</th>
               <th>Qty</th>
               <th>Bin / Location</th>
+              <th>Submitted At</th>
               <th>Submitted Time</th>
+              <th>Gap</th>
               <th>Notes / Action</th>
             </tr>
           </thead>
