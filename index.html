@@ -39,7 +39,7 @@
   <header class="topbar">
     <div>
       <h1>WarehouseOS</h1>
-      <p>Put Away · Cycle Count · Order Picking · Employees · History</p>
+      <p>Put Away · Employees · History</p>
     </div>
 
     <div class="top-actions">
@@ -107,9 +107,6 @@
 
       <nav class="tabs">
         <button class="tab active" data-tab="putaway">Put Away Log</button>
-        <button class="tab" data-tab="cycle">Cycle Count</button>
-        <button class="tab" data-tab="cycleProduction">Cycle Count Production</button>
-        <button class="tab" data-tab="picking">Order Picking</button>
         <button class="tab" data-tab="leaderboard">Leaderboard</button>
         <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
@@ -120,49 +117,21 @@
       <!-- PUT AWAY -->
       <section id="putawayTab" class="tab-panel active">
         <div class="card">
-          <h2>Receiving Timer</h2>
-
-          <div class="timer-layout">
-            <div class="timer-face">
-              <strong id="receivingClock">00:00:00</strong>
-            </div>
-            <div class="stats kpi-compact">
-              <div><strong id="dockToStockStat">0</strong><span>Dock-To-Stock Minutes</span></div>
-              <div><strong id="timerStatus">Idle</strong><span>Status</span></div>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="startReceivingTimerBtn" class="primary">Start</button>
-            <button id="stopReceivingTimerBtn">Stop</button>
-            <button id="resetReceivingTimerBtn" class="danger">Reset</button>
-          </div>
-
-          <div class="timer-meta">
-            <div><span>Started By</span><strong id="timerStartedBy">-</strong></div>
-            <div><span>Started At</span><strong id="timerStartedAt">-</strong></div>
-            <div><span>Stopped By</span><strong id="timerStoppedBy">-</strong></div>
-            <div><span>Stopped At</span><strong id="timerStoppedAt">-</strong></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h2>Put Away Log — 25 Lines</h2>
+          <h2>Putaway Log - One Line</h2>
 
           <div class="grid">
-            <label>Worker
-              <input id="putWorker" list="workerOptions" placeholder="Worker name" />
+            <label>Employee
+              <input id="putWorker" list="workerOptions" placeholder="Employee name" required />
             </label>
 
-            <label>Date
+            <label>Work Date
               <input id="putDate" type="date" />
             </label>
           </div>
 
           <div class="stats">
-            <div><strong id="putUsed">0</strong><span>Used Lines</span></div>
+            <div><strong id="putUsed">0</strong><span>Line Ready</span></div>
             <div><strong id="putQty">0</strong><span>Total Qty</span></div>
-            <div><strong id="dockToStockSheetStat">0</strong><span>Dock-To-Stock Min</span></div>
           </div>
 
           <div class="table-wrap">
@@ -172,7 +141,7 @@
                   <th>#</th>
                   <th>Item #</th>
                   <th>Qty</th>
-                  <th>Location</th>
+                  <th>Bin / Location</th>
                   <th>Notes</th>
                 </tr>
               </thead>
@@ -181,26 +150,48 @@
           </div>
 
           <div class="actions putaway-form-actions">
-            <button id="savePutawayBtn" class="primary">Submit Put Away</button>
+            <button id="savePutawayBtn" class="primary">Submit Putaway Line</button>
             <button id="clearPutawayBtn">Clear Form</button>
             <p id="putawayAutosaveStatus" class="message" aria-live="polite">All changes saved</p>
           </div>
         </div>
 
         <div class="card">
-          <h3>Recent Put Away Logs</h3>
-          <button class="exportBtn" data-export="putaway">Export CSV</button>
+          <div class="section-heading">
+            <div>
+              <h3>Recent Put Away Logs</h3>
+              <p class="hint">Filter saved putaway by worker and completed date.</p>
+            </div>
+            <button class="exportBtn" data-export="putaway">Export CSV</button>
+          </div>
+
+          <div class="grid putaway-log-filters">
+            <label>Employee
+              <input id="putawayLogEmployeeFilter" list="workerOptions" placeholder="All employees" />
+            </label>
+            <label>Start Date
+              <input id="putawayLogStartFilter" type="date" />
+            </label>
+            <label>End Date
+              <input id="putawayLogEndFilter" type="date" />
+            </label>
+            <div class="actions filter-actions">
+              <button id="applyPutawayLogFiltersBtn" class="primary" type="button">Apply</button>
+              <button id="clearPutawayLogFiltersBtn" type="button">Clear</button>
+            </div>
+          </div>
 
           <div class="table-wrap small">
             <table>
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Completed Date</th>
+                  <th>Last Submitted</th>
                   <th>Worker</th>
                   <th>Lines</th>
                   <th>Total Qty</th>
-                  <th>Dock-To-Stock</th>
-                  <th>Preview</th>
+                  <th>Preview / Details</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="putawayLogBody"></tbody>
@@ -208,504 +199,19 @@
           </div>
         </div>
       </section>
-
-      <!-- CYCLE COUNT -->
-      <section id="cycleTab" class="tab-panel">
-        <div class="card">
-          <h2>Cycle Count Worksheet — 25 Lines</h2>
-
-          <div class="grid">
-            <label>Counter
-              <select id="cycleWorker"></select>
-            </label>
-
-            <label>Stock Count ID
-              <input id="cycleId" placeholder="COUNT-001" />
-            </label>
-
-            <label>Date
-              <input id="cycleDate" type="date" />
-            </label>
-          </div>
-
-          <div class="upload-card cycle-timer-card">
-            <div class="section-heading">
-              <div>
-                <h3>Cycle Count Packet Timer</h3>
-                <p class="hint">Counters can start a packet, finish a packet, and add delay notes. Supervisor controls stay separate.</p>
-              </div>
-              <span id="cycleTimerStatusBadge" class="status-pill inactive">Inactive</span>
-            </div>
-            <div class="grid">
-              <label>Employee / Counter
-                <select id="cycleTimerEmployee"></select>
-              </label>
-              <label>Stock Count ID
-                <input id="cycleTimerCountId" placeholder="COUNT-001" />
-              </label>
-              <label>Date
-                <input id="cycleTimerDate" type="date" />
-              </label>
-              <label>Packet #
-                <input id="cycleTimerPacket" placeholder="Optional" />
-              </label>
-            </div>
-            <div class="timer-layout packet-timer-layout">
-              <div class="timer-face small-timer-face">
-                <strong id="cyclePacketClock">00:00:00</strong>
-              </div>
-              <div class="stacked-status">
-                <div><span>Started</span><strong id="cyclePacketStartedAt">-</strong></div>
-                <div><span>Finished</span><strong id="cyclePacketFinishedAt">-</strong></div>
-              </div>
-            </div>
-            <div class="actions">
-              <button id="startCyclePacketBtn" class="primary">Start Packet</button>
-              <button id="finishCyclePacketBtn">Finish Packet</button>
-              <button id="resetCyclePacketBtn" class="danger supervisor-only-action">Reset Timer</button>
-              <button id="voidCyclePacketBtn" class="danger supervisor-only-action">Void Timer</button>
-            </div>
-            <div class="grid">
-              <label>Delay Reason
-                <select id="cycleDelayReason">
-                  <option>Normal</option>
-                  <option>Mixed Product</option>
-                  <option>Wrong Bin</option>
-                  <option>Product Not Found</option>
-                  <option>Multiple Locations</option>
-                  <option>Damaged Product</option>
-                  <option>UOM Issue</option>
-                  <option>Waiting For Lift</option>
-                  <option>Waiting For Supervisor</option>
-                  <option>Hold Batch Research</option>
-                  <option>Overstock Investigation</option>
-                  <option>Count Sheet Issue</option>
-                  <option>GP/System Issue</option>
-                  <option>Other</option>
-                </select>
-              </label>
-              <label class="wide-field">Delay Notes
-                <textarea id="cycleDelayNote" rows="3" placeholder="Quick note about what slowed the packet down"></textarea>
-              </label>
-            </div>
-            <div class="actions">
-              <button id="addCycleDelayBtn">Add Delay Note</button>
-            </div>
-            <p id="cycleTimerMessage" class="message"></p>
-          </div>
-
-          <div class="upload-card">
-            <h3>Upload Cycle Count Sheet</h3>
-            <p class="hint">Upload .xlsx, .xls, or .csv. The worksheet stays editable after import.</p>
-            <div class="actions">
-              <input id="cycleFileUpload" type="file" accept=".xlsx,.xls,.csv,.pdf" />
-              <button id="loadCycleFileBtn" class="primary">Load Cycle Count</button>
-              <button id="exportCurrentCycleBtn">Export Current Count Sheet</button>
-            </div>
-            <p id="cycleUploadMessage" class="message"></p>
-          </div>
-
-          <div class="table-wrap cycle-entry-wrap">
-            <table class="cycle-entry-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Item #</th>
-                  <th>Description</th>
-                  <th>Location</th>
-                  <th>System Qty</th>
-                  <th>Counted Qty</th>
-                  <th>Variance</th>
-                  <th>Reason</th>
-                  <th>Done</th>
-                  <th>Item Timing</th>
-                  <th>Item Delay</th>
-                </tr>
-              </thead>
-              <tbody id="cycleBody"></tbody>
-            </table>
-          </div>
-
-          <div class="stats">
-            <div><strong id="cycleRows">0</strong><span>Rows Used</span></div>
-            <div><strong id="cycleDone">0</strong><span>Done</span></div>
-            <div><strong id="cycleVariance">0</strong><span>Variance Lines</span></div>
-          </div>
-
-          <h3>Auto Totals by Item</h3>
-
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>System Total</th>
-                  <th>Counted Total</th>
-                  <th>Variance</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="cycleSummaryBody"></tbody>
-            </table>
-          </div>
-
-          <div class="actions">
-            <button id="saveCycleBtn" class="primary">Save Cycle Count</button>
-            <button id="clearCycleBtn">Clear Form</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>Saved Cycle Counts</h3>
-          <button class="exportBtn" data-export="cycle">Export CSV</button>
-
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Counter</th>
-                  <th>Count ID</th>
-                  <th>Lines</th>
-                  <th>Variance Lines</th>
-                </tr>
-              </thead>
-              <tbody id="cycleLogBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- CYCLE COUNT PRODUCTION -->
-      <section id="cycleProductionTab" class="tab-panel">
-        <div class="card">
-          <div class="section-heading">
-            <div>
-              <h2>Cycle Count Production</h2>
-              <p class="hint">Supervisor-friendly production, delay, root cause, and high-risk inventory tracking.</p>
-            </div>
-            <button id="rollbackCycleProductionBtn" class="danger supervisor-only-action">Rollback From Latest Backup</button>
-          </div>
-
-          <div class="grid production-filters">
-            <label>Date
-              <input id="prodFilterDate" type="date" />
-            </label>
-            <label>Start Date
-              <input id="prodFilterStart" type="date" />
-            </label>
-            <label>End Date
-              <input id="prodFilterEnd" type="date" />
-            </label>
-            <label>Employee
-              <select id="prodFilterEmployee"></select>
-            </label>
-            <label>Role / Function
-              <select id="prodFilterRole">
-                <option value="">All</option>
-                <option>Counter</option>
-                <option>Count Creator</option>
-                <option>Variance Research</option>
-                <option>Hold Batch Research</option>
-                <option>Lift Driver</option>
-              </select>
-            </label>
-            <label>Stock Count ID
-              <input id="prodFilterCountId" placeholder="COUNT-001" />
-            </label>
-            <label>Delay Reason
-              <select id="prodFilterDelay">
-                <option value="">All</option>
-                <option>Normal</option>
-                <option>Mixed Product</option>
-                <option>Wrong Bin</option>
-                <option>Product Not Found</option>
-                <option>Multiple Locations</option>
-                <option>Damaged Product</option>
-                <option>UOM Issue</option>
-                <option>Waiting For Lift</option>
-                <option>Waiting For Supervisor</option>
-                <option>Hold Batch Research</option>
-                <option>Overstock Investigation</option>
-                <option>Count Sheet Issue</option>
-                <option>GP/System Issue</option>
-                <option>Other</option>
-              </select>
-            </label>
-            <label>Root Cause
-              <select id="prodFilterRootCause">
-                <option value="">All</option>
-                <option>Receiving Error</option>
-                <option>Putaway Error</option>
-                <option>Picking Error</option>
-                <option>Replenishment Error</option>
-                <option>Transfer Error</option>
-                <option>GP/System Error</option>
-                <option>Mixed Product</option>
-                <option>Wrong Bin</option>
-                <option>Damaged Product</option>
-                <option>UOM Issue</option>
-                <option>Unknown</option>
-                <option>Other</option>
-              </select>
-            </label>
-            <label>Flag Status
-              <select id="prodFilterFlag">
-                <option value="">All</option>
-                <option value="flagged">Flagged</option>
-                <option value="reviewed">Reviewed</option>
-                <option value="unreviewed">Unreviewed</option>
-              </select>
-            </label>
-          </div>
-          <div class="actions">
-            <button id="applyProductionFiltersBtn" class="primary">Apply Filters</button>
-            <button id="clearProductionFiltersBtn">Clear Filters</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>Production Summary</h3>
-          <div class="stats production-stats">
-            <div><strong id="dailyProductionLines">0</strong><span>Daily Lines</span></div>
-            <div><strong id="weeklyProductionLines">0</strong><span>Weekly Lines</span></div>
-            <div><strong id="packetsCompleted">0</strong><span>Packets Completed</span></div>
-            <div><strong id="countsPerHour">0</strong><span>Counts / Hour</span></div>
-            <div><strong id="goalPercent">0%</strong><span>Goal Percent</span></div>
-            <div><strong id="flaggedRecords">0</strong><span>Flagged Records</span></div>
-          </div>
-          <div class="actions export-actions">
-            <button class="productionExportBtn" data-export="daily">Export Daily Production CSV</button>
-            <button class="productionExportBtn" data-export="weekly">Export Weekly Production CSV</button>
-            <button class="productionExportBtn" data-export="employee">Export Employee Production CSV</button>
-            <button class="productionExportBtn" data-export="delays">Export Delay Reasons CSV</button>
-            <button class="productionExportBtn" data-export="rootCauses">Export Root Causes CSV</button>
-            <button class="productionExportBtn" data-export="creation">Export Count Creation CSV</button>
-            <button class="productionExportBtn" data-export="variance">Export Variance Research CSV</button>
-            <button class="productionExportBtn" data-export="holdBatch">Export Hold Batch CSV</button>
-            <button class="productionExportBtn" data-export="highRisk">Export High-Risk Inventory CSV</button>
-            <button class="productionExportBtn" data-export="flags">Export Flagged Records CSV</button>
-            <button class="productionExportBtn supervisor-only-action" data-export="audit">Export Audit Log CSV</button>
-          </div>
-        </div>
-
-        <div class="panel-grid two-column-production">
-          <div class="card">
-            <h3>Count Creation Log</h3>
-            <div class="grid">
-              <label>Date<input id="creationDate" type="date" /></label>
-              <label>Employee<select id="creationEmployee"></select></label>
-              <label>Stock Count ID<input id="creationCountId" placeholder="COUNT-001" /></label>
-              <label>Packets Created<input id="creationPackets" type="number" min="0" /></label>
-              <label>Count Lines Created<input id="creationLines" type="number" min="0" /></label>
-              <label>Reason for Count
-                <select id="creationReason">
-                  <option>Hold Batch</option><option>Variance</option><option>ABC Count</option><option>Negative Quantity</option>
-                  <option>Location Audit</option><option>Overstock</option><option>Supervisor Request</option><option>High-Dollar Item</option>
-                  <option>Fast Mover</option><option>Other</option>
-                </select>
-              </label>
-              <label class="wide-field">Notes<textarea id="creationNotes" rows="2"></textarea></label>
-            </div>
-            <div class="actions"><button id="saveCreationLogBtn" class="primary">Save Count Creation</button></div>
-          </div>
-
-          <div class="card">
-            <h3>Variance Research Log</h3>
-            <div class="grid">
-              <label>Date<input id="varianceDate" type="date" /></label>
-              <label>Employee<select id="varianceEmployee"></select></label>
-              <label>Stock Count ID<input id="varianceCountId" /></label>
-              <label>Item Number<input id="varianceItem" /></label>
-              <label>Bin Location<input id="varianceBin" /></label>
-              <label>Variance Qty<input id="varianceQty" type="number" /></label>
-              <label>Variance $<input id="varianceDollars" type="number" step="0.01" /></label>
-              <label>Status<select id="varianceStatus"><option>Open</option><option>Researching</option><option>Corrected</option><option>Needs Supervisor Review</option><option>Closed</option></select></label>
-              <label>Root Cause<select id="varianceRootCause"><option>Receiving Error</option><option>Putaway Error</option><option>Picking Error</option><option>Replenishment Error</option><option>Transfer Error</option><option>GP/System Error</option><option>Mixed Product</option><option>Wrong Bin</option><option>Damaged Product</option><option>UOM Issue</option><option>Unknown</option><option>Other</option></select></label>
-              <label>Action Taken<select id="varianceAction"><option>Recounted</option><option>Bin Corrected</option><option>Quantity Adjusted</option><option>Item Moved</option><option>Sent To Supervisor</option><option>No Adjustment Needed</option><option>Other</option></select></label>
-              <label class="wide-field">Notes<textarea id="varianceNotes" rows="2"></textarea></label>
-            </div>
-            <div class="actions"><button id="saveVarianceLogBtn" class="primary">Save Variance Research</button></div>
-          </div>
-
-          <div class="card">
-            <h3>Hold Batch Log</h3>
-            <div class="grid">
-              <label>Date<input id="holdDate" type="date" /></label>
-              <label>Employee<select id="holdEmployee"></select></label>
-              <label>Batch ID<input id="holdBatchId" /></label>
-              <label>Item Number<input id="holdItem" /></label>
-              <label>Bin Location<input id="holdBin" /></label>
-              <label>Issue Type<select id="holdIssue"><option>Negative Quantity</option><option>Allocation Issue</option><option>Bin Mismatch</option><option>Transfer Issue</option><option>Receiving Issue</option><option>Picking Issue</option><option>GP/System Issue</option><option>Other</option></select></label>
-              <label>Status<select id="holdStatus"><option>Open</option><option>Researching</option><option>Corrected</option><option>Needs Supervisor Review</option><option>Closed</option></select></label>
-              <label>Action Taken<input id="holdAction" /></label>
-              <label class="wide-field">Notes<textarea id="holdNotes" rows="2"></textarea></label>
-            </div>
-            <div class="actions"><button id="saveHoldBatchBtn" class="primary">Save Hold Batch</button></div>
-          </div>
-
-          <div class="card">
-            <h3>High-Risk Inventory</h3>
-            <div class="grid">
-              <label>Date Added<input id="riskDate" type="date" /></label>
-              <label>Item Number<input id="riskItem" /></label>
-              <label>Bin Location<input id="riskBin" /></label>
-              <label>Aisle<input id="riskAisle" /></label>
-              <label>Risk Type<select id="riskType"><option>High Dollar</option><option>Fast Mover</option><option>Repeated Variance</option><option>Negative Quantity</option><option>Mixed Product</option><option>Overstock Issue</option><option>Damaged Product</option><option>Frequent Hold Batch</option><option>Supervisor Request</option><option>Other</option></select></label>
-              <label>Priority<select id="riskPriority"><option>Low</option><option>Medium</option><option>High</option></select></label>
-              <label>Last Count Date<input id="riskLastCount" type="date" /></label>
-              <label>Next Recommended Count<input id="riskNextCount" type="date" /></label>
-              <label>Status<select id="riskStatus"><option>Active</option><option>Count Scheduled</option><option>Counted</option><option>Resolved</option></select></label>
-              <label class="wide-field">Notes<textarea id="riskNotes" rows="2"></textarea></label>
-            </div>
-            <div class="actions"><button id="saveHighRiskBtn" class="primary">Save High-Risk Item</button></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>Root Causes, Flags, and Recent Records</h3>
-          <div class="production-dashboard-grid">
-            <div>
-              <h4>Root Cause Totals</h4>
-              <div id="rootCauseSummary" class="summary-list"></div>
-            </div>
-            <div>
-              <h4>Flagged / Suspicious Records</h4>
-              <div id="flaggedRecordList" class="summary-list"></div>
-            </div>
-            <div>
-              <h4>Delay Note Review</h4>
-              <div id="delayReviewList" class="summary-list"></div>
-            </div>
-            <div>
-              <h4>Recent Production Records</h4>
-              <div id="productionRecordList" class="summary-list"></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ORDER PICKING -->
-      <section id="pickingTab" class="tab-panel">
-        <div class="card">
-          <h2>Order Picking Worksheet — Upload or Enter Manually</h2>
-
-          <div class="grid">
-            <label>Picker
-              <select id="pickWorker"></select>
-            </label>
-
-            <label>Order / Transfer #
-              <input id="pickOrder" placeholder="SXFR0203013" />
-            </label>
-
-            <label>Date
-              <input id="pickDate" type="date" />
-            </label>
-          </div>
-
-          <div class="upload-card">
-            <h3>Upload Transfer / Pick Ticket</h3>
-            <p class="hint">
-              Upload .xlsx, .xls, or .csv. The app finds the BIN LOC / ITEM # row and fills the table automatically.
-            </p>
-
-            <div class="actions">
-              <input id="pickFileUpload" type="file" accept=".xlsx,.xls,.csv" />
-              <button id="loadPickFileBtn" class="primary">Load Pick Ticket</button>
-              <button id="exportCurrentPickingBtn">Export Current Pick Sheet</button>
-            </div>
-
-            <p id="uploadMessage" class="message"></p>
-          </div>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Item #</th>
-                  <th>Description</th>
-                  <th>From Slot</th>
-                  <th>Required Qty</th>
-                  <th>Available Qty</th>
-                  <th>Picked Qty</th>
-                  <th>Remaining</th>
-                  <th>Status</th>
-                  <th>UOM</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody id="pickingBody"></tbody>
-            </table>
-          </div>
-
-          <div class="stats">
-            <div><strong id="pickRows">0</strong><span>Rows Used</span></div>
-            <div><strong id="pickQty">0</strong><span>Total Picked</span></div>
-            <div><strong id="pickIssues">0</strong><span>Issue Lines</span></div>
-          </div>
-
-          <h3>Auto Totals by Item</h3>
-
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Required Total</th>
-                  <th>Picked Total</th>
-                  <th>Remaining</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="pickSummaryBody"></tbody>
-            </table>
-          </div>
-
-          <div class="actions">
-            <button id="savePickingBtn" class="primary">Save Picking Session</button>
-            <button id="clearPickingBtn">Clear Form</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>Saved Picking Sessions</h3>
-          <button class="exportBtn" data-export="picking">Export Saved Picking CSV</button>
-
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Picker</th>
-                  <th>Order</th>
-                  <th>Lines</th>
-                  <th>Total Picked</th>
-                  <th>Issues</th>
-                </tr>
-              </thead>
-              <tbody id="pickingLogBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
       <!-- LEADERBOARD -->
       <section id="leaderboardTab" class="tab-panel">
         <div class="card leaderboard-card">
           <div class="section-heading">
             <div>
               <h2>Leaderboard</h2>
-              <p class="hint">Rankings use saved Put Away, Cycle Count, and Transfer Order records.</p>
+              <p class="hint">Rankings use saved Putaway records.</p>
             </div>
             <button id="exportLeaderboardBtn" class="primary">Export CSV</button>
           </div>
 
           <nav class="leaderboard-tabs" aria-label="Leaderboard categories">
             <button class="leaderboard-tab active" data-leaderboard-view="putaway">Putaway</button>
-            <button class="leaderboard-tab" data-leaderboard-view="cycle">Cycle Counts</button>
-            <button class="leaderboard-tab" data-leaderboard-view="transfer">Transfer Orders</button>
             <button class="leaderboard-tab" data-leaderboard-view="overall">Overall</button>
           </nav>
 
@@ -764,8 +270,6 @@
               <select id="itemHistoryProcess">
                 <option value="">All Processes</option>
                 <option value="putaway">Put Away</option>
-                <option value="cycleCount">Cycle Count</option>
-                <option value="orderPicking">Order Picking</option>
                 <option value="receiving">Receiving</option>
               </select>
             </label>
@@ -814,8 +318,6 @@
             <label>Role
               <select id="employeeRole">
                 <option>Put Away</option>
-                <option>Cycle Count</option>
-                <option>Order Picking</option>
                 <option>Lead</option>
               </select>
             </label>
@@ -855,8 +357,6 @@
 
           <nav class="history-tabs">
             <button class="history-tab active" data-history-tab="putaway">Put Away Log</button>
-            <button class="history-tab" data-history-tab="cycle">Cycle Count</button>
-            <button class="history-tab" data-history-tab="picking">Order Picking</button>
           </nav>
 
           <section id="putawayHistoryPanel" class="history-panel active">
@@ -878,86 +378,15 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Completed Date</th>
-                    <th>Worker</th>
-                    <th>Lines</th>
-                    <th>Total Qty</th>
-                    <th>Dock-to-Stock Minutes</th>
-                    <th>Preview / Details</th>
-                    <th>Actions</th>
+                  <th>Completed Date</th>
+                  <th>Worker</th>
+                  <th>Lines</th>
+                  <th>Total Qty</th>
+                  <th>Preview / Details</th>
+                  <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="putawayHistoryBody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="cycleHistoryPanel" class="history-panel">
-            <div class="history-toolbar">
-              <label>Start Date
-                <input id="cycleHistoryStart" type="date" />
-              </label>
-              <label>End Date
-                <input id="cycleHistoryEnd" type="date" />
-              </label>
-              <div class="actions">
-                <button class="historyFilterBtn primary" data-history-type="cycle">Search / Filter</button>
-                <button class="historyClearBtn" data-history-type="cycle">Clear Filter</button>
-                <button class="historyExportBtn" data-history-type="cycle">Export Cycle Count History CSV</button>
-              </div>
-            </div>
-
-            <div class="table-wrap small history-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Completed Date</th>
-                    <th>Counter</th>
-                    <th>Stock Count ID</th>
-                    <th>Lines Counted</th>
-                    <th>Variance Lines</th>
-                    <th>Total Variance</th>
-                    <th>Status</th>
-                    <th>Preview / Details</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="cycleHistoryBody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="pickingHistoryPanel" class="history-panel">
-            <div class="history-toolbar">
-              <label>Start Date
-                <input id="pickingHistoryStart" type="date" />
-              </label>
-              <label>End Date
-                <input id="pickingHistoryEnd" type="date" />
-              </label>
-              <div class="actions">
-                <button class="historyFilterBtn primary" data-history-type="picking">Search / Filter</button>
-                <button class="historyClearBtn" data-history-type="picking">Clear Filter</button>
-                <button class="historyExportBtn" data-history-type="picking">Export Order Picking History CSV</button>
-              </div>
-            </div>
-
-            <div class="table-wrap small history-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Completed Date</th>
-                    <th>Picker</th>
-                    <th>Order / Transfer #</th>
-                    <th>Lines</th>
-                    <th>Total Picked</th>
-                    <th>Issue Lines</th>
-                    <th>Status</th>
-                    <th>Preview / Details</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="pickingHistoryBody"></tbody>
               </table>
             </div>
           </section>
@@ -999,6 +428,36 @@
   </footer>
 
   <datalist id="workerOptions"></datalist>
+
+  <div id="putawayDailyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="putawayDailyModalTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="putawayDailyModalTitle">Putaway Lines</h2>
+          <p id="putawayDailyModalSummary" class="hint"></p>
+        </div>
+        <button id="closePutawayDailyModalBtn">Close</button>
+      </div>
+
+      <div class="table-wrap small history-table-wrap">
+        <table class="history-lines-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Item Number</th>
+              <th>Qty</th>
+              <th>Bin / Location</th>
+              <th>Submitted At</th>
+              <th>Submitted Time</th>
+              <th>Gap</th>
+              <th>Notes / Action</th>
+            </tr>
+          </thead>
+          <tbody id="putawayDailyLinesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
   <div id="termsModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card terms-card" role="dialog" aria-modal="true" aria-labelledby="termsTitle">

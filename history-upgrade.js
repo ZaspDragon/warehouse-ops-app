@@ -275,26 +275,36 @@
       const app = appState();
       if (!body || !app) return;
 
-      const logs = [...(app.putawayLogs || [])].sort((a, b) => String(b.submittedAt || b.createdAt || "").localeCompare(String(a.submittedAt || a.createdAt || "")));
+      const logs = typeof window.buildPutawayDailyGroups === "function"
+        ? window.buildPutawayDailyGroups(app.putawayLogs || [])
+        : [...(app.putawayLogs || [])].sort((a, b) => String(b.submittedAt || b.createdAt || "").localeCompare(String(a.submittedAt || a.createdAt || "")));
       body.innerHTML = "";
 
       if (!logs.length) {
-        body.insertAdjacentHTML("beforeend", `<tr><td colspan="7">No putaway records found for this account.</td></tr>`);
+        body.insertAdjacentHTML("beforeend", `<tr><td colspan="6">No putaway records found for this account.</td></tr>`);
         return;
       }
 
       logs.forEach((log) => {
         const lines = Array.isArray(log.lines) ? log.lines : [];
+        const encodedKey = log.key ? encodeURIComponent(log.key) : "";
         body.insertAdjacentHTML(
           "beforeend",
           `<tr>
             <td>${escapeHtml(log.workDate || log.date || "")}</td>
-            <td>${escapeHtml(log.submittedTime || formatSubmittedTime(log.submittedAt || log.createdAt))}</td>
-            <td>${escapeHtml(log.worker || "")}</td>
-            <td>${Number(log.lineCount || lines.length || 0)}</td>
-            <td>${Number(log.totalQty || sumBy(lines, "qty"))}</td>
-            <td>${Number(log.dockToStockMinutes || 0)}</td>
-            <td>${escapeHtml(previewLines(lines, (line) => `${line.item || ""} x${line.qty || 0} @ ${line.location || ""}`))}</td>
+            <td>${escapeHtml(log.employeeName || log.worker || "")}</td>
+            <td>${Number(log.totalLines || log.lineCount || lines.length || 0)}</td>
+            <td>${Number(log.totalQty || sumBy(lines, "quantity") || sumBy(lines, "qty"))}</td>
+            <td>${escapeHtml(previewLines(lines, (line) => `${line.itemNumber || line.item || ""} x${line.quantity || line.qty || 0} @ ${line.binLocation || line.location || ""}`))}</td>
+            <td>
+              ${encodedKey ? `
+                <div class="row-actions">
+                  <button type="button" onclick="openPutawayDailyRecord('${encodedKey}', 'view')">View</button>
+                  <button type="button" onclick="openPutawayDailyRecord('${encodedKey}', 'edit')">Edit</button>
+                  <button type="button" class="danger" onclick="openPutawayDailyRecord('${encodedKey}', 'delete')">Delete</button>
+                </div>
+              ` : ""}
+            </td>
           </tr>`
         );
       });

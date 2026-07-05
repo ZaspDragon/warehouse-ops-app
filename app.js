@@ -34,6 +34,9 @@ const state = {
   pickingSessions: [],
   activityLogs: [],
   itemHistoryRows: [],
+  putawayDailyGroups: [],
+  editingPutawayDaily: null,
+  putawayLogFilters: { employee: "", start: "", end: "" },
   leaderboard: { activeView: "putaway", rows: [], recordCount: 0 },
   timer: readJson(TIMER_STORAGE_KEY, { status: "idle", elapsedMinutes: 0 }),
   settings: readJson(SETTINGS_STORAGE_KEY, { operatorName: "", operatorRole: "worker" }),
@@ -127,7 +130,6 @@ function collectPutawayDraft() {
   return {
     worker: $("putWorker")?.value.trim() || "",
     date: $("putDate")?.value || "",
-    dockToStockMinutes: calculateDockToStock(),
     updatedAt: new Date().toISOString(),
     lines: putawayDraftRows().map((row, idx) => ({
       line: idx + 1,
@@ -266,10 +268,6 @@ function wireEvents() {
   $("logoutBtn")?.addEventListener("click", logoutCurrentUser);
   $("resetDemoBtn")?.addEventListener("click", () => resetDemoData());
 
-  $("startReceivingTimerBtn")?.addEventListener("click", startReceivingTimer);
-  $("stopReceivingTimerBtn")?.addEventListener("click", stopReceivingTimer);
-  $("resetReceivingTimerBtn")?.addEventListener("click", resetReceivingTimer);
-
   $("loadCycleFileBtn")?.addEventListener("click", loadCycleCountFile);
   $("exportCurrentCycleBtn")?.addEventListener("click", exportCurrentCycle);
   $("startCyclePacketBtn")?.addEventListener("click", startCyclePacket);
@@ -321,6 +319,9 @@ function wireEvents() {
   $("closeHistoryModalBtn")?.addEventListener("click", closeHistoryModal);
   $("saveHistoryEditBtn")?.addEventListener("click", saveHistoryEdit);
   $("deleteHistoryRecordBtn")?.addEventListener("click", deleteHistoryRecord);
+  $("closePutawayDailyModalBtn")?.addEventListener("click", closePutawayDailyModal);
+  $("applyPutawayLogFiltersBtn")?.addEventListener("click", renderPutawayLogs);
+  $("clearPutawayLogFiltersBtn")?.addEventListener("click", clearPutawayLogFilters);
 
   document.querySelectorAll(".exportBtn").forEach((btn) => {
     btn.addEventListener("click", () => exportCsv(btn.dataset.export));
@@ -360,6 +361,9 @@ function wireEvents() {
     if (isPutawayDraftField(e.target)) {
       updatePutawayStats();
       savePutawayDraft({ statusMessage: "All changes saved" });
+    }
+    if (e.target.id === "putawayLogEmployeeFilter" || e.target.id === "putawayLogStartFilter" || e.target.id === "putawayLogEndFilter") {
+      renderPutawayLogs();
     }
     if (e.target.closest("#pickingBody")) updatePickingStats();
     if (e.target.closest("#cycleBody")) updateCycleStats();
@@ -412,6 +416,10 @@ function wireEvents() {
 }
 
 function switchTab(tab) {
+  if (["cycle", "cycleProduction", "picking"].includes(tab)) {
+    tab = "putaway";
+  }
+
   document.querySelectorAll(".tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
@@ -771,10 +779,10 @@ function applyDemoCycleProductionState(data = {}) {
 function buildDemoState() {
   const employees = [
     createDemoEmployee("emp-ava", "Ava Patel", "Put Away", true, 9),
-    createDemoEmployee("emp-diego", "Diego Martinez", "Cycle Count", true, 7),
-    createDemoEmployee("emp-jordan", "Jordan Lee", "Order Picking", true, 6),
+    createDemoEmployee("emp-diego", "Diego Martinez", "Put Away", true, 7),
+    createDemoEmployee("emp-jordan", "Jordan Lee", "Put Away", true, 6),
     createDemoEmployee("emp-maya", "Maya Chen", "Lead", true, 12),
-    createDemoEmployee("emp-noah", "Noah Brooks", "Order Picking", false, 4)
+    createDemoEmployee("emp-noah", "Noah Brooks", "Put Away", false, 4)
   ];
 
   const putawayLogs = [
@@ -1167,8 +1175,8 @@ function formatTimer(seconds) {
 
 function formatDateTime(value) {
   if (!value) return "-";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  const date = parseDateValue(value);
+  return date ? date.toLocaleString() : value;
 }
 
 function renderReceivingTimer() {
@@ -1181,9 +1189,6 @@ function renderReceivingTimer() {
   if ($("timerStartedAt")) $("timerStartedAt").textContent = formatDateTime(state.timer.startedAt);
   if ($("timerStoppedBy")) $("timerStoppedBy").textContent = state.timer.stoppedByName || "-";
   if ($("timerStoppedAt")) $("timerStoppedAt").textContent = formatDateTime(state.timer.stoppedAt);
-  if ($("startReceivingTimerBtn")) $("startReceivingTimerBtn").disabled = state.timer.status === "running";
-  if ($("stopReceivingTimerBtn")) $("stopReceivingTimerBtn").disabled = state.timer.status !== "running";
-  if ($("resetReceivingTimerBtn")) $("resetReceivingTimerBtn").disabled = !canResetTimer();
 }
 
 function persistTimer() {
@@ -1236,7 +1241,7 @@ function addReceivingActivity(status) {
     qty: timerMinutes(),
     location: "Dock",
     status,
-    notes: `Dock-To-Stock Minutes: ${timerMinutes()}`,
+    notes: `Receiving minutes: ${timerMinutes()}`,
     createdAt: new Date().toISOString(),
     createdBy: state.user?.uid || "",
     createdByEmail: state.user?.email || ""
@@ -1324,11 +1329,11 @@ function createActivityEntries(type, sessionDoc, lines, createdAtBase = Date.now
 function buildActivityEntry(type, sessionDoc, line, createdAt) {
   return {
     type,
-    employee: sessionDoc.worker || sessionDoc.counter || sessionDoc.picker || "",
+    employee: sessionDoc.employeeName || sessionDoc.worker || sessionDoc.counter || sessionDoc.picker || "",
     date: sessionDoc.date || "",
-    item: line.item || "",
+    item: line.item || line.itemNumber || "",
     description: line.description || "",
-    qty: Number(line.qty || line.pickedQty || line.countedQty || 0),
+    qty: Number(line.qty ?? line.quantity ?? line.pickedQty ?? line.countedQty ?? 0),
     systemQty: Number(line.systemQty || 0),
     countedQty: Number(line.countedQty || 0),
     requiredQty: Number(line.requiredQty || 0),
@@ -1336,7 +1341,7 @@ function buildActivityEntry(type, sessionDoc, line, createdAt) {
     remainingQty: Number(line.remainingQty || 0),
     availableQty: Number(line.availableQty || 0),
     variance: Number(line.variance || 0),
-    location: line.location || line.slot || line.fromSlot || "",
+    location: line.location || line.binLocation || line.slot || line.fromSlot || "",
     uom: line.uom || "",
     dockToStockMinutes: Number(sessionDoc.dockToStockMinutes || 0),
     status: line.status || "",
@@ -1361,20 +1366,18 @@ function buildPutawayRows() {
 
   body.innerHTML = "";
 
-  for (let i = 1; i <= 25; i++) {
-    body.insertAdjacentHTML(
-      "beforeend",
-      `
-      <tr class="putaway-row">
-        <td data-label="Line" class="putaway-line-number">${i}</td>
-        <td data-label="Item #"><input class="item-input put-item" placeholder="Item #" /></td>
-        <td data-label="Qty"><input class="qty-input put-qty" type="number" min="0" placeholder="Qty" /></td>
-        <td data-label="Location"><input class="loc-input put-location" placeholder="Location" /></td>
-        <td data-label="Notes"><input class="desc-input put-notes" placeholder="Notes" /></td>
-      </tr>
+  body.insertAdjacentHTML(
+    "beforeend",
     `
-    );
-  }
+    <tr class="putaway-row">
+      <td data-label="Line" class="putaway-line-number">1</td>
+      <td data-label="Item #"><input class="item-input put-item" placeholder="Item #" /></td>
+      <td data-label="Qty"><input class="qty-input put-qty" type="number" min="0" placeholder="Qty" /></td>
+      <td data-label="Bin / Location"><input class="loc-input put-location" placeholder="Bin / Location" /></td>
+      <td data-label="Notes"><input class="desc-input put-notes" placeholder="Notes" /></td>
+    </tr>
+  `
+  );
 }
 
 function buildCycleRows(rowCount = 25) {
@@ -1888,7 +1891,6 @@ function updatePutawayStats() {
 
   if ($("putUsed")) $("putUsed").textContent = used;
   if ($("putQty")) $("putQty").textContent = qty;
-  calculateDockToStock();
 }
 
 function updateCycleStats() {
@@ -2157,6 +2159,185 @@ function populateEmployeeDropdowns() {
    SAVE / COLLECT
 ---------------------------- */
 
+function currentBranchId() {
+  const email = currentOwnerEmail();
+  return sanitizeDailyDocPart(email || "demo_branch") || "unknown_branch";
+}
+
+function currentOwnerEmail() {
+  return String(state.user?.email || auth?.currentUser?.email || "").trim().toLowerCase();
+}
+
+function tenantDocumentFields() {
+  const ownerEmail = currentOwnerEmail();
+  return {
+    ownerEmail,
+    tenantKey: currentBranchId(),
+    branchId: currentBranchId(),
+    companyId: "warehouse-ops"
+  };
+}
+
+function sanitizeDailyDocPart(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function putawayWorkDate() {
+  return $("putDate")?.value || todayValue();
+}
+
+function parseDateValue(value) {
+  if (!value) return null;
+  if (typeof value === "object" && typeof value.toDate === "function") return value.toDate();
+  if (typeof value === "object" && Number.isFinite(value.seconds)) return new Date(value.seconds * 1000);
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatSubmittedTime(value) {
+  const date = parseDateValue(value) || new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function putawayDailyDocId(branchId, employeeName, workDate) {
+  return [branchId, sanitizeDailyDocPart(employeeName) || "unknown_employee", workDate].join("_");
+}
+
+function normalizePutawayLine(line = {}, index = 0, record = {}) {
+  const submittedAt = line.submittedAt || line.createdAt || record.submittedAt || record.createdAt || "";
+  const workDate =
+    normalizeLeaderboardDate(line.workDate) ||
+    normalizeLeaderboardDate(line.submittedDate) ||
+    normalizeLeaderboardDate(record.workDate) ||
+    normalizeLeaderboardDate(record.date) ||
+    normalizeLeaderboardDate(record.submittedDate) ||
+    normalizeLeaderboardDate(submittedAt) ||
+    "";
+  const employeeName = normalizeEmployeeName(line.employeeName || line.worker || record.employeeName || record.worker || record.employee);
+  const branchId = line.branchId || record.branchId || record.tenantKey || currentBranchId();
+  return {
+    line: Number(line.line || line.lineNumber || index + 1),
+    employeeName,
+    worker: employeeName,
+    itemNumber: String(line.itemNumber ?? line.item ?? line.sku ?? "").trim(),
+    quantity: Number(line.quantity ?? line.qty ?? 0),
+    binLocation: String(line.binLocation ?? line.location ?? line.bin ?? line.slot ?? "").trim(),
+    submittedDate: workDate,
+    workDate,
+    submittedAt,
+    submittedTime: line.submittedTime || formatSubmittedTime(submittedAt),
+    branchId,
+    tenantKey: line.tenantKey || record.tenantKey || branchId,
+    companyId: line.companyId || record.companyId || "warehouse-ops",
+    ownerEmail: line.ownerEmail || record.ownerEmail || currentOwnerEmail(),
+    notes: String(line.notes ?? line.details ?? line.note ?? "").trim()
+  };
+}
+
+function normalizePutawayRecord(record = {}) {
+  const employeeName = normalizeEmployeeName(record.employeeName || record.worker || record.employee);
+  const workDate =
+    normalizeLeaderboardDate(record.workDate) ||
+    normalizeLeaderboardDate(record.date) ||
+    normalizeLeaderboardDate(record.submittedDate) ||
+    normalizeLeaderboardDate(record.completedDate) ||
+    normalizeLeaderboardDate(record.createdAt) ||
+    todayValue();
+  const branchId = record.branchId || record.tenantKey || currentBranchId();
+  const lines = Array.isArray(record.lines)
+    ? record.lines.map((line, index) => normalizePutawayLine(line, index, record))
+    : [];
+  const totalQty = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+
+  return {
+    ...record,
+    id: record.id || putawayDailyDocId(branchId, employeeName, workDate),
+    branchId,
+    employeeName,
+    worker: employeeName,
+    workDate,
+    date: workDate,
+    lines,
+    totalLines: Number(record.totalLines ?? record.lineCount ?? lines.length),
+    lineCount: Number(record.totalLines ?? record.lineCount ?? lines.length),
+    totalQty: Number(record.totalQty ?? totalQty),
+    createdAt: record.createdAt || record.submittedAt || "",
+    updatedAt: record.updatedAt || record.createdAt || record.submittedAt || ""
+  };
+}
+
+function putawayRecordTotals(lines) {
+  return {
+    totalLines: lines.length,
+    lineCount: lines.length,
+    totalQty: lines.reduce((sum, line) => sum + Number(line.quantity ?? line.qty ?? 0), 0)
+  };
+}
+
+function normalizePutawayLineForSave(line, index) {
+  const submittedAt = line.submittedAt || new Date().toISOString();
+  const submittedDate =
+    normalizeLeaderboardDate(line.submittedDate) ||
+    normalizeLeaderboardDate(line.workDate) ||
+    normalizeLeaderboardDate(submittedAt) ||
+    todayValue();
+  const employeeName = normalizeEmployeeName(line.employeeName || line.worker);
+  const branchId = line.branchId || currentBranchId();
+  return {
+    line: index + 1,
+    employeeName,
+    worker: employeeName,
+    itemNumber: String(line.itemNumber || "").trim(),
+    quantity: Number(line.quantity || 0),
+    binLocation: String(line.binLocation || "").trim(),
+    submittedDate,
+    workDate: submittedDate,
+    submittedAt,
+    submittedTime: line.submittedTime || formatSubmittedTime(submittedAt),
+    branchId,
+    tenantKey: line.tenantKey || branchId,
+    companyId: line.companyId || "warehouse-ops",
+    ownerEmail: line.ownerEmail || currentOwnerEmail(),
+    notes: String(line.notes || "").trim()
+  };
+}
+
+function upsertPutawayLogInState(record) {
+  const normalized = normalizePutawayRecord(record);
+  const next = state.putawayLogs.filter((log) => String(log.id) !== String(normalized.id));
+  state.putawayLogs = sortByCreatedAtDesc([normalized, ...next]);
+  return normalized;
+}
+
+function buildSubmittedPutawayLine(rawLine, context = {}) {
+  const submittedAt = new Date().toISOString();
+  const branchId = context.branchId || currentBranchId();
+  const employeeName = normalizeEmployeeName(context.employeeName || rawLine.employeeName || rawLine.worker);
+  const workDate = context.workDate || normalizeLeaderboardDate(submittedAt) || todayValue();
+  return {
+    employeeName,
+    worker: employeeName,
+    itemNumber: String(rawLine.item || rawLine.itemNumber || "").trim(),
+    quantity: Number(rawLine.qty ?? rawLine.quantity ?? 0),
+    binLocation: String(rawLine.location || rawLine.binLocation || "").trim(),
+    submittedDate: workDate,
+    workDate,
+    submittedAt,
+    submittedTime: formatSubmittedTime(submittedAt),
+    branchId,
+    tenantKey: context.tenantKey || branchId,
+    companyId: context.companyId || "warehouse-ops",
+    ownerEmail: context.ownerEmail || currentOwnerEmail(),
+    notes: String(rawLine.notes || "").trim()
+  };
+}
+
 function collectPutawayLines() {
   return [...document.querySelectorAll("#putawayBody tr")]
     .map((row, idx) => ({
@@ -2181,69 +2362,133 @@ function confirmClearPutawayForm() {
   clearRows("putawayBody");
 }
 
+function resetPutawayLineAfterSubmit() {
+  const worker = $("putWorker")?.value || "";
+  const workDate = $("putDate")?.value || todayValue();
+
+  putawayDraftRows().forEach((row) => {
+    [".put-item", ".put-qty", ".put-location", ".put-notes"].forEach((selector) => {
+      const input = row.querySelector(selector);
+      if (input) input.value = "";
+    });
+  });
+
+  if ($("putWorker")) $("putWorker").value = worker;
+  if ($("putDate")) $("putDate").value = workDate;
+  updatePutawayStats();
+  savePutawayDraft({ force: true, statusMessage: "All changes saved" });
+  document.querySelector("#putawayBody .put-item")?.focus();
+}
+
 async function savePutaway() {
   flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
-  const lines = collectPutawayLines();
+  const employeeName = $("putWorker")?.value.trim() || "";
+  const rawLines = collectPutawayLines();
 
-  if (!lines.length) return toast("Enter at least one put away line.");
+  if (!employeeName) {
+    $("putWorker")?.focus();
+    return toast("Enter the employee name before submitting putaway.");
+  }
+
+  if (!rawLines.length) return toast("Enter one putaway line before submitting.");
+
+  const branchId = currentBranchId();
+  const workDate = putawayWorkDate();
+  const line = buildSubmittedPutawayLine(rawLines[0], { ...tenantDocumentFields(), branchId, employeeName, workDate });
+  const docId = putawayDailyDocId(branchId, employeeName, workDate);
 
   if (state.isDemoMode) {
-    const dockToStockMinutes = calculateDockToStock();
+    const existing = normalizePutawayRecord(state.putawayLogs.find((log) => String(log.id) === docId) || {
+      id: docId,
+      branchId,
+      employeeName,
+      worker: employeeName,
+      workDate,
+      date: workDate,
+      lines: [],
+      createdAt: line.submittedAt
+    });
+    const lines = [...existing.lines, normalizePutawayLineForSave(line, existing.lines.length)];
     const doc = {
-      id: createLocalId("put"),
-      worker: $("putWorker")?.value || "",
-      date: $("putDate")?.value || "",
-      dockToStockMinutes,
-      timer: { ...state.timer, elapsedMinutes: dockToStockMinutes },
+      ...existing,
+      ...tenantDocumentFields(),
+      id: docId,
+      branchId,
+      employeeName,
+      worker: employeeName,
+      workDate,
+      date: workDate,
       lines,
-      lineCount: lines.length,
-      totalQty: lines.reduce((sum, line) => sum + Number(line.qty || 0), 0),
-      createdAt: new Date().toISOString(),
+      ...putawayRecordTotals(lines),
+      updatedAt: line.submittedAt,
+      submittedAt: line.submittedAt,
+      submittedDate: workDate,
+      submittedTime: line.submittedTime,
       createdBy: state.user?.uid || "",
       createdByEmail: state.user?.email || ""
     };
 
-    state.putawayLogs = sortByCreatedAtDesc([{ ...doc }, ...state.putawayLogs]);
-    appendDemoActivityEntries("putaway", doc, lines);
+    upsertPutawayLogInState(doc);
+    appendDemoActivityEntries("putaway", doc, [line]);
     persistDemoState();
     renderLogs();
     renderHistory();
     renderItemHistory();
-    clearPutawayDraft({ keepStatus: true });
-    clearRows("putawayBody");
-    setPutawayAutosaveStatus("All changes saved");
+    resetPutawayLineAfterSubmit();
     toast("Put away log saved.");
     return;
   }
 
   try {
-    const dockToStockMinutes = calculateDockToStock();
+    const ref = db.collection(COLLECTIONS.putaway).doc(docId);
+    const savedDoc = await db.runTransaction(async (transaction) => {
+      const snap = await transaction.get(ref);
+      const existing = snap.exists ? normalizePutawayRecord({ id: snap.id, ...snap.data() }) : {
+        id: docId,
+        branchId,
+        employeeName,
+        worker: employeeName,
+        workDate,
+        date: workDate,
+        lines: [],
+        createdAt: line.submittedAt
+      };
+      const nextLines = [...(existing.lines || []), normalizePutawayLineForSave(line, existing.lines?.length || 0)];
+      const nextDoc = {
+        ...existing,
+        ...tenantDocumentFields(),
+        id: docId,
+        branchId,
+        employeeName,
+        worker: employeeName,
+        workDate,
+        date: workDate,
+        lines: nextLines,
+        ...putawayRecordTotals(nextLines),
+        createdAt: existing.createdAt || line.submittedAt,
+        updatedAt: line.submittedAt,
+        submittedAt: line.submittedAt,
+        submittedDate: workDate,
+        submittedTime: line.submittedTime,
+        createdBy: existing.createdBy || state.user?.uid || "",
+        createdByEmail: existing.createdByEmail || state.user?.email || "",
+        updatedBy: state.user?.uid || "",
+        updatedByEmail: state.user?.email || ""
+      };
 
-    const doc = {
-      worker: $("putWorker")?.value || "",
-      date: $("putDate")?.value || "",
-      dockToStockMinutes,
-      timer: { ...state.timer, elapsedMinutes: dockToStockMinutes },
-      lines,
-      lineCount: lines.length,
-      totalQty: lines.reduce((s, x) => s + Number(x.qty || 0), 0),
-      createdAt: new Date().toISOString(),
-      createdBy: state.user?.uid || "",
-      createdByEmail: state.user?.email || ""
-    };
+      transaction.set(ref, nextDoc, { merge: true });
+      return nextDoc;
+    });
 
-    const ref = await db.collection(COLLECTIONS.putaway).add(doc);
-    await saveActivityLogs("putaway", doc, lines);
+    await saveActivityLogs("putaway", savedDoc, [line]);
 
-    state.putawayLogs.unshift({ id: ref.id, ...doc });
+    upsertPutawayLogInState(savedDoc);
 
     await loadHistory();
 
     renderLogs();
     renderItemHistory();
-    clearPutawayDraft({ keepStatus: true });
-    clearRows("putawayBody");
-    setPutawayAutosaveStatus("All changes saved");
+    resetPutawayLineAfterSubmit();
 
     toast("Put away log saved.");
   } catch (err) {
@@ -2457,6 +2702,7 @@ function normalizeLeaderboardDate(value) {
 
 function getRecordDate(record) {
   return (
+    normalizeLeaderboardDate(record?.workDate) ||
     normalizeLeaderboardDate(record?.completedDate) ||
     normalizeLeaderboardDate(record?.date) ||
     normalizeLeaderboardDate(record?.timestamp) ||
@@ -2507,7 +2753,7 @@ function numericValue(value, fallback = 0) {
 }
 
 function normalizedLineCount(record) {
-  const savedCount = numericValue(record?.lineCount, NaN);
+  const savedCount = numericValue(record?.totalLines ?? record?.lineCount, NaN);
   if (Number.isFinite(savedCount) && savedCount >= 0) return savedCount;
   return Array.isArray(record?.lines) ? record.lines.length : 0;
 }
@@ -2536,7 +2782,7 @@ function sortLeaderboardRows(rows, primaryField) {
 }
 
 function calculatePutawayStats(records) {
-  const groups = groupRecordsByEmployee(records, ["worker", "employee"]);
+  const groups = groupRecordsByEmployee(records, ["employeeName", "worker", "employee"]);
 
   return sortLeaderboardRows(
     Object.entries(groups).map(([employee, employeeRecords]) => {
@@ -2844,6 +3090,122 @@ function exportLeaderboardCsv() {
    RENDER LOGS
 ---------------------------- */
 
+function buildPutawayDailyGroups(records = state.putawayLogs) {
+  const groupMap = new Map();
+
+  (records || []).forEach((record) => {
+    const normalized = normalizePutawayRecord(record);
+    const key = [
+      normalized.branchId || currentBranchId(),
+      normalizeEmployeeName(normalized.employeeName).toLowerCase(),
+      normalized.workDate
+    ].join("|");
+    const group = groupMap.get(key) || {
+      key,
+      branchId: normalized.branchId || currentBranchId(),
+      employeeName: normalized.employeeName,
+      workDate: normalized.workDate,
+      sourceRecords: [],
+      lines: [],
+      createdAt: normalized.createdAt,
+      updatedAt: normalized.updatedAt
+    };
+
+    group.sourceRecords.push(normalized);
+    normalized.lines.forEach((line, lineIndex) => {
+      group.lines.push({
+        ...line,
+        sourceRecordId: normalized.id,
+        sourceLineIndex: lineIndex
+      });
+    });
+    group.createdAt = [group.createdAt, normalized.createdAt].filter(Boolean).sort()[0] || group.createdAt;
+    group.updatedAt = [group.updatedAt, normalized.updatedAt, normalized.submittedAt].filter(Boolean).sort().pop() || group.updatedAt;
+    groupMap.set(key, group);
+  });
+
+  return [...groupMap.values()]
+    .map((group) => ({
+      ...group,
+      lines: sortPutawayLinesBySubmittedAt(group.lines),
+      totalLines: group.lines.length,
+      totalQty: group.lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
+    }))
+    .sort((a, b) => String(b.workDate || b.updatedAt || "").localeCompare(String(a.workDate || a.updatedAt || "")));
+}
+
+function putawayLineTimestamp(line = {}) {
+  const raw = line.submittedAt || `${line.submittedDate || line.workDate || ""} ${line.submittedTime || ""}`.trim();
+  const date = parseDateValue(raw);
+  return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+}
+
+function sortPutawayLinesBySubmittedAt(lines = []) {
+  return [...lines].sort((a, b) => putawayLineTimestamp(a) - putawayLineTimestamp(b));
+}
+
+function lastPutawaySubmittedAt(group = {}) {
+  return sortPutawayLinesBySubmittedAt(group.lines || []).at(-1)?.submittedAt || group.updatedAt || "";
+}
+
+function formatGapMinutes(minutes) {
+  if (minutes === null || minutes === undefined || Number.isNaN(Number(minutes))) return "-";
+  const rounded = Math.round(Number(minutes));
+  if (rounded < 1) return "<1 min";
+  return `${rounded} min`;
+}
+
+function putawayLinesWithGaps(lines = []) {
+  let previousTimestamp = null;
+  return sortPutawayLinesBySubmittedAt(lines).map((line) => {
+    const timestamp = putawayLineTimestamp(line);
+    const gapMinutes = previousTimestamp && timestamp ? (timestamp - previousTimestamp) / 60000 : null;
+    if (timestamp) previousTimestamp = timestamp;
+    return {
+      ...line,
+      gapMinutes,
+      possibleDowntime: Number(gapMinutes || 0) > 25
+    };
+  });
+}
+
+function readPutawayLogFilters() {
+  state.putawayLogFilters = {
+    employee: $("putawayLogEmployeeFilter")?.value.trim().toLowerCase() || "",
+    start: $("putawayLogStartFilter")?.value || "",
+    end: $("putawayLogEndFilter")?.value || ""
+  };
+  return state.putawayLogFilters;
+}
+
+function filterPutawayGroups(groups = []) {
+  const filters = readPutawayLogFilters();
+  return groups.filter((group) => {
+    const worker = String(group.employeeName || "").toLowerCase();
+    const date = group.workDate || "";
+    if (filters.employee && !worker.includes(filters.employee)) return false;
+    if (filters.start && (!date || date < filters.start)) return false;
+    if (filters.end && (!date || date > filters.end)) return false;
+    return true;
+  });
+}
+
+function clearPutawayLogFilters() {
+  if ($("putawayLogEmployeeFilter")) $("putawayLogEmployeeFilter").value = "";
+  if ($("putawayLogStartFilter")) $("putawayLogStartFilter").value = "";
+  if ($("putawayLogEndFilter")) $("putawayLogEndFilter").value = "";
+  state.putawayLogFilters = { employee: "", start: "", end: "" };
+  renderPutawayLogs();
+}
+
+function putawayPreview(lines) {
+  return (lines || [])
+    .slice(0, 3)
+    .map((line) => `${line.itemNumber || ""} x${line.quantity || 0} @ ${line.binLocation || ""}`)
+    .filter((text) => text.trim() !== "x0 @")
+    .join("; ");
+}
+
 function renderLogs() {
   renderPutawayLogs();
   renderCycleLogs();
@@ -2857,22 +3219,33 @@ function renderPutawayLogs() {
 
   body.innerHTML = "";
 
-  state.putawayLogs.forEach((log) => {
+  state.putawayDailyGroups = buildPutawayDailyGroups();
+  const visibleGroups = filterPutawayGroups(state.putawayDailyGroups);
+
+  if (!visibleGroups.length) {
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="7">No putaway records found for this filter.</td></tr>`);
+    return;
+  }
+
+  visibleGroups.forEach((group) => {
+    const encodedKey = encodeURIComponent(group.key);
     body.insertAdjacentHTML(
       "beforeend",
       `
       <tr>
-        <td>${escapeHtml(log.date || "")}</td>
-        <td>${escapeHtml(log.worker || "")}</td>
-        <td>${log.lineCount || log.lines?.length || 0}</td>
-        <td>${log.totalQty || 0}</td>
-        <td>${log.dockToStockMinutes || 0} min</td>
-        <td>${escapeHtml(
-          (log.lines || [])
-            .slice(0, 3)
-            .map((x) => `${x.item} x${x.qty} @ ${x.location}`)
-            .join(" | ")
-        )}</td>
+        <td>${escapeHtml(group.workDate || "")}</td>
+        <td>${escapeHtml(formatDateTime(lastPutawaySubmittedAt(group)))}</td>
+        <td>${escapeHtml(group.employeeName || "")}</td>
+        <td>${group.totalLines || 0}</td>
+        <td>${group.totalQty || 0}</td>
+        <td>${escapeHtml(putawayPreview(group.lines))}</td>
+        <td>
+          <div class="row-actions">
+            <button type="button" onclick="openPutawayDailyRecord('${encodedKey}', 'view')">View</button>
+            <button type="button" onclick="openPutawayDailyRecord('${encodedKey}', 'edit')">Edit</button>
+            <button type="button" class="danger" onclick="openPutawayDailyRecord('${encodedKey}', 'delete')">Delete</button>
+          </div>
+        </td>
       </tr>
     `
     );
@@ -2978,13 +3351,13 @@ function buildItemHistoryRows() {
     (sessions || []).forEach((session) => {
       (session.lines || []).forEach((line) => {
         fallbackRows.push({
-          date: session.date || String(session.createdAt || "").slice(0, 10),
+          date: session.workDate || session.date || String(session.createdAt || "").slice(0, 10),
           process: processLabel(type),
-          worker: session.worker || session.counter || session.picker || "",
-          item: line.item || "",
+          worker: session.employeeName || session.worker || session.counter || session.picker || "",
+          item: line.item || line.itemNumber || "",
           description: line.description || "",
-          qty: line.qty ?? line.countedQty ?? line.pickedQty ?? "",
-          location: line.location || line.fromSlot || line.slot || "",
+          qty: line.qty ?? line.quantity ?? line.countedQty ?? line.pickedQty ?? "",
+          location: line.location || line.binLocation || line.fromSlot || line.slot || "",
           status: line.status || (Number(line.variance || 0) ? "Variance" : line.done ? "Counted" : ""),
           notes: line.notes || line.reason || "",
           createdAt: session.createdAt || ""
@@ -3238,7 +3611,9 @@ async function saveHistoryEdit() {
 
   if (context.type === "putaway") {
     record.worker = $("historyEditWorker")?.value.trim() || "";
-    record.totalQty = lines.reduce((sum, line) => sum + Number(line.qty || 0), 0);
+    record.employeeName = record.worker;
+    record.totalLines = lines.length;
+    record.totalQty = lines.reduce((sum, line) => sum + Number(line.qty ?? line.quantity ?? 0), 0);
   }
   if (context.type === "cycle") {
     record.counter = $("historyEditWorker")?.value.trim() || "";
@@ -3279,6 +3654,10 @@ async function deleteHistoryRecordByKey(type, id) {
   const key = historyStateKey(type);
   const record = (state[key] || []).find((row) => String(row.id) === String(id));
   if (!record) return;
+  if (type === "putaway") {
+    toast("Use the Putaway Log detail view to delete individual lines.");
+    return;
+  }
   if (!confirm(`Delete ${processLabel(type)} history record?`)) return;
 
   state[key] = state[key].filter((row) => String(row.id) !== String(id));
@@ -3295,8 +3674,156 @@ async function deleteHistoryRecordByKey(type, id) {
   toast("History record deleted.");
 }
 
+function findPutawayDailyGroup(encodedKey) {
+  const key = decodeURIComponent(encodedKey || "");
+  if (!state.putawayDailyGroups.length) state.putawayDailyGroups = buildPutawayDailyGroups();
+  return state.putawayDailyGroups.find((group) => group.key === key);
+}
+
+function openPutawayDailyRecord(encodedKey, mode = "view") {
+  const group = findPutawayDailyGroup(encodedKey);
+  if (!group) return toast("Putaway record not found.");
+
+  state.editingPutawayDaily = { key: group.key, mode };
+
+  if ($("putawayDailyModalTitle")) {
+    $("putawayDailyModalTitle").textContent = `${mode === "view" ? "View" : mode === "edit" ? "Edit" : "Delete"} Putaway Lines`;
+  }
+  if ($("putawayDailyModalSummary")) {
+    $("putawayDailyModalSummary").textContent = `${group.employeeName} - ${group.workDate} - ${group.totalLines} line${group.totalLines === 1 ? "" : "s"}`;
+  }
+
+  renderPutawayDailyModalLines(group, mode);
+  $("putawayDailyModal")?.classList.remove("hidden");
+  $("putawayDailyModal")?.setAttribute("aria-hidden", "false");
+}
+
+function closePutawayDailyModal() {
+  state.editingPutawayDaily = null;
+  $("putawayDailyModal")?.classList.add("hidden");
+  $("putawayDailyModal")?.setAttribute("aria-hidden", "true");
+}
+
+function renderPutawayDailyModalLines(group, mode) {
+  const body = $("putawayDailyLinesBody");
+  if (!body) return;
+  body.innerHTML = "";
+
+  if (!group.lines.length) {
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No saved lines remain for this employee and date.</td></tr>`);
+    return;
+  }
+
+  putawayLinesWithGaps(group.lines).forEach((line, index) => {
+    const rowKey = `${line.sourceRecordId}|${line.sourceLineIndex}`;
+    const actionCell = mode === "view"
+      ? ""
+      : mode === "edit"
+        ? `<button type="button" class="primary" onclick="savePutawayDailyLine('${escapeHtml(line.sourceRecordId)}', ${Number(line.sourceLineIndex)})">Save Line</button>`
+        : `<button type="button" class="danger" onclick="deletePutawayDailyLine('${escapeHtml(line.sourceRecordId)}', ${Number(line.sourceLineIndex)})">Delete Line</button>`;
+    const valueCell = (field, value, type = "text") => {
+      if (mode === "view" || mode === "delete") return escapeHtml(value);
+      return `<input id="putawayLine_${escapeHtml(rowKey)}_${field}" type="${type}" value="${escapeHtml(value)}" />`;
+    };
+
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
+      <tr class="${line.possibleDowntime ? "downtime-flag" : ""}">
+        <td>${index + 1}</td>
+        <td>${valueCell("item", line.itemNumber)}</td>
+        <td>${valueCell("qty", line.quantity, "number")}</td>
+        <td>${valueCell("bin", line.binLocation)}</td>
+        <td>${escapeHtml(formatDateTime(line.submittedAt))}</td>
+        <td>${escapeHtml(line.submittedTime || formatSubmittedTime(line.submittedAt))}</td>
+        <td>
+          <span class="${line.possibleDowntime ? "gap-badge alert" : "gap-badge"}">${escapeHtml(formatGapMinutes(line.gapMinutes))}</span>
+          ${line.possibleDowntime ? `<span class="downtime-label">Possible downtime</span>` : ""}
+        </td>
+        <td>
+          ${mode === "edit" ? valueCell("notes", line.notes) : escapeHtml(line.notes || "")}
+          <div class="row-actions putaway-line-actions">${actionCell}</div>
+        </td>
+      </tr>
+    `
+    );
+  });
+}
+
+function findPutawayRecord(recordId) {
+  return state.putawayLogs.find((record) => String(record.id) === String(recordId));
+}
+
+async function updatePutawayRecordLines(recordId, updateFn) {
+  const record = findPutawayRecord(recordId);
+  if (!record) return toast("Putaway record not found.");
+
+  const normalized = normalizePutawayRecord(record);
+  const nextLines = updateFn([...(normalized.lines || [])]).map(normalizePutawayLineForSave);
+  const now = new Date().toISOString();
+  const updated = {
+    ...normalized,
+    ...tenantDocumentFields(),
+    lines: nextLines,
+    ...putawayRecordTotals(nextLines),
+    updatedAt: now,
+    updatedBy: state.user?.uid || "",
+    updatedByEmail: state.user?.email || ""
+  };
+
+  const index = state.putawayLogs.findIndex((row) => String(row.id) === String(recordId));
+  if (index >= 0) state.putawayLogs[index] = updated;
+
+  if (state.isDemoMode) {
+    persistDemoState();
+  } else {
+    await db.collection(COLLECTIONS.putaway).doc(recordId).set(updated, { merge: true });
+  }
+
+  renderLogs();
+  renderHistory();
+  renderItemHistory();
+  renderLeaderboard();
+
+  if (state.editingPutawayDaily) {
+    const group = findPutawayDailyGroup(encodeURIComponent(state.editingPutawayDaily.key));
+    if (group) {
+      renderPutawayDailyModalLines(group, state.editingPutawayDaily.mode);
+      if ($("putawayDailyModalSummary")) {
+        $("putawayDailyModalSummary").textContent = `${group.employeeName} - ${group.workDate} - ${group.totalLines} line${group.totalLines === 1 ? "" : "s"}`;
+      }
+    }
+  }
+}
+
+async function savePutawayDailyLine(recordId, lineIndex) {
+  const rowKey = `${recordId}|${lineIndex}`;
+  await updatePutawayRecordLines(recordId, (lines) => {
+    if (!lines[lineIndex]) return lines;
+    lines[lineIndex] = normalizePutawayLineForSave({
+      ...lines[lineIndex],
+      itemNumber: $(`putawayLine_${rowKey}_item`)?.value || "",
+      quantity: $(`putawayLine_${rowKey}_qty`)?.value || 0,
+      binLocation: $(`putawayLine_${rowKey}_bin`)?.value || "",
+      notes: $(`putawayLine_${rowKey}_notes`)?.value || ""
+    }, lineIndex);
+    return lines;
+  });
+  toast("Putaway line updated.");
+}
+
+async function deletePutawayDailyLine(recordId, lineIndex) {
+  if (!confirm("Delete this putaway line?")) return;
+  await updatePutawayRecordLines(recordId, (lines) => lines.filter((_, index) => index !== Number(lineIndex)));
+  toast("Putaway line deleted.");
+}
+
 window.openHistoryRecord = openHistoryRecord;
 window.deleteHistoryRecordByKey = deleteHistoryRecordByKey;
+window.buildPutawayDailyGroups = buildPutawayDailyGroups;
+window.openPutawayDailyRecord = openPutawayDailyRecord;
+window.savePutawayDailyLine = savePutawayDailyLine;
+window.deletePutawayDailyLine = deletePutawayDailyLine;
 
 /* ---------------------------
    CYCLE COUNT PRODUCTION
@@ -4107,12 +4634,21 @@ function flattenSessions(sessions, type) {
   const out = [];
 
   sessions.forEach((session) => {
-    (session.lines || []).forEach((line) => {
+    const normalizedSession = type === "putaway" ? normalizePutawayRecord(session) : session;
+    const lines = type === "putaway" ? putawayLinesWithGaps(normalizedSession.lines || []) : (normalizedSession.lines || []);
+    lines.forEach((line) => {
       out.push({
         type,
-        sessionDate: session.date,
-        worker: session.worker || session.counter || session.picker,
-        dockToStockMinutes: session.dockToStockMinutes || "",
+        sessionDate: normalizedSession.workDate || normalizedSession.date,
+        worker: line.employeeName || normalizedSession.employeeName || normalizedSession.worker || normalizedSession.counter || normalizedSession.picker,
+        item: line.item || line.itemNumber || "",
+        qty: line.qty ?? line.quantity ?? "",
+        location: line.location || line.binLocation || "",
+        submittedDate: line.submittedDate || normalizedSession.workDate || normalizedSession.date || "",
+        submittedAt: line.submittedAt || "",
+        submittedTime: line.submittedTime || "",
+        gapMinutes: line.gapMinutes ?? "",
+        possibleDowntime: line.possibleDowntime ? "Yes" : "",
         ...line
       });
     });

@@ -72,11 +72,24 @@ service cloud.firestore {
     }
 
     function hasPutawaySubmitFields() {
-      return request.resource.data.worker is string &&
-        request.resource.data.worker.size() > 0 &&
-        request.resource.data.submittedAt is string &&
-        request.resource.data.submittedDate is string &&
-        request.resource.data.submittedTime is string;
+      return (
+          request.resource.data.worker is string &&
+          request.resource.data.worker.size() > 0 &&
+          request.resource.data.submittedAt is string &&
+          request.resource.data.submittedDate is string &&
+          request.resource.data.submittedTime is string
+        ) ||
+        (
+          request.resource.data.branchId is string &&
+          request.resource.data.employeeName is string &&
+          request.resource.data.employeeName.size() > 0 &&
+          request.resource.data.workDate is string &&
+          request.resource.data.createdAt is string &&
+          request.resource.data.updatedAt is string &&
+          request.resource.data.totalLines is number &&
+          request.resource.data.totalQty is number &&
+          request.resource.data.lines is list
+        );
     }
 
     function mySite() {
@@ -132,7 +145,8 @@ service cloud.firestore {
     match /putAwayLogs/{logId} {
       allow read: if isMyTenant(resource.data);
       allow create: if signedIn() && !isReceiverTemp() && createsMyTenant() && hasPutawaySubmitFields();
-      allow update, delete: if isAdmin() && keepsMyTenant();
+      allow update: if signedIn() && !isReceiverTemp() && keepsMyTenant() && hasPutawaySubmitFields();
+      allow delete: if isAdmin() && keepsMyTenant();
     }
 
     // RECEIVING LINE ENTRY
