@@ -2209,6 +2209,20 @@ function putawayDailyDocId(branchId, employeeName, workDate) {
   return [branchId, sanitizeDailyDocPart(employeeName) || "unknown_employee", workDate].join("_");
 }
 
+function putawayLineSubmissionDocId(branchId, employeeName, workDate, submittedAt) {
+  const submittedKey = String(submittedAt || new Date().toISOString())
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "");
+  const randomKey = Math.random().toString(36).slice(2, 8);
+  return [putawayDailyDocId(branchId, employeeName, workDate), submittedKey, randomKey].join("_");
+}
+
+function isPermissionDeniedError(err) {
+  const code = String(err?.code || "").toLowerCase();
+  const message = String(err?.message || "").toLowerCase();
+  return code.includes("permission-denied") || message.includes("permission") || message.includes("insufficient permissions");
+}
+
 function normalizePutawayLine(line = {}, index = 0, record = {}) {
   const submittedAt = line.submittedAt || line.createdAt || record.submittedAt || record.createdAt || "";
   const workDate =
@@ -2338,6 +2352,46 @@ function buildSubmittedPutawayLine(rawLine, context = {}) {
   };
 }
 
+function buildPutawayDocumentFromLines({ id, branchId, employeeName, workDate, lines, createdAt }) {
+  const normalizedLines = lines.map((entry, index) => normalizePutawayLineForSave(entry, index));
+  const latestLine = normalizedLines[normalizedLines.length - 1] || {};
+  return {
+    ...tenantDocumentFields(),
+    id,
+    branchId,
+    employeeName,
+    worker: employeeName,
+    workDate,
+    date: workDate,
+    lines: normalizedLines,
+    ...putawayRecordTotals(normalizedLines),
+    createdAt: createdAt || latestLine.submittedAt || new Date().toISOString(),
+    updatedAt: latestLine.submittedAt || new Date().toISOString(),
+    submittedAt: latestLine.submittedAt || "",
+    submittedDate: workDate,
+    submittedTime: latestLine.submittedTime || "",
+    createdBy: state.user?.uid || "",
+    createdByEmail: state.user?.email || "",
+    updatedBy: state.user?.uid || "",
+    updatedByEmail: state.user?.email || ""
+  };
+}
+
+async function savePutawayCreateOnlyFallback({ branchId, employeeName, workDate, line }) {
+  const id = putawayLineSubmissionDocId(branchId, employeeName, workDate, line.submittedAt);
+  const doc = buildPutawayDocumentFromLines({
+    id,
+    branchId,
+    employeeName,
+    workDate,
+    lines: [line],
+    createdAt: line.submittedAt
+  });
+
+  await db.collection(COLLECTIONS.putaway).doc(id).set(doc);
+  return doc;
+}
+
 function collectPutawayLines() {
   return [...document.querySelectorAll("#putawayBody tr")]
     .map((row, idx) => ({
@@ -2440,47 +2494,46 @@ async function savePutaway() {
   }
 
   try {
-    const ref = db.collection(COLLECTIONS.putaway).doc(docId);
-    const savedDoc = await db.runTransaction(async (transaction) => {
-      const snap = await transaction.get(ref);
-      const existing = snap.exists ? normalizePutawayRecord({ id: snap.id, ...snap.data() }) : {
-        id: docId,
-        branchId,
-        employeeName,
-        worker: employeeName,
-        workDate,
-        date: workDate,
-        lines: [],
-        createdAt: line.submittedAt
-      };
-      const nextLines = [...(existing.lines || []), normalizePutawayLineForSave(line, existing.lines?.length || 0)];
-      const nextDoc = {
-        ...existing,
-        ...tenantDocumentFields(),
-        id: docId,
-        branchId,
-        employeeName,
-        worker: employeeName,
-        workDate,
-        date: workDate,
-        lines: nextLines,
-        ...putawayRecordTotals(nextLines),
-        createdAt: existing.createdAt || line.submittedAt,
-        updatedAt: line.submittedAt,
-        submittedAt: line.submittedAt,
-        submittedDate: workDate,
-        submittedTime: line.submittedTime,
-        createdBy: existing.createdBy || state.user?.uid || "",
-        createdByEmail: existing.createdByEmail || state.user?.email || "",
-        updatedBy: state.user?.uid || "",
-        updatedByEmail: state.user?.email || ""
-      };
+    let savedDoc;
 
-      transaction.set(ref, nextDoc, { merge: true });
-      return nextDoc;
-    });
+    try {
+      const ref = db.collection(COLLECTIONS.putaway).doc(docId);
+      savedDoc = await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(ref);
+        const existing = snap.exists ? normalizePutawayRecord({ id: snap.id, ...snap.data() }) : {
+          id: docId,
+          branchId,
+          employeeName,
+          worker: employeeName,
+          workDate,
+          date: workDate,
+          lines: [],
+          createdAt: line.submittedAt
+        };
+        const nextLines = [...(existing.lines || []), normalizePutawayLineForSave(line, existing.lines?.length || 0)];
+        const nextDoc = buildPutawayDocumentFromLines({
+          id: docId,
+          branchId,
+          employeeName,
+          workDate,
+          lines: nextLines,
+          createdAt: existing.createdAt || line.submittedAt
+        });
 
-    await saveActivityLogs("putaway", savedDoc, [line]);
+        transaction.set(ref, nextDoc, { merge: true });
+        return nextDoc;
+      });
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+      console.warn("Daily putaway append denied; saving as a new line document.", err);
+      savedDoc = await savePutawayCreateOnlyFallback({ branchId, employeeName, workDate, line });
+    }
+
+    try {
+      await saveActivityLogs("putaway", savedDoc, [line]);
+    } catch (err) {
+      console.warn("Putaway saved, but activity log write failed.", err);
+    }
 
     upsertPutawayLogInState(savedDoc);
 
