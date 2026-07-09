@@ -28,6 +28,15 @@ service cloud.firestore {
         myRole() in ['admin', 'lead', 'platformOwner'];
     }
 
+    function isManager() {
+      return signedIn() &&
+        myRole() == 'manager';
+    }
+
+    function canManageHistory() {
+      return isAdmin() || isManager();
+    }
+
     function isReceiverTemp() {
       return signedIn() &&
         myRole() == 'receiverTemp';
@@ -51,6 +60,33 @@ service cloud.firestore {
       return request.resource.data.createdAt is string &&
         request.resource.data.createdBy is string &&
         request.resource.data.createdByEmail is string;
+    }
+
+    function hasValidPutawayLog() {
+      return hasCreatedFields() &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.worker is string &&
+        request.resource.data.date is string &&
+        request.resource.data.putawayNumber is string &&
+        request.resource.data.putawayNumber.size() > 0 &&
+        request.resource.data.status in ['Completed', 'Pending Review', 'Imported'] &&
+        request.resource.data.lines is list &&
+        request.resource.data.lines.size() > 0 &&
+        request.resource.data.lineCount is int &&
+        request.resource.data.lineCount > 0;
+    }
+
+    function hasValidPutawayActivity() {
+      return hasCreatedFields() &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.type == 'putaway' &&
+        request.resource.data.item is string &&
+        request.resource.data.item.size() > 0 &&
+        request.resource.data.putawayNumber is string &&
+        request.resource.data.putawayNumber.size() > 0 &&
+        request.resource.data.sourceCollection == 'putAwayLogs' &&
+        request.resource.data.sourceId is string &&
+        request.resource.data.status in ['Completed', 'Pending Review', 'Imported'];
     }
 
     function mySite() {
@@ -117,9 +153,9 @@ service cloud.firestore {
     match /putAwayLogs/{logId} {
       allow read: if signedIn();
 
-      allow create: if signedIn() && !isReceiverTemp();
+      allow create: if signedIn() && !isReceiverTemp() && hasValidPutawayLog();
 
-      allow update, delete: if isAdmin();
+      allow update, delete: if canManageHistory();
     }
 
     // RECEIVING LINE ENTRY
@@ -202,9 +238,13 @@ service cloud.firestore {
     match /activityLogs/{activityId} {
       allow read: if signedIn();
 
-      allow create: if signedIn();
+      allow create: if signedIn() &&
+        (
+          hasValidPutawayActivity() ||
+          request.resource.data.type != 'putaway'
+        );
 
-      allow update, delete: if isAdmin();
+      allow update, delete: if canManageHistory();
     }
 
     // AUDIT LOGS

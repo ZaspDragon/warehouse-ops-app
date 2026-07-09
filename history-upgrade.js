@@ -1,8 +1,7 @@
 (function () {
-  const PROCESS_TYPES = ["putaway", "cycle", "picking"];
+  const PROCESS_TYPES = ["putaway", "picking"];
   const filters = {
-    putaway: { start: "", end: "" },
-    cycle: { start: "", end: "" },
+    putaway: { start: "", end: "", worker: "", item: "", putawayNumber: "", status: "" },
     picking: { start: "", end: "" }
   };
 
@@ -74,7 +73,7 @@
     if (typeof state === "undefined") return;
 
     state.putawayLogs = sortByCompletedDateDesc((state.putawayLogs || []).map(withCompletedDate));
-    state.cycleSessions = sortByCompletedDateDesc((state.cycleSessions || []).map(withCompletedDate));
+    state.cycleSessions = [];
     state.pickingSessions = sortByCompletedDateDesc((state.pickingSessions || []).map(withCompletedDate));
 
     if (state.isDemoMode && typeof persistDemoState === "function") {
@@ -89,7 +88,7 @@
     window.db.collection = function patchedCollection(name) {
       const collectionRef = originalCollection(name);
 
-      if (!["putAwayLogs", "cycleCountSessions", "orderPickingSessions", "activityLogs"].includes(name)) {
+      if (!["putAwayLogs", "orderPickingSessions", "activityLogs"].includes(name)) {
         return collectionRef;
       }
 
@@ -125,14 +124,12 @@
 
   function selectedFormDateForCollection(collectionName) {
     if (collectionName === "putAwayLogs") return normalizeDate($("putDate")?.value);
-    if (collectionName === "cycleCountSessions") return normalizeDate($("cycleDate")?.value);
     if (collectionName === "orderPickingSessions") return normalizeDate($("pickDate")?.value);
     return "";
   }
 
   function installSaveWrappers() {
     wrapSave("savePutawayBtn", "savePutaway");
-    wrapSave("saveCycleBtn", "saveCycle");
     wrapSave("savePickingBtn", "savePicking");
   }
 
@@ -164,7 +161,11 @@
         const type = button.dataset.historyType;
         filters[type] = {
           start: normalizeDate($(`${type}HistoryStart`)?.value),
-          end: normalizeDate($(`${type}HistoryEnd`)?.value)
+          end: normalizeDate($(`${type}HistoryEnd`)?.value),
+          worker: $(`${type}HistoryWorker`)?.value.trim().toLowerCase() || "",
+          item: $(`${type}HistoryItem`)?.value.trim().toLowerCase() || "",
+          putawayNumber: $(`${type}HistoryNumber`)?.value.trim().toLowerCase() || "",
+          status: $(`${type}HistoryStatus`)?.value || ""
         };
         renderHistory();
       });
@@ -173,9 +174,13 @@
     document.querySelectorAll(".historyClearBtn").forEach((button) => {
       button.addEventListener("click", () => {
         const type = button.dataset.historyType;
-        filters[type] = { start: "", end: "" };
+        filters[type] = { start: "", end: "", worker: "", item: "", putawayNumber: "", status: "" };
         if ($(`${type}HistoryStart`)) $(`${type}HistoryStart`).value = "";
         if ($(`${type}HistoryEnd`)) $(`${type}HistoryEnd`).value = "";
+        if ($(`${type}HistoryWorker`)) $(`${type}HistoryWorker`).value = "";
+        if ($(`${type}HistoryItem`)) $(`${type}HistoryItem`).value = "";
+        if ($(`${type}HistoryNumber`)) $(`${type}HistoryNumber`).value = "";
+        if ($(`${type}HistoryStatus`)) $(`${type}HistoryStatus`).value = "";
         renderHistory();
       });
     });
@@ -208,7 +213,6 @@
       try {
         await Promise.all([
           originalLoadCollection(COLLECTIONS.putaway, "putawayLogs"),
-          originalLoadCollection(COLLECTIONS.cycle, "cycleSessions"),
           originalLoadCollection(COLLECTIONS.picking, "pickingSessions")
         ]);
 
@@ -252,7 +256,6 @@
   function filteredRecords(type) {
     const source = {
       putaway: state?.putawayLogs || [],
-      cycle: state?.cycleSessions || [],
       picking: state?.pickingSessions || []
     }[type] || [];
 
@@ -274,35 +277,82 @@
   function renderHistory() {
     if (typeof state === "undefined") return;
     renderPutawayHistory();
-    renderCycleHistory();
     renderPickingHistory();
+  }
+
+  function buildPutawayLineRows() {
+    return sortByCompletedDateDesc(state?.putawayLogs || []).flatMap((log) => {
+      const lines = Array.isArray(log.lines) ? log.lines : [];
+      const sessionDate = getCompletedDate(log);
+      const putawayNumber = log.putawayNumber || log.sheetNumber || "";
+      return lines.map((line) => ({
+        completedDate: sessionDate,
+        date: log.date || sessionDate,
+        worker: log.worker || "",
+        workerUid: log.workerUid || log.createdBy || "",
+        workerEmail: log.workerEmail || log.createdByEmail || "",
+        putawayNumber,
+        sourceId: log.id || "",
+        line: line.line || "",
+        item: line.item || "",
+        qty: Number(line.qty || 0),
+        location: line.location || "",
+        status: line.status || log.status || "",
+        dockToStockMinutes: Number(log.dockToStockMinutes || 0),
+        notes: line.notes || "",
+        timestamp: line.timestamp || log.timestamp || log.createdAt || "",
+        createdAt: log.createdAt || "",
+        dedupeKey: line.dedupeKey || ""
+      }));
+    });
+  }
+
+  function filteredPutawayRows() {
+    const filter = filters.putaway || {};
+    let min = normalizeDate(filter.start);
+    let max = normalizeDate(filter.end);
+
+    if (min && !max) max = min;
+    if (!min && max) min = max;
+
+    return buildPutawayLineRows().filter((row) => {
+      const completedDate = normalizeDate(row.completedDate);
+      if (min && completedDate < min) return false;
+      if (max && completedDate > max) return false;
+      if (filter.worker && !String(row.worker || "").toLowerCase().includes(filter.worker)) return false;
+      if (filter.item && !String(row.item || "").toLowerCase().includes(filter.item)) return false;
+      if (filter.putawayNumber && !String(row.putawayNumber || "").toLowerCase().includes(filter.putawayNumber)) return false;
+      if (filter.status && String(row.status || "") !== filter.status) return false;
+      return true;
+    });
   }
 
   function renderPutawayHistory() {
     const body = $("putawayHistoryBody");
     if (!body) return;
 
-    const records = filteredRecords("putaway");
+    const rows = filteredPutawayRows();
     body.innerHTML = "";
 
-    if (!records.length) {
-      body.insertAdjacentHTML("beforeend", `<tr><td colspan="7">No Put Away Log records found for this date range.</td></tr>`);
+    if (!rows.length) {
+      body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No Put Away Log records found for these filters.</td></tr>`);
       return;
     }
 
-    records.forEach((log) => {
-      const lines = Array.isArray(log.lines) ? log.lines : [];
+    rows.forEach((row) => {
       body.insertAdjacentHTML(
         "beforeend",
         `
         <tr>
-          <td>${escapeHtml(getCompletedDate(log))}</td>
-          <td>${escapeHtml(log.worker || "")}</td>
-          <td>${Number(log.lineCount || lines.length || 0)}</td>
-          <td>${Number(log.totalQty || sumBy(lines, "qty"))}</td>
-          <td>${Number(log.dockToStockMinutes || 0)}</td>
-          <td>${escapeHtml(previewLines(lines, (line) => `${line.item || ""} x${line.qty || 0} @ ${line.location || ""}`))}</td>
-          <td>${historyActions("putaway", log.id)}</td>
+          <td>${escapeHtml(row.completedDate)}</td>
+          <td>${escapeHtml(row.worker)}</td>
+          <td>${escapeHtml(row.putawayNumber)}</td>
+          <td>${escapeHtml(row.item)}</td>
+          <td>${escapeHtml(row.qty)}</td>
+          <td>${escapeHtml(row.status)}</td>
+          <td>${Number(row.dockToStockMinutes || 0)}</td>
+          <td>${escapeHtml(row.notes)}</td>
+          <td>${historyActions("putaway", row.sourceId)}</td>
         </tr>
       `
       );
@@ -381,7 +431,6 @@
   function exportProcessHistory(type) {
     const builders = {
       putaway: buildPutawayRows,
-      cycle: buildCycleRows,
       picking: buildPickingRows
     };
 
@@ -392,17 +441,24 @@
   }
 
   function buildPutawayRows() {
-    return filteredRecords("putaway").map((log) => {
-      const lines = Array.isArray(log.lines) ? log.lines : [];
-      return {
-        completedDate: getCompletedDate(log),
-        worker: log.worker || "",
-        lines: Number(log.lineCount || lines.length || 0),
-        totalQty: Number(log.totalQty || sumBy(lines, "qty")),
-        dockToStockMinutes: Number(log.dockToStockMinutes || 0),
-        details: previewLines(lines, (line) => `${line.item || ""} x${line.qty || 0} @ ${line.location || ""}`)
-      };
-    });
+    return filteredPutawayRows().map((row) => ({
+      completedDate: row.completedDate,
+      date: row.date,
+      employee: row.worker,
+      employeeUid: row.workerUid,
+      employeeEmail: row.workerEmail,
+      putawayNumber: row.putawayNumber,
+      sourceId: row.sourceId,
+      line: row.line,
+      item: row.item,
+      qty: row.qty,
+      location: row.location,
+      status: row.status,
+      notes: row.notes,
+      dockToStockMinutes: row.dockToStockMinutes,
+      timestamp: row.timestamp,
+      dedupeKey: row.dedupeKey
+    }));
   }
 
   function buildCycleRows() {
@@ -459,11 +515,12 @@
     if (!id) return "";
     const safeType = escapeHtml(type);
     const safeId = escapeHtml(id);
+    const canManage = typeof window.canManageHistory === "function" && window.canManageHistory();
     return `
       <div class="row-actions">
         <button type="button" onclick="openHistoryRecord('${safeType}', '${safeId}', 'view')">View</button>
-        <button type="button" onclick="openHistoryRecord('${safeType}', '${safeId}', 'edit')">Edit</button>
-        <button type="button" class="danger" onclick="deleteHistoryRecordByKey('${safeType}', '${safeId}')">Delete</button>
+        ${canManage ? `<button type="button" onclick="openHistoryRecord('${safeType}', '${safeId}', 'edit')">Edit</button>` : ""}
+        ${canManage ? `<button type="button" class="danger" onclick="deleteHistoryRecordByKey('${safeType}', '${safeId}')">Delete</button>` : ""}
       </div>
     `;
   }

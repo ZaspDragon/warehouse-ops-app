@@ -39,7 +39,7 @@
   <header class="topbar">
     <div>
       <h1>WarehouseOS</h1>
-      <p>Put Away · Cycle Count · Order Picking · Employees · History</p>
+      <p>Put Away · Order Picking · Employees · History</p>
     </div>
 
     <div class="top-actions">
@@ -107,8 +107,8 @@
 
       <nav class="tabs">
         <button class="tab active" data-tab="putaway">Put Away Log</button>
-        <button class="tab" data-tab="cycle">Cycle Count</button>
         <button class="tab" data-tab="picking">Order Picking</button>
+        <button class="tab" data-tab="leaderboard">Leaderboard</button>
         <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
         <button class="tab" data-tab="history">History</button>
@@ -152,8 +152,19 @@
               <input id="putWorker" list="workerOptions" placeholder="Worker name" />
             </label>
 
+            <label>Put Away / Sheet #
+              <input id="putSheetNumber" placeholder="Sheet or putaway number" />
+            </label>
+
             <label>Date
               <input id="putDate" type="date" />
+            </label>
+
+            <label>Status
+              <select id="putStatus">
+                <option value="Completed">Completed</option>
+                <option value="Pending Review">Pending Review</option>
+              </select>
             </label>
           </div>
 
@@ -163,11 +174,11 @@
             <div><strong id="dockToStockSheetStat">0</strong><span>Dock-To-Stock Min</span></div>
           </div>
 
-          <div class="table-wrap">
+          <div class="table-wrap workflow-entry-table">
             <table>
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Line #</th>
                   <th>Item #</th>
                   <th>Qty</th>
                   <th>Location</th>
@@ -181,6 +192,7 @@
           <div class="actions">
             <button id="savePutawayBtn" class="primary">Submit Put Away</button>
             <button id="clearPutawayBtn">Clear Form</button>
+            <span id="putawaySaveStatus" class="putaway-save-status" aria-live="polite"></span>
           </div>
         </div>
 
@@ -201,105 +213,6 @@
                 </tr>
               </thead>
               <tbody id="putawayLogBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- CYCLE COUNT -->
-      <section id="cycleTab" class="tab-panel">
-        <div class="card">
-          <h2>Cycle Count Worksheet — 25 Lines</h2>
-
-          <div class="grid">
-            <label>Counter
-              <select id="cycleWorker"></select>
-            </label>
-
-            <label>Stock Count ID
-              <input id="cycleId" placeholder="COUNT-001" />
-            </label>
-
-            <label>Date
-              <input id="cycleDate" type="date" />
-            </label>
-          </div>
-
-          <div class="upload-card">
-            <h3>Upload Cycle Count Sheet</h3>
-            <p class="hint">Upload .xlsx, .xls, or .csv. The worksheet stays editable after import.</p>
-            <div class="actions">
-              <input id="cycleFileUpload" type="file" accept=".xlsx,.xls,.csv,.pdf" />
-              <button id="loadCycleFileBtn" class="primary">Load Cycle Count</button>
-              <button id="exportCurrentCycleBtn">Export Current Count Sheet</button>
-            </div>
-            <p id="cycleUploadMessage" class="message"></p>
-          </div>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Item #</th>
-                  <th>Description</th>
-                  <th>Location</th>
-                  <th>System Qty</th>
-                  <th>Counted Qty</th>
-                  <th>Variance</th>
-                  <th>Reason</th>
-                  <th>Done</th>
-                </tr>
-              </thead>
-              <tbody id="cycleBody"></tbody>
-            </table>
-          </div>
-
-          <div class="stats">
-            <div><strong id="cycleRows">0</strong><span>Rows Used</span></div>
-            <div><strong id="cycleDone">0</strong><span>Done</span></div>
-            <div><strong id="cycleVariance">0</strong><span>Variance Lines</span></div>
-          </div>
-
-          <h3>Auto Totals by Item</h3>
-
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>System Total</th>
-                  <th>Counted Total</th>
-                  <th>Variance</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="cycleSummaryBody"></tbody>
-            </table>
-          </div>
-
-          <div class="actions">
-            <button id="saveCycleBtn" class="primary">Save Cycle Count</button>
-            <button id="clearCycleBtn">Clear Form</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>Saved Cycle Counts</h3>
-          <button class="exportBtn" data-export="cycle">Export CSV</button>
-
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Counter</th>
-                  <th>Count ID</th>
-                  <th>Lines</th>
-                  <th>Variance Lines</th>
-                </tr>
-              </thead>
-              <tbody id="cycleLogBody"></tbody>
             </table>
           </div>
         </div>
@@ -339,11 +252,11 @@
             <p id="uploadMessage" class="message"></p>
           </div>
 
-          <div class="table-wrap">
+          <div class="table-wrap workflow-entry-table">
             <table>
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Line #</th>
                   <th>Item #</th>
                   <th>Description</th>
                   <th>From Slot</th>
@@ -411,6 +324,59 @@
         </div>
       </section>
 
+      <!-- LEADERBOARD -->
+      <section id="leaderboardTab" class="tab-panel">
+        <div class="card leaderboard-card">
+          <div class="section-heading">
+            <div>
+              <h2>Leaderboard</h2>
+              <p class="hint">Rankings use saved Put Away and Transfer Order records.</p>
+            </div>
+            <button id="exportLeaderboardBtn" class="primary">Export CSV</button>
+          </div>
+
+          <nav class="leaderboard-tabs" aria-label="Leaderboard categories">
+            <button class="leaderboard-tab active" data-leaderboard-view="putaway">Putaway</button>
+            <button class="leaderboard-tab" data-leaderboard-view="transfer">Transfer Orders</button>
+            <button class="leaderboard-tab" data-leaderboard-view="overall">Overall</button>
+          </nav>
+
+          <div class="leaderboard-filters">
+            <label>Date Range
+              <select id="leaderboardRangePreset">
+                <option value="today">Today</option>
+                <option value="week">This week</option>
+                <option value="month">This month</option>
+                <option value="custom">Custom date range</option>
+                <option value="all">Overall / all time</option>
+              </select>
+            </label>
+            <label>Start Date
+              <input id="leaderboardStartDate" type="date" disabled />
+            </label>
+            <label>End Date
+              <input id="leaderboardEndDate" type="date" disabled />
+            </label>
+            <label>Employee Search
+              <input id="leaderboardSearch" placeholder="Filter by employee name" />
+            </label>
+          </div>
+
+          <div class="leaderboard-summary stats">
+            <div><strong id="leaderboardEmployeeCount">0</strong><span>Employees Ranked</span></div>
+            <div><strong id="leaderboardRecordCount">0</strong><span>Records Included</span></div>
+            <div><strong id="leaderboardRangeLabel">Today</strong><span>Date Range</span></div>
+          </div>
+
+          <div class="table-wrap leaderboard-table-wrap">
+            <table id="leaderboardTable">
+              <thead id="leaderboardTableHead"></thead>
+              <tbody id="leaderboardTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <!-- ITEM HISTORY -->
       <section id="itemHistoryTab" class="tab-panel">
         <div class="card">
@@ -430,7 +396,6 @@
               <select id="itemHistoryProcess">
                 <option value="">All Processes</option>
                 <option value="putaway">Put Away</option>
-                <option value="cycleCount">Cycle Count</option>
                 <option value="orderPicking">Order Picking</option>
                 <option value="receiving">Receiving</option>
               </select>
@@ -480,7 +445,6 @@
             <label>Role
               <select id="employeeRole">
                 <option>Put Away</option>
-                <option>Cycle Count</option>
                 <option>Order Picking</option>
                 <option>Lead</option>
               </select>
@@ -521,7 +485,6 @@
 
           <nav class="history-tabs">
             <button class="history-tab active" data-history-tab="putaway">Put Away Log</button>
-            <button class="history-tab" data-history-tab="cycle">Cycle Count</button>
             <button class="history-tab" data-history-tab="picking">Order Picking</button>
           </nav>
 
@@ -532,6 +495,22 @@
               </label>
               <label>End Date
                 <input id="putawayHistoryEnd" type="date" />
+              </label>
+              <label>Employee
+                <input id="putawayHistoryWorker" placeholder="Employee name" />
+              </label>
+              <label>Item #
+                <input id="putawayHistoryItem" placeholder="Item number" />
+              </label>
+              <label>Put Away #
+                <input id="putawayHistoryNumber" placeholder="Sheet number" />
+              </label>
+              <label>Status
+                <select id="putawayHistoryStatus">
+                  <option value="">All statuses</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Pending Review">Pending Review</option>
+                </select>
               </label>
               <div class="actions">
                 <button class="historyFilterBtn primary" data-history-type="putaway">Search / Filter</button>
@@ -546,49 +525,16 @@
                   <tr>
                     <th>Completed Date</th>
                     <th>Worker</th>
-                    <th>Lines</th>
-                    <th>Total Qty</th>
+                    <th>Put Away #</th>
+                    <th>Item #</th>
+                    <th>Qty</th>
+                    <th>Status</th>
                     <th>Dock-to-Stock Minutes</th>
-                    <th>Preview / Details</th>
+                    <th>Notes</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="putawayHistoryBody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="cycleHistoryPanel" class="history-panel">
-            <div class="history-toolbar">
-              <label>Start Date
-                <input id="cycleHistoryStart" type="date" />
-              </label>
-              <label>End Date
-                <input id="cycleHistoryEnd" type="date" />
-              </label>
-              <div class="actions">
-                <button class="historyFilterBtn primary" data-history-type="cycle">Search / Filter</button>
-                <button class="historyClearBtn" data-history-type="cycle">Clear Filter</button>
-                <button class="historyExportBtn" data-history-type="cycle">Export Cycle Count History CSV</button>
-              </div>
-            </div>
-
-            <div class="table-wrap small history-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Completed Date</th>
-                    <th>Counter</th>
-                    <th>Stock Count ID</th>
-                    <th>Lines Counted</th>
-                    <th>Variance Lines</th>
-                    <th>Total Variance</th>
-                    <th>Status</th>
-                    <th>Preview / Details</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="cycleHistoryBody"></tbody>
               </table>
             </div>
           </section>
