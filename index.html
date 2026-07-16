@@ -136,12 +136,14 @@
               <select id="putStatus">
                 <option value="Completed">Completed</option>
                 <option value="Pending Review">Pending Review</option>
+                <option value="Pending">Pending</option>
+                <option value="Partial">Partial</option>
               </select>
             </label>
           </div>
 
           <div class="stats">
-            <div><strong id="putUsed">0</strong><span>Line Ready</span></div>
+            <div><strong id="putUsed">0 / 25</strong><span>Used Lines</span></div>
             <div><strong id="putQty">0</strong><span>Total Qty</span></div>
           </div>
 
@@ -161,7 +163,7 @@
           </div>
 
           <div class="actions putaway-form-actions">
-            <button id="savePutawayBtn" class="primary">Submit Putaway Line</button>
+            <button id="savePutawayBtn" class="primary">Save All Lines</button>
             <button id="clearPutawayBtn">Clear Form</button>
             <p id="putawayAutosaveStatus" class="message" aria-live="polite">All changes saved</p>
           </div>
@@ -392,6 +394,8 @@
                   <option value="">All statuses</option>
                   <option value="Completed">Completed</option>
                   <option value="Pending Review">Pending Review</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Partial">Partial</option>
                 </select>
               </label>
               <div class="actions">
