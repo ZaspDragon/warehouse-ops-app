@@ -14,6 +14,7 @@
     installPutawaySubmitGuard();
     removeRetiredWorkflows();
     patchHistoryToPutawayOnly();
+    installHistoryControls();
     renderTenantBadge();
   });
 
@@ -62,6 +63,9 @@
       return {
         ...base,
         worker: String(base.worker || "").trim(),
+        putawayNumber: String(base.putawayNumber || base.sheetNumber || "").trim(),
+        sheetNumber: String(base.sheetNumber || base.putawayNumber || "").trim(),
+        status: base.status || "Completed",
         workDate: base.workDate || base.date || todayDate(),
         submittedAt,
         submittedDate: submittedAt.slice(0, 10),
@@ -278,30 +282,31 @@
       const logs = typeof window.buildPutawayDailyGroups === "function"
         ? window.buildPutawayDailyGroups(app.putawayLogs || [])
         : [...(app.putawayLogs || [])].sort((a, b) => String(b.submittedAt || b.createdAt || "").localeCompare(String(a.submittedAt || a.createdAt || "")));
+      const rows = filteredPutawayRows(logs);
       body.innerHTML = "";
 
-      if (!logs.length) {
-        body.insertAdjacentHTML("beforeend", `<tr><td colspan="6">No putaway records found for this account.</td></tr>`);
+      if (!rows.length) {
+        body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No putaway records found for these filters.</td></tr>`);
         return;
       }
 
-      logs.forEach((log) => {
-        const lines = Array.isArray(log.lines) ? log.lines : [];
-        const encodedKey = log.key ? encodeURIComponent(log.key) : "";
+      rows.forEach((row) => {
         body.insertAdjacentHTML(
           "beforeend",
           `<tr>
-            <td>${escapeHtml(log.workDate || log.date || "")}</td>
-            <td>${escapeHtml(log.employeeName || log.worker || "")}</td>
-            <td>${Number(log.totalLines || log.lineCount || lines.length || 0)}</td>
-            <td>${Number(log.totalQty || sumBy(lines, "quantity") || sumBy(lines, "qty"))}</td>
-            <td>${escapeHtml(previewLines(lines, (line) => `${line.itemNumber || line.item || ""} x${line.quantity || line.qty || 0} @ ${line.binLocation || line.location || ""}`))}</td>
+            <td>${escapeHtml(row.workDate || "")}</td>
+            <td>${escapeHtml(row.employeeName || "")}</td>
+            <td>${escapeHtml(row.putawayNumber || "")}</td>
+            <td>${escapeHtml(row.itemNumber || "")}</td>
+            <td>${Number(row.quantity || 0)}</td>
+            <td>${escapeHtml(row.status || "")}</td>
+            <td>${escapeHtml(row.notes || "")}</td>
             <td>
-              ${encodedKey ? `
+              ${row.encodedKey ? `
                 <div class="row-actions">
-                  <button type="button" onclick="openPutawayDailyRecord('${encodedKey}', 'view')">View</button>
-                  <button type="button" onclick="openPutawayDailyRecord('${encodedKey}', 'edit')">Edit</button>
-                  <button type="button" class="danger" onclick="openPutawayDailyRecord('${encodedKey}', 'delete')">Delete</button>
+                  <button type="button" onclick="openPutawayDailyRecord('${row.encodedKey}', 'view')">View</button>
+                  <button type="button" onclick="openPutawayDailyRecord('${row.encodedKey}', 'edit')">Edit</button>
+                  <button type="button" class="danger" onclick="openPutawayDailyRecord('${row.encodedKey}', 'delete')">Delete</button>
                 </div>
               ` : ""}
             </td>
@@ -309,6 +314,93 @@
         );
       });
     };
+  }
+
+  function readHistoryFilters() {
+    return {
+      start: document.getElementById("putawayHistoryStart")?.value || "",
+      end: document.getElementById("putawayHistoryEnd")?.value || "",
+      worker: String(document.getElementById("putawayHistoryWorker")?.value || "").trim().toLowerCase(),
+      item: String(document.getElementById("putawayHistoryItem")?.value || "").trim().toLowerCase(),
+      putawayNumber: String(document.getElementById("putawayHistoryNumber")?.value || "").trim().toLowerCase(),
+      status: document.getElementById("putawayHistoryStatus")?.value || ""
+    };
+  }
+
+  function filteredPutawayRows(groups = []) {
+    const filters = readHistoryFilters();
+    return groups.flatMap((group) => {
+      const encodedKey = group.key ? encodeURIComponent(group.key) : "";
+      return (group.lines || []).map((line) => ({
+        encodedKey,
+        workDate: line.workDate || group.workDate || group.date || "",
+        employeeName: line.employeeName || group.employeeName || group.worker || "",
+        putawayNumber: line.putawayNumber || line.sheetNumber || group.putawayNumber || group.sheetNumber || "",
+        itemNumber: line.itemNumber || line.item || "",
+        quantity: line.quantity ?? line.qty ?? 0,
+        status: line.status || group.status || "",
+        notes: line.notes || ""
+      }));
+    }).filter((row) => {
+      const rowDate = row.workDate || "";
+      if (filters.start && rowDate < filters.start) return false;
+      if (filters.end && rowDate > filters.end) return false;
+      if (filters.worker && !String(row.employeeName || "").toLowerCase().includes(filters.worker)) return false;
+      if (filters.item && !String(row.itemNumber || "").toLowerCase().includes(filters.item)) return false;
+      if (filters.putawayNumber && !String(row.putawayNumber || "").toLowerCase().includes(filters.putawayNumber)) return false;
+      if (filters.status && row.status !== filters.status) return false;
+      return true;
+    });
+  }
+
+  function installHistoryControls() {
+    document.querySelectorAll(".historyFilterBtn").forEach((button) => {
+      button.addEventListener("click", () => window.renderHistory?.());
+    });
+
+    document.querySelectorAll(".historyClearBtn").forEach((button) => {
+      button.addEventListener("click", () => {
+        ["Start", "End", "Worker", "Item", "Number", "Status"].forEach((suffix) => {
+          const input = document.getElementById(`putawayHistory${suffix}`);
+          if (input) input.value = "";
+        });
+        window.renderHistory?.();
+      });
+    });
+
+    document.querySelectorAll(".historyExportBtn").forEach((button) => {
+      button.addEventListener("click", () => {
+        const app = appState();
+        const groups = typeof window.buildPutawayDailyGroups === "function"
+          ? window.buildPutawayDailyGroups(app?.putawayLogs || [])
+          : [];
+        const rows = filteredPutawayRows(groups);
+        if (!rows.length) return window.toast?.("No data to export.");
+        downloadRows(rows, `putaway-history-${todayDate()}.csv`);
+      });
+    });
+  }
+
+  function downloadRows(rows, filename) {
+    if (typeof window.downloadCsv === "function") {
+      window.downloadCsv(rows, filename);
+      return;
+    }
+
+    const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+    const csv = [
+      headers,
+      ...rows.map((row) => headers.map((header) => row[header] ?? ""))
+    ]
+      .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 
   function formatSubmittedTime(value) {

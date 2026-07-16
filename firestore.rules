@@ -33,6 +33,14 @@ service cloud.firestore {
       return signedIn() && myRole() in ['admin', 'lead', 'platformOwner'];
     }
 
+    function isManager() {
+      return signedIn() && myRole() == 'manager';
+    }
+
+    function canManageHistory() {
+      return isAdmin() || isManager();
+    }
+
     function isReceiverTemp() {
       return signedIn() && myRole() == 'receiverTemp';
     }
@@ -83,6 +91,9 @@ service cloud.firestore {
           request.resource.data.branchId is string &&
           request.resource.data.employeeName is string &&
           request.resource.data.employeeName.size() > 0 &&
+          request.resource.data.putawayNumber is string &&
+          request.resource.data.putawayNumber.size() > 0 &&
+          request.resource.data.status in ['Completed', 'Pending Review', 'Imported'] &&
           request.resource.data.workDate is string &&
           request.resource.data.createdAt is string &&
           request.resource.data.updatedAt is string &&
@@ -146,7 +157,7 @@ service cloud.firestore {
       allow read: if isMyTenant(resource.data);
       allow create: if signedIn() && !isReceiverTemp() && createsMyTenant() && hasPutawaySubmitFields();
       allow update: if signedIn() && !isReceiverTemp() && keepsMyTenant() && hasPutawaySubmitFields();
-      allow delete: if isAdmin() && keepsMyTenant();
+      allow delete: if canManageHistory() && keepsMyTenant();
     }
 
     // RECEIVING LINE ENTRY
@@ -185,8 +196,18 @@ service cloud.firestore {
     // ACTIVITY LOGS - isolated per logged-in email/account.
     match /activityLogs/{activityId} {
       allow read: if isMyTenant(resource.data);
-      allow create: if signedIn() && createsMyTenant();
-      allow update, delete: if isAdmin() && keepsMyTenant();
+      allow create: if signedIn() && createsMyTenant() &&
+        (
+          request.resource.data.type != 'putaway' ||
+          (
+            request.resource.data.item is string &&
+            request.resource.data.item.size() > 0 &&
+            request.resource.data.putawayNumber is string &&
+            request.resource.data.putawayNumber.size() > 0 &&
+            request.resource.data.status in ['Completed', 'Pending Review', 'Imported']
+          )
+        );
+      allow update, delete: if canManageHistory() && keepsMyTenant();
     }
 
     // AUDIT LOGS

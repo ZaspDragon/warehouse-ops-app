@@ -124,8 +124,19 @@
               <input id="putWorker" list="workerOptions" placeholder="Employee name" required />
             </label>
 
+            <label>Putaway / Sheet #
+              <input id="putSheetNumber" placeholder="Sheet or putaway number" required />
+            </label>
+
             <label>Work Date
               <input id="putDate" type="date" />
+            </label>
+
+            <label>Status
+              <select id="putStatus">
+                <option value="Completed">Completed</option>
+                <option value="Pending Review">Pending Review</option>
+              </select>
             </label>
           </div>
 
@@ -367,6 +378,22 @@
               <label>End Date
                 <input id="putawayHistoryEnd" type="date" />
               </label>
+              <label>Employee
+                <input id="putawayHistoryWorker" placeholder="Employee name" />
+              </label>
+              <label>Item #
+                <input id="putawayHistoryItem" placeholder="Item number" />
+              </label>
+              <label>Putaway #
+                <input id="putawayHistoryNumber" placeholder="Sheet number" />
+              </label>
+              <label>Status
+                <select id="putawayHistoryStatus">
+                  <option value="">All statuses</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Pending Review">Pending Review</option>
+                </select>
+              </label>
               <div class="actions">
                 <button class="historyFilterBtn primary" data-history-type="putaway">Search / Filter</button>
                 <button class="historyClearBtn" data-history-type="putaway">Clear Filter</button>
@@ -380,9 +407,11 @@
                   <tr>
                   <th>Completed Date</th>
                   <th>Worker</th>
-                  <th>Lines</th>
-                  <th>Total Qty</th>
-                  <th>Preview / Details</th>
+                  <th>Putaway #</th>
+                  <th>Item #</th>
+                  <th>Qty</th>
+                  <th>Status</th>
+                  <th>Notes</th>
                   <th>Actions</th>
                   </tr>
                 </thead>

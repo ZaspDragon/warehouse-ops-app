@@ -129,7 +129,9 @@ function putawayDraftRows() {
 function collectPutawayDraft() {
   return {
     worker: $("putWorker")?.value.trim() || "",
+    putawayNumber: $("putSheetNumber")?.value.trim() || "",
     date: $("putDate")?.value || "",
+    status: $("putStatus")?.value || "Completed",
     updatedAt: new Date().toISOString(),
     lines: putawayDraftRows().map((row, idx) => ({
       line: idx + 1,
@@ -148,7 +150,9 @@ function hasPutawayDraftData(draft = collectPutawayDraft()) {
 
   return Boolean(
     (draft.worker || "").trim() ||
+      (draft.putawayNumber || "").trim() ||
       hasLines ||
+      (draft.status && draft.status !== "Completed") ||
       ((draft.date || "").trim() && draft.date !== todayValue())
   );
 }
@@ -156,7 +160,7 @@ function hasPutawayDraftData(draft = collectPutawayDraft()) {
 function isPutawayDraftField(target) {
   if (!target?.closest) return false;
 
-  if (target.id === "putWorker" || target.id === "putDate") return true;
+  if (["putWorker", "putDate", "putSheetNumber", "putStatus"].includes(target.id)) return true;
   return Boolean(target.closest("#putawayBody"));
 }
 
@@ -210,7 +214,9 @@ function restorePutawayDraft() {
   }
 
   if ($("putWorker")) $("putWorker").value = draft.worker || "";
+  if ($("putSheetNumber")) $("putSheetNumber").value = draft.putawayNumber || draft.sheetNumber || "";
   if ($("putDate")) $("putDate").value = draft.date || todayValue();
+  if ($("putStatus")) $("putStatus").value = draft.status || "Completed";
 
   putawayDraftRows().forEach((row, idx) => {
     const line = draft.lines?.[idx] || {};
@@ -1311,6 +1317,7 @@ async function saveActivityLogs(type, sessionDoc, lines) {
   });
 
   await batch.commit();
+  return entries;
 }
 
 function createActivityEntries(type, sessionDoc, lines, createdAtBase = Date.now()) {
@@ -1327,9 +1334,22 @@ function createActivityEntries(type, sessionDoc, lines, createdAtBase = Date.now
 }
 
 function buildActivityEntry(type, sessionDoc, line, createdAt) {
+  const isPutaway = normalizeProcessValue(type) === "putaway";
+  const putawayNumber = sessionDoc.putawayNumber || sessionDoc.sheetNumber || line.putawayNumber || line.sheetNumber || "";
   return {
     type,
+    sourceCollection: isPutaway ? COLLECTIONS.putaway : historyCollection(type),
+    sourceId: sessionDoc.id || line.sourceRecordId || "",
+    putawayNumber,
+    sheetNumber: putawayNumber,
+    line: line.line || "",
+    ownerEmail: sessionDoc.ownerEmail || line.ownerEmail || currentOwnerEmail(),
+    tenantKey: sessionDoc.tenantKey || line.tenantKey || currentBranchId(),
+    branchId: sessionDoc.branchId || line.branchId || currentBranchId(),
+    companyId: sessionDoc.companyId || line.companyId || "warehouse-ops",
     employee: sessionDoc.employeeName || sessionDoc.worker || sessionDoc.counter || sessionDoc.picker || "",
+    employeeUid: sessionDoc.workerUid || sessionDoc.createdBy || "",
+    employeeEmail: sessionDoc.workerEmail || sessionDoc.createdByEmail || "",
     date: sessionDoc.date || "",
     item: line.item || line.itemNumber || "",
     description: line.description || "",
@@ -1344,9 +1364,12 @@ function buildActivityEntry(type, sessionDoc, line, createdAt) {
     location: line.location || line.binLocation || line.slot || line.fromSlot || "",
     uom: line.uom || "",
     dockToStockMinutes: Number(sessionDoc.dockToStockMinutes || 0),
-    status: line.status || "",
+    status: line.status || sessionDoc.status || "",
     reason: line.reason || "",
     notes: line.notes || "",
+    completedDate: sessionDoc.completedDate || sessionDoc.date || line.workDate || String(createdAt || "").slice(0, 10),
+    timestamp: createdAt,
+    dedupeKey: isPutaway ? [sessionDoc.id || "", putawayNumber, sessionDoc.date || "", line.line || "", line.itemNumber || line.item || "", line.quantity ?? line.qty ?? ""].join("|").toLowerCase() : "",
     createdAt,
     createdBy: state.user?.uid || "",
     createdByEmail: state.user?.email || ""
@@ -2205,16 +2228,19 @@ function formatSubmittedTime(value) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function putawayDailyDocId(branchId, employeeName, workDate) {
-  return [branchId, sanitizeDailyDocPart(employeeName) || "unknown_employee", workDate].join("_");
+function putawayDailyDocId(branchId, employeeName, workDate, putawayNumber = "") {
+  const sheetPart = sanitizeDailyDocPart(putawayNumber);
+  return [branchId, sanitizeDailyDocPart(employeeName) || "unknown_employee", workDate, sheetPart]
+    .filter(Boolean)
+    .join("_");
 }
 
-function putawayLineSubmissionDocId(branchId, employeeName, workDate, submittedAt) {
+function putawayLineSubmissionDocId(branchId, employeeName, workDate, submittedAt, putawayNumber = "") {
   const submittedKey = String(submittedAt || new Date().toISOString())
     .replace(/[^a-z0-9]+/gi, "_")
     .replace(/^_+|_+$/g, "");
   const randomKey = Math.random().toString(36).slice(2, 8);
-  return [putawayDailyDocId(branchId, employeeName, workDate), submittedKey, randomKey].join("_");
+  return [putawayDailyDocId(branchId, employeeName, workDate, putawayNumber), submittedKey, randomKey].join("_");
 }
 
 function isPermissionDeniedError(err) {
@@ -2250,6 +2276,9 @@ function normalizePutawayLine(line = {}, index = 0, record = {}) {
     tenantKey: line.tenantKey || record.tenantKey || branchId,
     companyId: line.companyId || record.companyId || "warehouse-ops",
     ownerEmail: line.ownerEmail || record.ownerEmail || currentOwnerEmail(),
+    putawayNumber: String(line.putawayNumber ?? line.sheetNumber ?? record.putawayNumber ?? record.sheetNumber ?? "").trim(),
+    sheetNumber: String(line.sheetNumber ?? line.putawayNumber ?? record.sheetNumber ?? record.putawayNumber ?? "").trim(),
+    status: String(line.status ?? record.status ?? "Completed").trim() || "Completed",
     notes: String(line.notes ?? line.details ?? line.note ?? "").trim()
   };
 }
@@ -2271,10 +2300,13 @@ function normalizePutawayRecord(record = {}) {
 
   return {
     ...record,
-    id: record.id || putawayDailyDocId(branchId, employeeName, workDate),
+    id: record.id || putawayDailyDocId(branchId, employeeName, workDate, record.putawayNumber || record.sheetNumber || ""),
     branchId,
     employeeName,
     worker: employeeName,
+    putawayNumber: String(record.putawayNumber || record.sheetNumber || "").trim(),
+    sheetNumber: String(record.sheetNumber || record.putawayNumber || "").trim(),
+    status: String(record.status || "Completed").trim() || "Completed",
     workDate,
     date: workDate,
     lines,
@@ -2318,6 +2350,9 @@ function normalizePutawayLineForSave(line, index) {
     tenantKey: line.tenantKey || branchId,
     companyId: line.companyId || "warehouse-ops",
     ownerEmail: line.ownerEmail || currentOwnerEmail(),
+    putawayNumber: String(line.putawayNumber || line.sheetNumber || "").trim(),
+    sheetNumber: String(line.sheetNumber || line.putawayNumber || "").trim(),
+    status: String(line.status || "Completed").trim() || "Completed",
     notes: String(line.notes || "").trim()
   };
 }
@@ -2340,6 +2375,9 @@ function buildSubmittedPutawayLine(rawLine, context = {}) {
     itemNumber: String(rawLine.item || rawLine.itemNumber || "").trim(),
     quantity: Number(rawLine.qty ?? rawLine.quantity ?? 0),
     binLocation: String(rawLine.location || rawLine.binLocation || "").trim(),
+    putawayNumber: String(context.putawayNumber || context.sheetNumber || "").trim(),
+    sheetNumber: String(context.sheetNumber || context.putawayNumber || "").trim(),
+    status: String(context.status || "Completed").trim() || "Completed",
     submittedDate: workDate,
     workDate,
     submittedAt,
@@ -2361,6 +2399,9 @@ function buildPutawayDocumentFromLines({ id, branchId, employeeName, workDate, l
     branchId,
     employeeName,
     worker: employeeName,
+    putawayNumber: latestLine.putawayNumber || "",
+    sheetNumber: latestLine.sheetNumber || latestLine.putawayNumber || "",
+    status: latestLine.status || "Completed",
     workDate,
     date: workDate,
     lines: normalizedLines,
@@ -2378,7 +2419,7 @@ function buildPutawayDocumentFromLines({ id, branchId, employeeName, workDate, l
 }
 
 async function savePutawayCreateOnlyFallback({ branchId, employeeName, workDate, line }) {
-  const id = putawayLineSubmissionDocId(branchId, employeeName, workDate, line.submittedAt);
+  const id = putawayLineSubmissionDocId(branchId, employeeName, workDate, line.submittedAt, line.putawayNumber || line.sheetNumber || "");
   const doc = buildPutawayDocumentFromLines({
     id,
     branchId,
@@ -2437,6 +2478,8 @@ function resetPutawayLineAfterSubmit() {
 async function savePutaway() {
   flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
   const employeeName = $("putWorker")?.value.trim() || "";
+  const putawayNumber = $("putSheetNumber")?.value.trim() || "";
+  const status = $("putStatus")?.value || "Completed";
   const rawLines = collectPutawayLines();
 
   if (!employeeName) {
@@ -2444,12 +2487,21 @@ async function savePutaway() {
     return toast("Enter the employee name before submitting putaway.");
   }
 
+  if (!putawayNumber) {
+    $("putSheetNumber")?.focus();
+    return toast("Enter the Putaway or sheet number before submitting.");
+  }
+
   if (!rawLines.length) return toast("Enter one putaway line before submitting.");
+  if (!rawLines[0].item) {
+    document.querySelector("#putawayBody .put-item")?.focus();
+    return toast("Enter the item number before submitting putaway.");
+  }
 
   const branchId = currentBranchId();
   const workDate = putawayWorkDate();
-  const line = buildSubmittedPutawayLine(rawLines[0], { ...tenantDocumentFields(), branchId, employeeName, workDate });
-  const docId = putawayDailyDocId(branchId, employeeName, workDate);
+  const line = buildSubmittedPutawayLine(rawLines[0], { ...tenantDocumentFields(), branchId, employeeName, workDate, putawayNumber, sheetNumber: putawayNumber, status });
+  const docId = putawayDailyDocId(branchId, employeeName, workDate, putawayNumber);
 
   if (state.isDemoMode) {
     const existing = normalizePutawayRecord(state.putawayLogs.find((log) => String(log.id) === docId) || {
@@ -2457,6 +2509,9 @@ async function savePutaway() {
       branchId,
       employeeName,
       worker: employeeName,
+      putawayNumber,
+      sheetNumber: putawayNumber,
+      status,
       workDate,
       date: workDate,
       lines: [],
@@ -2530,16 +2585,18 @@ async function savePutaway() {
     }
 
     try {
-      await saveActivityLogs("putaway", savedDoc, [line]);
+      const activityEntries = await saveActivityLogs("putaway", savedDoc, [line]);
+      if (activityEntries?.length) {
+        state.activityLogs = sortByCreatedAtDesc([...activityEntries, ...state.activityLogs]).slice(0, 500);
+      }
     } catch (err) {
       console.warn("Putaway saved, but activity log write failed.", err);
     }
 
     upsertPutawayLogInState(savedDoc);
 
-    await loadHistory();
-
     renderLogs();
+    renderHistory();
     renderItemHistory();
     resetPutawayLineAfterSubmit();
 
@@ -3151,12 +3208,16 @@ function buildPutawayDailyGroups(records = state.putawayLogs) {
     const key = [
       normalized.branchId || currentBranchId(),
       normalizeEmployeeName(normalized.employeeName).toLowerCase(),
-      normalized.workDate
+      normalized.workDate,
+      String(normalized.putawayNumber || normalized.sheetNumber || "").toLowerCase()
     ].join("|");
     const group = groupMap.get(key) || {
       key,
       branchId: normalized.branchId || currentBranchId(),
       employeeName: normalized.employeeName,
+      putawayNumber: normalized.putawayNumber || normalized.sheetNumber || "",
+      sheetNumber: normalized.sheetNumber || normalized.putawayNumber || "",
+      status: normalized.status || "Completed",
       workDate: normalized.workDate,
       sourceRecords: [],
       lines: [],
