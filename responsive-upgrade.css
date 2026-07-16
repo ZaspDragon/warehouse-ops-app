@@ -583,6 +583,52 @@ body.receiver-temp-mode #putawayTab > .card:first-child .table-wrap table {
 }
 
 @media (max-width: 640px) {
+  .cycle-entry-wrap {
+    overflow-x: auto;
+  }
+
+  .cycle-entry-wrap table,
+  .cycle-entry-wrap thead,
+  .cycle-entry-wrap tbody,
+  .cycle-entry-wrap tr,
+  .cycle-entry-wrap td,
+  .cycle-entry-wrap th {
+    display: revert;
+    width: auto;
+  }
+
+  .cycle-entry-wrap thead {
+    display: table-header-group;
+  }
+
+  .cycle-entry-wrap tbody {
+    display: table-row-group;
+  }
+
+  .cycle-entry-wrap tr {
+    display: table-row;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .cycle-entry-wrap td,
+  .cycle-entry-wrap th {
+    display: table-cell;
+    padding: 10px;
+  }
+
+  .cycle-entry-wrap td::before {
+    content: none;
+  }
+
+  .packet-timer-layout,
+  .panel-grid.two-column-production,
+  .production-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
   .site-footer {
     align-items: flex-start;
     flex-direction: column;

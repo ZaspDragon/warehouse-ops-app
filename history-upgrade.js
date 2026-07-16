@@ -1,94 +1,97 @@
 (function () {
-  const PROCESS_TYPES = ["putaway", "picking"];
-  const filters = {
-    putaway: { start: "", end: "", worker: "", item: "", putawayNumber: "", status: "" },
-    picking: { start: "", end: "" }
+  const RETIRED_TABS = ["cycle", "cycleProduction", "picking"];
+  const RETIRED_COLLECTIONS = new Set(["cycleCountSessions", "orderPickingSessions"]);
+  const TENANT_COLLECTIONS = new Set(["employees", "putAwayLogs", "activityLogs"]);
+  const COLLECTION_NAMES = {
+    employees: "employees",
+    putaway: "putAwayLogs",
+    activity: "activityLogs"
   };
 
   document.addEventListener("DOMContentLoaded", () => {
-    installFirestoreCompletedDatePatch();
-    installSaveWrappers();
-    installHistoryEvents();
-    overrideHistoryFunctions();
-    normalizeHistoryState();
-    renderHistory();
+    installTenantWritePatch();
+    installTenantLoadPatch();
+    installPutawaySubmitGuard();
+    removeRetiredWorkflows();
+    patchHistoryToPutawayOnly();
+    installHistoryControls();
+    renderTenantBadge();
   });
+
+  function appState() {
+    return typeof state !== "undefined" ? state : window.state;
+  }
+
+  function currentEmail() {
+    return String(appState()?.user?.email || window.auth?.currentUser?.email || "").trim().toLowerCase();
+  }
+
+  function currentTenantKey() {
+    const email = currentEmail();
+    if (!email) return "signed-out";
+    return email.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "unknown_user";
+  }
+
+  function nowIso() {
+    return new Date().toISOString();
+  }
 
   function todayDate() {
     return new Date().toISOString().slice(0, 10);
   }
 
-  function normalizeDate(value) {
-    if (!value) return "";
-
-    if (typeof value === "object" && typeof value.toDate === "function") {
-      return value.toDate().toISOString().slice(0, 10);
-    }
-
-    if (typeof value === "object" && Number.isFinite(value.seconds)) {
-      return new Date(value.seconds * 1000).toISOString().slice(0, 10);
-    }
-
-    const text = String(value).trim();
-    if (!text) return "";
-
-    const isoMatch = text.match(/\d{4}-\d{2}-\d{2}/);
-    if (isoMatch) return isoMatch[0];
-
-    const parsed = new Date(text);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toISOString().slice(0, 10);
-    }
-
-    return "";
+  function timeOfDay() {
+    return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 
-  function getCompletedDate(record) {
-    return (
-      normalizeDate(record?.completedDate) ||
-      normalizeDate(record?.date) ||
-      normalizeDate(record?.timestamp) ||
-      normalizeDate(record?.createdAt) ||
-      normalizeDate(record?.savedAt) ||
-      todayDate()
-    );
-  }
-
-  function withCompletedDate(record) {
+  function tenantFields(extra = {}) {
+    const email = currentEmail();
     return {
-      ...(record || {}),
-      completedDate: getCompletedDate(record || {})
+      ownerEmail: email,
+      tenantKey: currentTenantKey(),
+      branchId: currentTenantKey(),
+      companyId: "warehouse-ops",
+      ...extra
     };
   }
 
-  function sortByCompletedDateDesc(rows) {
-    return [...(rows || [])].sort((a, b) => {
-      const dateCompare = getCompletedDate(b).localeCompare(getCompletedDate(a));
-      if (dateCompare !== 0) return dateCompare;
-      return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
-    });
-  }
+  function addTenantFields(collectionName, doc) {
+    const base = { ...(doc || {}), ...tenantFields() };
 
-  function normalizeHistoryState() {
-    if (typeof state === "undefined") return;
-
-    state.putawayLogs = sortByCompletedDateDesc((state.putawayLogs || []).map(withCompletedDate));
-    state.cycleSessions = [];
-    state.pickingSessions = sortByCompletedDateDesc((state.pickingSessions || []).map(withCompletedDate));
-
-    if (state.isDemoMode && typeof persistDemoState === "function") {
-      persistDemoState();
+    if (collectionName === "putAwayLogs") {
+      const submittedAt = base.submittedAt || nowIso();
+      return {
+        ...base,
+        worker: String(base.worker || "").trim(),
+        putawayNumber: String(base.putawayNumber || base.sheetNumber || "").trim(),
+        sheetNumber: String(base.sheetNumber || base.putawayNumber || "").trim(),
+        status: base.status || "Completed",
+        workDate: base.workDate || base.date || todayDate(),
+        submittedAt,
+        submittedDate: submittedAt.slice(0, 10),
+        submittedTime: base.submittedTime || timeOfDay()
+      };
     }
+
+    if (collectionName === "employees") {
+      return {
+        ...base,
+        lastWorkDate: base.lastWorkDate || ""
+      };
+    }
+
+    return base;
   }
 
-  function installFirestoreCompletedDatePatch() {
-    if (!window.db || window.db.__historyCompletedDatePatched) return;
+  function installTenantWritePatch() {
+    if (!window.db || window.db.__tenantIsolationPatched) return;
 
     const originalCollection = window.db.collection.bind(window.db);
-    window.db.collection = function patchedCollection(name) {
-      const collectionRef = originalCollection(name);
 
-      if (!["putAwayLogs", "orderPickingSessions", "activityLogs"].includes(name)) {
+    window.db.collection = function patchedCollection(collectionName) {
+      const collectionRef = originalCollection(collectionName);
+
+      if (!TENANT_COLLECTIONS.has(collectionName)) {
         return collectionRef;
       }
 
@@ -96,7 +99,25 @@
         get(target, prop, receiver) {
           if (prop === "add") {
             return function patchedAdd(doc) {
-              return target.add(addCompletedDateForCollection(name, doc));
+              return target.add(addTenantFields(collectionName, doc));
+            };
+          }
+
+          if (prop === "doc") {
+            return function patchedDoc(id) {
+              const docRef = id ? target.doc(id) : target.doc();
+              return new Proxy(docRef, {
+                get(docTarget, docProp, docReceiver) {
+                  if (docProp === "set") {
+                    return function patchedSet(doc, options) {
+                      return docTarget.set(addTenantFields(collectionName, doc), options);
+                    };
+                  }
+
+                  const value = Reflect.get(docTarget, docProp, docReceiver);
+                  return typeof value === "function" ? value.bind(docTarget) : value;
+                }
+              });
             };
           }
 
@@ -106,422 +127,310 @@
       });
     };
 
-    window.db.__historyCompletedDatePatched = true;
+    window.db.__tenantIsolationPatched = true;
   }
 
-  function addCompletedDateForCollection(collectionName, doc) {
-    const completedDate =
-      normalizeDate(doc?.completedDate) ||
-      normalizeDate(doc?.date) ||
-      selectedFormDateForCollection(collectionName) ||
-      todayDate();
+  async function queryTenantRows(collectionName) {
+    const email = currentEmail();
+    if (!email) return [];
 
-    return {
-      ...(doc || {}),
-      completedDate
+    const rowsById = new Map();
+    const addSnap = (snap) => {
+      snap.docs.forEach((doc) => rowsById.set(doc.id, { id: doc.id, ...doc.data() }));
     };
+
+    const base = window.db.collection(collectionName);
+
+    try {
+      addSnap(await base.where("ownerEmail", "==", email).limit(500).get());
+    } catch (err) {
+      console.warn(`Tenant ownerEmail query failed for ${collectionName}:`, err);
+    }
+
+    try {
+      addSnap(await base.where("createdByEmail", "==", email).limit(500).get());
+    } catch (err) {
+      console.warn(`Tenant legacy createdByEmail query failed for ${collectionName}:`, err);
+    }
+
+    return [...rowsById.values()].sort((a, b) => String(b.createdAt || b.submittedAt || "").localeCompare(String(a.createdAt || a.submittedAt || ""))).slice(0, 200);
   }
 
-  function selectedFormDateForCollection(collectionName) {
-    if (collectionName === "putAwayLogs") return normalizeDate($("putDate")?.value);
-    if (collectionName === "orderPickingSessions") return normalizeDate($("pickDate")?.value);
-    return "";
+  function installTenantLoadPatch() {
+    if (window.__tenantLoadPatched) return;
+
+    window.loadCollection = async function tenantLoadCollection(collectionName, key) {
+      const app = appState();
+
+      if (RETIRED_COLLECTIONS.has(collectionName) || ["cycleSessions", "pickingSessions"].includes(key)) {
+        if (app) app[key] = [];
+        return;
+      }
+
+      if (TENANT_COLLECTIONS.has(collectionName)) {
+        if (app) app[key] = await queryTenantRows(collectionName);
+        return;
+      }
+
+      const snap = await window.db.collection(collectionName).limit(200).get();
+      if (app) {
+        app[key] = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      }
+    };
+
+    window.loadAllData = async function tenantLoadAllData() {
+      const app = appState();
+      if (app?.isDemoMode) return;
+
+      try {
+        await Promise.all([
+          window.loadCollection(COLLECTION_NAMES.employees, "employees"),
+          window.loadCollection(COLLECTION_NAMES.putaway, "putawayLogs"),
+          window.loadCollection(COLLECTION_NAMES.activity, "activityLogs")
+        ]);
+
+        if (app) {
+          app.cycleSessions = [];
+          app.pickingSessions = [];
+          app.cycleProduction = [];
+          app.cycleTimers = [];
+        }
+
+        window.renderEmployees?.();
+        window.renderLogs?.();
+        window.renderHistory?.();
+        window.renderItemHistory?.();
+        window.populateEmployeeDropdowns?.();
+      } catch (err) {
+        console.error("Tenant data load failed:", err);
+        window.toast?.("Load failed: " + err.message);
+      }
+    };
+
+    window.__tenantLoadPatched = true;
   }
 
-  function installSaveWrappers() {
-    wrapSave("savePutawayBtn", "savePutaway");
-    wrapSave("savePickingBtn", "savePicking");
-  }
-
-  function wrapSave(buttonId, functionName) {
-    const button = $(buttonId);
-    const originalSave = window[functionName];
-    if (!button || typeof originalSave !== "function" || originalSave.__historyWrapped) return;
+  function installPutawaySubmitGuard() {
+    const button = document.getElementById("savePutawayBtn");
+    const originalSave = window.savePutaway;
+    if (!button || typeof originalSave !== "function" || originalSave.__tenantWrapped) return;
 
     button.removeEventListener("click", originalSave);
 
-    const wrappedSave = async function () {
+    const wrappedSave = async function tenantPutawaySave() {
+      const worker = String(document.getElementById("putWorker")?.value || "").trim();
+      if (!worker) {
+        window.toast?.("Enter the worker name before submitting putaway.");
+        document.getElementById("putWorker")?.focus();
+        return;
+      }
+
       await originalSave();
-      normalizeHistoryState();
-      renderHistory();
+
+      const app = appState();
+      if (app?.putawayLogs?.length) {
+        const latest = app.putawayLogs[0];
+        latest.worker = worker;
+        latest.submittedAt = latest.submittedAt || nowIso();
+        latest.submittedDate = latest.submittedDate || latest.submittedAt.slice(0, 10);
+        latest.submittedTime = latest.submittedTime || timeOfDay();
+        latest.workDate = latest.workDate || latest.date || todayDate();
+        Object.assign(latest, tenantFields());
+      }
+
+      window.renderLogs?.();
+      window.renderHistory?.();
     };
 
-    wrappedSave.__historyWrapped = true;
-    window[functionName] = wrappedSave;
+    wrappedSave.__tenantWrapped = true;
+    window.savePutaway = wrappedSave;
     button.addEventListener("click", wrappedSave);
   }
 
-  function installHistoryEvents() {
-    document.querySelectorAll(".history-tab").forEach((button) => {
-      button.addEventListener("click", () => switchHistoryTab(button.dataset.historyTab));
+  function removeRetiredWorkflows() {
+    RETIRED_TABS.forEach((tab) => {
+      document.querySelector(`.tab[data-tab="${tab}"]`)?.remove();
+      document.getElementById(`${tab}Tab`)?.remove();
     });
 
-    document.querySelectorAll(".historyFilterBtn").forEach((button) => {
-      button.addEventListener("click", () => {
-        const type = button.dataset.historyType;
-        filters[type] = {
-          start: normalizeDate($(`${type}HistoryStart`)?.value),
-          end: normalizeDate($(`${type}HistoryEnd`)?.value),
-          worker: $(`${type}HistoryWorker`)?.value.trim().toLowerCase() || "",
-          item: $(`${type}HistoryItem`)?.value.trim().toLowerCase() || "",
-          putawayNumber: $(`${type}HistoryNumber`)?.value.trim().toLowerCase() || "",
-          status: $(`${type}HistoryStatus`)?.value || ""
-        };
-        renderHistory();
+    document.querySelectorAll('[data-export="cycle"], [data-export="picking"], .productionExportBtn').forEach((el) => el.remove());
+
+    const app = appState();
+    if (app) {
+      app.cycleSessions = [];
+      app.pickingSessions = [];
+      app.cycleProduction = [];
+      app.cycleTimers = [];
+    }
+
+    const subtitle = document.querySelector(".topbar p");
+    if (subtitle) subtitle.textContent = "Put Away · Employees · History";
+  }
+
+  function patchHistoryToPutawayOnly() {
+    window.renderHistory = function putawayOnlyHistory() {
+      const cyclePanel = document.getElementById("cycleHistoryPanel");
+      const pickingPanel = document.getElementById("pickingHistoryPanel");
+      cyclePanel?.remove();
+      pickingPanel?.remove();
+      document.querySelectorAll('.history-tab[data-history-tab="cycle"], .history-tab[data-history-tab="picking"]').forEach((el) => el.remove());
+
+      const body = document.getElementById("putawayHistoryBody") || document.getElementById("historyBody");
+      const app = appState();
+      if (!body || !app) return;
+
+      const logs = typeof window.buildPutawayDailyGroups === "function"
+        ? window.buildPutawayDailyGroups(app.putawayLogs || [])
+        : [...(app.putawayLogs || [])].sort((a, b) => String(b.submittedAt || b.createdAt || "").localeCompare(String(a.submittedAt || a.createdAt || "")));
+      const rows = filteredPutawayRows(logs);
+      body.innerHTML = "";
+
+      if (!rows.length) {
+        body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No putaway records found for these filters.</td></tr>`);
+        return;
+      }
+
+      rows.forEach((row) => {
+        body.insertAdjacentHTML(
+          "beforeend",
+          `<tr>
+            <td>${escapeHtml(row.workDate || "")}</td>
+            <td>${escapeHtml(row.employeeName || "")}</td>
+            <td>${escapeHtml(row.putawayNumber || "")}</td>
+            <td>${escapeHtml(row.itemNumber || "")}</td>
+            <td>${Number(row.quantity || 0)}</td>
+            <td>${escapeHtml(row.status || "")}</td>
+            <td>${escapeHtml(row.notes || "")}</td>
+            <td>
+              ${row.encodedKey ? `
+                <div class="row-actions">
+                  <button type="button" onclick="openPutawayDailyRecord('${row.encodedKey}', 'view')">View</button>
+                  <button type="button" onclick="openPutawayDailyRecord('${row.encodedKey}', 'edit')">Edit</button>
+                  <button type="button" class="danger" onclick="openPutawayDailyRecord('${row.encodedKey}', 'delete')">Delete</button>
+                </div>
+              ` : ""}
+            </td>
+          </tr>`
+        );
       });
+    };
+  }
+
+  function readHistoryFilters() {
+    return {
+      start: document.getElementById("putawayHistoryStart")?.value || "",
+      end: document.getElementById("putawayHistoryEnd")?.value || "",
+      worker: String(document.getElementById("putawayHistoryWorker")?.value || "").trim().toLowerCase(),
+      item: String(document.getElementById("putawayHistoryItem")?.value || "").trim().toLowerCase(),
+      putawayNumber: String(document.getElementById("putawayHistoryNumber")?.value || "").trim().toLowerCase(),
+      status: document.getElementById("putawayHistoryStatus")?.value || ""
+    };
+  }
+
+  function filteredPutawayRows(groups = []) {
+    const filters = readHistoryFilters();
+    return groups.flatMap((group) => {
+      const encodedKey = group.key ? encodeURIComponent(group.key) : "";
+      return (group.lines || []).map((line) => ({
+        encodedKey,
+        workDate: line.workDate || group.workDate || group.date || "",
+        employeeName: line.employeeName || group.employeeName || group.worker || "",
+        putawayNumber: line.putawayNumber || line.sheetNumber || group.putawayNumber || group.sheetNumber || "",
+        itemNumber: line.itemNumber || line.item || "",
+        quantity: line.quantity ?? line.qty ?? 0,
+        status: line.status || group.status || "",
+        notes: line.notes || ""
+      }));
+    }).filter((row) => {
+      const rowDate = row.workDate || "";
+      if (filters.start && rowDate < filters.start) return false;
+      if (filters.end && rowDate > filters.end) return false;
+      if (filters.worker && !String(row.employeeName || "").toLowerCase().includes(filters.worker)) return false;
+      if (filters.item && !String(row.itemNumber || "").toLowerCase().includes(filters.item)) return false;
+      if (filters.putawayNumber && !String(row.putawayNumber || "").toLowerCase().includes(filters.putawayNumber)) return false;
+      if (filters.status && row.status !== filters.status) return false;
+      return true;
+    });
+  }
+
+  function installHistoryControls() {
+    document.querySelectorAll(".historyFilterBtn").forEach((button) => {
+      button.addEventListener("click", () => window.renderHistory?.());
     });
 
     document.querySelectorAll(".historyClearBtn").forEach((button) => {
       button.addEventListener("click", () => {
-        const type = button.dataset.historyType;
-        filters[type] = { start: "", end: "", worker: "", item: "", putawayNumber: "", status: "" };
-        if ($(`${type}HistoryStart`)) $(`${type}HistoryStart`).value = "";
-        if ($(`${type}HistoryEnd`)) $(`${type}HistoryEnd`).value = "";
-        if ($(`${type}HistoryWorker`)) $(`${type}HistoryWorker`).value = "";
-        if ($(`${type}HistoryItem`)) $(`${type}HistoryItem`).value = "";
-        if ($(`${type}HistoryNumber`)) $(`${type}HistoryNumber`).value = "";
-        if ($(`${type}HistoryStatus`)) $(`${type}HistoryStatus`).value = "";
-        renderHistory();
+        ["Start", "End", "Worker", "Item", "Number", "Status"].forEach((suffix) => {
+          const input = document.getElementById(`putawayHistory${suffix}`);
+          if (input) input.value = "";
+        });
+        window.renderHistory?.();
       });
     });
 
     document.querySelectorAll(".historyExportBtn").forEach((button) => {
-      button.addEventListener("click", () => exportProcessHistory(button.dataset.historyType));
+      button.addEventListener("click", () => {
+        const app = appState();
+        const groups = typeof window.buildPutawayDailyGroups === "function"
+          ? window.buildPutawayDailyGroups(app?.putawayLogs || [])
+          : [];
+        const rows = filteredPutawayRows(groups);
+        if (!rows.length) return window.toast?.("No data to export.");
+        downloadRows(rows, `putaway-history-${todayDate()}.csv`);
+      });
     });
   }
 
-  function overrideHistoryFunctions() {
-    const originalLoadCollection = window.loadCollection;
-    const originalLoadHistory = window.loadHistory;
-
-    window.loadHistory = async function upgradedLoadHistory() {
-      if (typeof state === "undefined") return;
-
-      if (state.isDemoMode) {
-        normalizeHistoryState();
-        renderLogs?.();
-        renderHistory();
-        toast?.("History refreshed.");
-        return;
-      }
-
-      if (typeof originalLoadCollection !== "function") {
-        renderHistory();
-        return;
-      }
-
-      try {
-        await Promise.all([
-          originalLoadCollection(COLLECTIONS.putaway, "putawayLogs"),
-          originalLoadCollection(COLLECTIONS.picking, "pickingSessions")
-        ]);
-
-        normalizeHistoryState();
-        renderLogs?.();
-        renderHistory();
-        toast?.("History refreshed.");
-      } catch (err) {
-        console.error("History load failed:", err);
-        normalizeHistoryState();
-        renderHistory();
-        toast?.("History failed: " + err.message);
-      }
-    };
-
-    const refreshButton = $("refreshHistoryBtn");
-    if (refreshButton && typeof window.loadHistory === "function") {
-      if (typeof originalLoadHistory === "function") {
-        refreshButton.removeEventListener("click", originalLoadHistory);
-      }
-
-      refreshButton.onclick = null;
-      refreshButton.addEventListener("click", window.loadHistory);
-    }
-
-    window.renderHistory = renderHistory;
-  }
-
-  function switchHistoryTab(type) {
-    document.querySelectorAll(".history-tab").forEach((button) => {
-      button.classList.toggle("active", button.dataset.historyTab === type);
-    });
-
-    document.querySelectorAll(".history-panel").forEach((panel) => {
-      panel.classList.remove("active");
-    });
-
-    $(`${type}HistoryPanel`)?.classList.add("active");
-  }
-
-  function filteredRecords(type) {
-    const source = {
-      putaway: state?.putawayLogs || [],
-      picking: state?.pickingSessions || []
-    }[type] || [];
-
-    const filter = filters[type] || {};
-    let min = normalizeDate(filter.start);
-    let max = normalizeDate(filter.end);
-
-    if (min && !max) max = min;
-    if (!min && max) min = max;
-
-    return sortByCompletedDateDesc(source.map(withCompletedDate)).filter((record) => {
-      const completedDate = getCompletedDate(record);
-      if (min && completedDate < min) return false;
-      if (max && completedDate > max) return false;
-      return true;
-    });
-  }
-
-  function renderHistory() {
-    if (typeof state === "undefined") return;
-    renderPutawayHistory();
-    renderPickingHistory();
-  }
-
-  function buildPutawayLineRows() {
-    return sortByCompletedDateDesc(state?.putawayLogs || []).flatMap((log) => {
-      const lines = Array.isArray(log.lines) ? log.lines : [];
-      const sessionDate = getCompletedDate(log);
-      const putawayNumber = log.putawayNumber || log.sheetNumber || "";
-      return lines.map((line) => ({
-        completedDate: sessionDate,
-        date: log.date || sessionDate,
-        worker: log.worker || "",
-        workerUid: log.workerUid || log.createdBy || "",
-        workerEmail: log.workerEmail || log.createdByEmail || "",
-        putawayNumber,
-        sourceId: log.id || "",
-        line: line.line || "",
-        item: line.item || "",
-        qty: Number(line.qty || 0),
-        location: line.location || "",
-        status: line.status || log.status || "",
-        dockToStockMinutes: Number(log.dockToStockMinutes || 0),
-        notes: line.notes || "",
-        timestamp: line.timestamp || log.timestamp || log.createdAt || "",
-        createdAt: log.createdAt || "",
-        dedupeKey: line.dedupeKey || ""
-      }));
-    });
-  }
-
-  function filteredPutawayRows() {
-    const filter = filters.putaway || {};
-    let min = normalizeDate(filter.start);
-    let max = normalizeDate(filter.end);
-
-    if (min && !max) max = min;
-    if (!min && max) min = max;
-
-    return buildPutawayLineRows().filter((row) => {
-      const completedDate = normalizeDate(row.completedDate);
-      if (min && completedDate < min) return false;
-      if (max && completedDate > max) return false;
-      if (filter.worker && !String(row.worker || "").toLowerCase().includes(filter.worker)) return false;
-      if (filter.item && !String(row.item || "").toLowerCase().includes(filter.item)) return false;
-      if (filter.putawayNumber && !String(row.putawayNumber || "").toLowerCase().includes(filter.putawayNumber)) return false;
-      if (filter.status && String(row.status || "") !== filter.status) return false;
-      return true;
-    });
-  }
-
-  function renderPutawayHistory() {
-    const body = $("putawayHistoryBody");
-    if (!body) return;
-
-    const rows = filteredPutawayRows();
-    body.innerHTML = "";
-
-    if (!rows.length) {
-      body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No Put Away Log records found for these filters.</td></tr>`);
+  function downloadRows(rows, filename) {
+    if (typeof window.downloadCsv === "function") {
+      window.downloadCsv(rows, filename);
       return;
     }
 
-    rows.forEach((row) => {
-      body.insertAdjacentHTML(
-        "beforeend",
-        `
-        <tr>
-          <td>${escapeHtml(row.completedDate)}</td>
-          <td>${escapeHtml(row.worker)}</td>
-          <td>${escapeHtml(row.putawayNumber)}</td>
-          <td>${escapeHtml(row.item)}</td>
-          <td>${escapeHtml(row.qty)}</td>
-          <td>${escapeHtml(row.status)}</td>
-          <td>${Number(row.dockToStockMinutes || 0)}</td>
-          <td>${escapeHtml(row.notes)}</td>
-          <td>${historyActions("putaway", row.sourceId)}</td>
-        </tr>
-      `
-      );
-    });
+    const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+    const csv = [
+      headers,
+      ...rows.map((row) => headers.map((header) => row[header] ?? ""))
+    ]
+      .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 
-  function renderCycleHistory() {
-    const body = $("cycleHistoryBody");
-    if (!body) return;
-
-    const records = filteredRecords("cycle");
-    body.innerHTML = "";
-
-    if (!records.length) {
-      body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No Cycle Count records found for this date range.</td></tr>`);
-      return;
-    }
-
-    records.forEach((log) => {
-      const lines = Array.isArray(log.lines) ? log.lines : [];
-      const varianceLines = Number(log.varianceLines ?? lines.filter((line) => Number(line.variance || 0) !== 0).length);
-      const totalVariance = sumBy(lines, "variance");
-      body.insertAdjacentHTML(
-        "beforeend",
-        `
-        <tr>
-          <td>${escapeHtml(getCompletedDate(log))}</td>
-          <td>${escapeHtml(log.counter || "")}</td>
-          <td>${escapeHtml(log.countId || "")}</td>
-          <td>${Number(log.lineCount || lines.length || 0)}</td>
-          <td>${varianceLines}</td>
-          <td>${totalVariance}</td>
-          <td>${varianceLines ? '<span class="badge bad">Variance</span>' : '<span class="badge ok">Balanced</span>'}</td>
-          <td>${escapeHtml(previewLines(lines, (line) => `${line.item || ""}: counted ${line.countedQty || 0}, variance ${line.variance || 0}`))}</td>
-          <td>${historyActions("cycle", log.id)}</td>
-        </tr>
-      `
-      );
-    });
-  }
-
-  function renderPickingHistory() {
-    const body = $("pickingHistoryBody");
-    if (!body) return;
-
-    const records = filteredRecords("picking");
-    body.innerHTML = "";
-
-    if (!records.length) {
-      body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No Order Picking records found for this date range.</td></tr>`);
-      return;
-    }
-
-    records.forEach((log) => {
-      const lines = Array.isArray(log.lines) ? log.lines : [];
-      const issueLines = Number(log.issueLines ?? lines.filter(isIssueLine).length);
-      body.insertAdjacentHTML(
-        "beforeend",
-        `
-        <tr>
-          <td>${escapeHtml(getCompletedDate(log))}</td>
-          <td>${escapeHtml(log.picker || "")}</td>
-          <td>${escapeHtml(log.orderNumber || "")}</td>
-          <td>${Number(log.lineCount || lines.length || 0)}</td>
-          <td>${Number(log.totalPicked || sumBy(lines, "pickedQty"))}</td>
-          <td>${issueLines}</td>
-          <td>${issueLines ? '<span class="badge warn">Issues</span>' : '<span class="badge ok">Complete</span>'}</td>
-          <td>${escapeHtml(previewLines(lines, (line) => `${line.item || ""}: picked ${line.pickedQty || 0}, ${line.status || "Pending"}`))}</td>
-          <td>${historyActions("picking", log.id)}</td>
-        </tr>
-      `
-      );
-    });
-  }
-
-  function exportProcessHistory(type) {
-    const builders = {
-      putaway: buildPutawayRows,
-      picking: buildPickingRows
-    };
-
-    const rows = builders[type]?.() || [];
-    if (!rows.length) return toast?.("No data to export.");
-
-    downloadCsv(rows, `${type}-history-${todayDate()}.csv`);
-  }
-
-  function buildPutawayRows() {
-    return filteredPutawayRows().map((row) => ({
-      completedDate: row.completedDate,
-      date: row.date,
-      employee: row.worker,
-      employeeUid: row.workerUid,
-      employeeEmail: row.workerEmail,
-      putawayNumber: row.putawayNumber,
-      sourceId: row.sourceId,
-      line: row.line,
-      item: row.item,
-      qty: row.qty,
-      location: row.location,
-      status: row.status,
-      notes: row.notes,
-      dockToStockMinutes: row.dockToStockMinutes,
-      timestamp: row.timestamp,
-      dedupeKey: row.dedupeKey
-    }));
-  }
-
-  function buildCycleRows() {
-    return filteredRecords("cycle").map((log) => {
-      const lines = Array.isArray(log.lines) ? log.lines : [];
-      const varianceLines = Number(log.varianceLines ?? lines.filter((line) => Number(line.variance || 0) !== 0).length);
-      return {
-        completedDate: getCompletedDate(log),
-        counter: log.counter || "",
-        stockCountId: log.countId || "",
-        linesCounted: Number(log.lineCount || lines.length || 0),
-        varianceLines,
-        totalVariance: sumBy(lines, "variance"),
-        status: varianceLines ? "Variance" : "Balanced",
-        details: previewLines(lines, (line) => `${line.item || ""}: counted ${line.countedQty || 0}, variance ${line.variance || 0}`)
-      };
-    });
-  }
-
-  function buildPickingRows() {
-    return filteredRecords("picking").map((log) => {
-      const lines = Array.isArray(log.lines) ? log.lines : [];
-      const issueLines = Number(log.issueLines ?? lines.filter(isIssueLine).length);
-      return {
-        completedDate: getCompletedDate(log),
-        picker: log.picker || "",
-        orderNumber: log.orderNumber || "",
-        lines: Number(log.lineCount || lines.length || 0),
-        totalPicked: Number(log.totalPicked || sumBy(lines, "pickedQty")),
-        issueLines,
-        status: issueLines ? "Issues" : "Complete",
-        details: previewLines(lines, (line) => `${line.item || ""}: picked ${line.pickedQty || 0}, ${line.status || "Pending"}`)
-      };
-    });
+  function formatSubmittedTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 
   function sumBy(rows, key) {
     return (rows || []).reduce((sum, row) => sum + Number(row?.[key] || 0), 0);
   }
 
-  function isIssueLine(line) {
-    return ["Short", "Damaged", "Wrong Slot", "Partial", "Overpicked"].includes(line?.status);
-  }
-
   function previewLines(lines, formatter) {
-    return (lines || [])
-      .slice(0, 3)
-      .map(formatter)
-      .filter(Boolean)
-      .join(" | ");
+    return (lines || []).slice(0, 3).map(formatter).join("; ");
   }
 
-  function historyActions(type, id) {
-    if (!id) return "";
-    const safeType = escapeHtml(type);
-    const safeId = escapeHtml(id);
-    const canManage = typeof window.canManageHistory === "function" && window.canManageHistory();
-    return `
-      <div class="row-actions">
-        <button type="button" onclick="openHistoryRecord('${safeType}', '${safeId}', 'view')">View</button>
-        ${canManage ? `<button type="button" onclick="openHistoryRecord('${safeType}', '${safeId}', 'edit')">Edit</button>` : ""}
-        ${canManage ? `<button type="button" class="danger" onclick="deleteHistoryRecordByKey('${safeType}', '${safeId}')">Delete</button>` : ""}
-      </div>
-    `;
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>'"]/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "'": "&#39;",
+      '"': "&quot;"
+    }[char]));
+  }
+
+  function renderTenantBadge() {
+    const badge = document.getElementById("userBadge");
+    if (!badge || !currentEmail()) return;
+    badge.textContent = `${currentEmail()} · ${currentTenantKey()}`;
   }
 })();

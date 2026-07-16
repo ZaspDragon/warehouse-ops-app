@@ -4,10 +4,22 @@ const DEMO_STORAGE_KEY = "warehouseOpsDemoStateV1";
 const TIMER_STORAGE_KEY = "warehouseOpsReceivingTimerV1";
 const SETTINGS_STORAGE_KEY = "warehouseOpsSettingsV1";
 const TERMS_STORAGE_KEY = "warehouseOpsTermsAcceptanceV1";
-const PUTAWAY_DRAFT_STORAGE_KEY = "warehouseos_putaway_draft";
-const PUTAWAY_AUTOSAVE_DELAY = 400;
-const TERMS_VERSION = "qr-legends-legal-2026-v1";
+const PUTAWAY_DRAFT_KEY = "warehouseos_putaway_draft_v1";
+const PUTAWAY_AUTOSAVE_DELAY_MS = 400;
+const TERMS_VERSION = "warehouseos-legal-2026-v1";
+const CYCLE_TIMER_KEY = "warehouseOps_cycleCountTimers_v1";
+const CYCLE_AUDIT_KEY = "warehouseOps_cycleCountAudit_v1";
+const CYCLE_PRODUCTION_KEY = "warehouseOps_cycleCountProduction_v1";
+const COUNT_CREATION_KEY = "warehouseOps_countCreationLog_v1";
+const VARIANCE_RESEARCH_KEY = "warehouseOps_varianceResearchLog_v1";
+const HOLD_BATCH_KEY = "warehouseOps_holdBatchLog_v1";
+const HIGH_RISK_KEY = "warehouseOps_highRiskInventory_v1";
+const ROOT_CAUSE_KEY = "warehouseOps_rootCauseLog_v1";
+const DATA_BACKUP_META_KEY = "warehouseOps_dataBackups_v1";
+const DEMO_PRODUCTION_CLEANUP_KEY = "warehouseOps_demoProductionCleanup_v1";
 const ROLE_OWNER_EMAIL = "brandon.evanshine@chadwellsupply.com";
+const DAILY_COUNT_GOAL = 200;
+const DEMO_PRODUCTION_USER_EMAILS = new Set(["ilevanshine@gmail.com", "putawaysreceiving@gmail.com"]);
 const DEMO_USER = {
   uid: "demo-user",
   email: "demo@warehouse-ops-app.local"
@@ -22,16 +34,26 @@ const state = {
   pickingSessions: [],
   activityLogs: [],
   itemHistoryRows: [],
+  putawayDailyGroups: [],
+  editingPutawayDaily: null,
+  putawayLogFilters: { employee: "", start: "", end: "" },
   leaderboard: { activeView: "putaway", rows: [], recordCount: 0 },
   timer: readJson(TIMER_STORAGE_KEY, { status: "idle", elapsedMinutes: 0 }),
   settings: readJson(SETTINGS_STORAGE_KEY, { operatorName: "", operatorRole: "worker" }),
-  editingHistory: null
+  cycleTimers: readArrayJson(CYCLE_TIMER_KEY),
+  cycleProduction: readArrayJson(CYCLE_PRODUCTION_KEY),
+  countCreationLog: readArrayJson(COUNT_CREATION_KEY),
+  varianceResearchLog: readArrayJson(VARIANCE_RESEARCH_KEY),
+  holdBatchLog: readArrayJson(HOLD_BATCH_KEY),
+  highRiskInventory: readArrayJson(HIGH_RISK_KEY),
+  rootCauseLog: readArrayJson(ROOT_CAUSE_KEY),
+  cycleAuditLog: readArrayJson(CYCLE_AUDIT_KEY),
+  editingHistory: null,
+  putawayAutosaveTimer: null
 };
 
-let putawayDraftTimer = null;
-let putawayDraftDirty = false;
-let putawaySaveInProgress = false;
 let pendingLegalConsent = false;
+let storageBackupCreatedThisSession = false;
 
 const COLLECTIONS = {
   employees: "employees",
@@ -58,30 +80,184 @@ function writeJson(key, value) {
   }
 }
 
+function readArrayJson(key) {
+  const value = readJson(key, []);
+  return Array.isArray(value) ? value : [];
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   setTodayDefaults();
   buildAllTables();
-  restorePutawayDraft();
+  initializeDataProtection();
+  initializeCycleProductionData();
+  initializePutawayDraft();
   wireEvents();
   syncLeaderboardDateControls();
   syncSettingsUi();
   renderReceivingTimer();
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
   window.setInterval(renderReceivingTimer, 1000);
+  window.setInterval(renderCyclePacketTimer, 1000);
   watchAuth();
-  window.addEventListener("pagehide", () => {
-    if (putawayDraftDirty) savePutawayDraft();
-  });
   if (new URLSearchParams(window.location.search).get("demo") === "1") {
     enterDemoMode({ silent: true });
   }
 });
 
 function setTodayDefaults() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayValue();
 
-  ["putDate", "pickDate"].forEach((id) => {
+  ["putDate", "cycleDate", "pickDate", "cycleTimerDate", "creationDate", "varianceDate", "holdDate", "riskDate"].forEach((id) => {
     if ($(id)) $(id).value = today;
   });
+}
+
+function todayValue() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function initializePutawayDraft() {
+  restorePutawayDraft();
+  updatePutawayStats();
+}
+
+function putawayDraftRows() {
+  return [...document.querySelectorAll("#putawayBody tr")];
+}
+
+function collectPutawayDraft() {
+  return {
+    worker: $("putWorker")?.value.trim() || "",
+    putawayNumber: $("putSheetNumber")?.value.trim() || "",
+    date: $("putDate")?.value || "",
+    status: $("putStatus")?.value || "Completed",
+    updatedAt: new Date().toISOString(),
+    lines: putawayDraftRows().map((row, idx) => ({
+      line: idx + 1,
+      item: rowValue(row, ".put-item"),
+      qty: rowValue(row, ".put-qty"),
+      location: rowValue(row, ".put-location"),
+      notes: rowValue(row, ".put-notes")
+    }))
+  };
+}
+
+function hasPutawayDraftData(draft = collectPutawayDraft()) {
+  const hasLines = (draft.lines || []).some((line) =>
+    [line.item, line.qty, line.location, line.notes].some((value) => String(value || "").trim())
+  );
+
+  return Boolean(
+    (draft.worker || "").trim() ||
+      (draft.putawayNumber || "").trim() ||
+      hasLines ||
+      (draft.status && draft.status !== "Completed") ||
+      ((draft.date || "").trim() && draft.date !== todayValue())
+  );
+}
+
+function isPutawayDraftField(target) {
+  if (!target?.closest) return false;
+
+  if (["putWorker", "putDate", "putSheetNumber", "putStatus"].includes(target.id)) return true;
+  return Boolean(target.closest("#putawayBody"));
+}
+
+function debouncedSavePutawayDraft() {
+  window.clearTimeout(state.putawayAutosaveTimer);
+  state.putawayAutosaveTimer = window.setTimeout(() => {
+    savePutawayDraft({ statusMessage: "Auto-saved just now" });
+  }, PUTAWAY_AUTOSAVE_DELAY_MS);
+}
+
+function flushPutawayDraftSave(options = {}) {
+  window.clearTimeout(state.putawayAutosaveTimer);
+  state.putawayAutosaveTimer = null;
+  savePutawayDraft(options);
+}
+
+function savePutawayDraft(options = {}) {
+  const { statusMessage = "Auto-saved just now" } = options;
+  const draft = collectPutawayDraft();
+
+  try {
+    window.localStorage.setItem(PUTAWAY_DRAFT_KEY, JSON.stringify(draft));
+    setPutawayAutosaveStatus(statusMessage);
+    return true;
+  } catch (err) {
+    console.error("Put Away draft save failed:", err);
+    setPutawayAutosaveStatus("Auto-save failed");
+    return false;
+  }
+}
+
+function restorePutawayDraft() {
+  if (!putawayDraftRows().length || hasPutawayDraftData()) {
+    return false;
+  }
+
+  let draft = null;
+
+  try {
+    const raw = window.localStorage.getItem(PUTAWAY_DRAFT_KEY);
+    draft = raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    console.error("Put Away draft restore failed:", err);
+    setPutawayAutosaveStatus("Auto-save failed");
+    return false;
+  }
+
+  if (!draft || !hasPutawayDraftData(draft)) {
+    setPutawayAutosaveStatus("All changes saved");
+    return false;
+  }
+
+  if ($("putWorker")) $("putWorker").value = draft.worker || "";
+  if ($("putSheetNumber")) $("putSheetNumber").value = draft.putawayNumber || draft.sheetNumber || "";
+  if ($("putDate")) $("putDate").value = draft.date || todayValue();
+  if ($("putStatus")) $("putStatus").value = draft.status || "Completed";
+
+  putawayDraftRows().forEach((row, idx) => {
+    const line = draft.lines?.[idx] || {};
+    setRowValue(row, ".put-item", line.item || "");
+    setRowValue(row, ".put-qty", line.qty || "");
+    setRowValue(row, ".put-location", line.location || "");
+    setRowValue(row, ".put-notes", line.notes || "");
+  });
+
+  updatePutawayStats();
+  setPutawayAutosaveStatus("Draft restored");
+  return true;
+}
+
+function clearPutawayDraft(options = {}) {
+  const { keepStatus = false } = options;
+
+  window.clearTimeout(state.putawayAutosaveTimer);
+  state.putawayAutosaveTimer = null;
+
+  try {
+    window.localStorage.removeItem(PUTAWAY_DRAFT_KEY);
+  } catch (err) {
+    console.error("Put Away draft clear failed:", err);
+  }
+
+  if (!keepStatus) {
+    setPutawayAutosaveStatus("All changes saved");
+  }
+}
+
+function setPutawayAutosaveStatus(message) {
+  const el = $("putawayAutosaveStatus");
+  if (!el) return;
+
+  el.textContent = message;
+  el.dataset.state = /failed/i.test(message)
+    ? "error"
+    : /restored/i.test(message)
+      ? "info"
+      : "saved";
 }
 
 function wireEvents() {
@@ -98,21 +274,22 @@ function wireEvents() {
   $("logoutBtn")?.addEventListener("click", logoutCurrentUser);
   $("resetDemoBtn")?.addEventListener("click", () => resetDemoData());
 
-  $("startReceivingTimerBtn")?.addEventListener("click", startReceivingTimer);
-  $("stopReceivingTimerBtn")?.addEventListener("click", stopReceivingTimer);
-  $("resetReceivingTimerBtn")?.addEventListener("click", resetReceivingTimer);
-
+  $("loadCycleFileBtn")?.addEventListener("click", loadCycleCountFile);
+  $("exportCurrentCycleBtn")?.addEventListener("click", exportCurrentCycle);
+  $("startCyclePacketBtn")?.addEventListener("click", startCyclePacket);
+  $("finishCyclePacketBtn")?.addEventListener("click", finishCyclePacket);
+  $("addCycleDelayBtn")?.addEventListener("click", addCycleDelayNote);
+  $("resetCyclePacketBtn")?.addEventListener("click", resetCyclePacketBySupervisor);
+  $("voidCyclePacketBtn")?.addEventListener("click", voidCyclePacketBySupervisor);
+  $("applyProductionFiltersBtn")?.addEventListener("click", renderCycleProductionDashboard);
+  $("clearProductionFiltersBtn")?.addEventListener("click", clearProductionFilters);
+  $("saveCreationLogBtn")?.addEventListener("click", saveCountCreationLog);
+  $("saveVarianceLogBtn")?.addEventListener("click", saveVarianceResearchLog);
+  $("saveHoldBatchBtn")?.addEventListener("click", saveHoldBatchLog);
+  $("saveHighRiskBtn")?.addEventListener("click", saveHighRiskInventory);
+  $("rollbackCycleProductionBtn")?.addEventListener("click", rollbackLatestWarehouseOpsBackup);
   $("loadPickFileBtn")?.addEventListener("click", loadPickTicketFile);
   $("exportCurrentPickingBtn")?.addEventListener("click", exportCurrentPicking);
-  $("leaderboardRangePreset")?.addEventListener("change", syncLeaderboardDateControls);
-  $("leaderboardStartDate")?.addEventListener("change", renderLeaderboard);
-  $("leaderboardEndDate")?.addEventListener("change", renderLeaderboard);
-  $("leaderboardSearch")?.addEventListener("input", renderLeaderboard);
-  $("exportLeaderboardBtn")?.addEventListener("click", exportLeaderboardCsv);
-
-  document.querySelectorAll(".leaderboard-tab").forEach((btn) => {
-    btn.addEventListener("click", () => switchLeaderboardView(btn.dataset.leaderboardView));
-  });
 
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
@@ -121,10 +298,10 @@ function wireEvents() {
   $("addEmployeeBtn")?.addEventListener("click", addEmployee);
 
   $("savePutawayBtn")?.addEventListener("click", savePutaway);
-  $("clearPutawayBtn")?.addEventListener("click", () => {
-    resetPutawayForNextSheet();
-    schedulePutawayDraftSave();
-  });
+  $("clearPutawayBtn")?.addEventListener("click", confirmClearPutawayForm);
+
+  $("saveCycleBtn")?.addEventListener("click", saveCycle);
+  $("clearCycleBtn")?.addEventListener("click", () => clearRows("cycleBody"));
 
   $("savePickingBtn")?.addEventListener("click", savePicking);
   $("clearPickingBtn")?.addEventListener("click", () => clearRows("pickingBody"));
@@ -133,6 +310,11 @@ function wireEvents() {
   $("exportHistoryBtn")?.addEventListener("click", () => exportCsv("history"));
   $("searchItemHistoryBtn")?.addEventListener("click", renderItemHistory);
   $("exportItemHistoryBtn")?.addEventListener("click", exportItemHistory);
+  $("leaderboardRangePreset")?.addEventListener("change", syncLeaderboardDateControls);
+  $("leaderboardStartDate")?.addEventListener("change", renderLeaderboard);
+  $("leaderboardEndDate")?.addEventListener("change", renderLeaderboard);
+  $("leaderboardSearch")?.addEventListener("input", renderLeaderboard);
+  $("exportLeaderboardBtn")?.addEventListener("click", exportLeaderboardCsv);
   $("saveSettingsBtn")?.addEventListener("click", saveSettings);
   $("legalConsent")?.addEventListener("change", syncLoginConsent);
   $("termsAgree")?.addEventListener("change", () => {
@@ -143,16 +325,32 @@ function wireEvents() {
   $("closeHistoryModalBtn")?.addEventListener("click", closeHistoryModal);
   $("saveHistoryEditBtn")?.addEventListener("click", saveHistoryEdit);
   $("deleteHistoryRecordBtn")?.addEventListener("click", deleteHistoryRecord);
+  $("closePutawayDailyModalBtn")?.addEventListener("click", closePutawayDailyModal);
+  $("applyPutawayLogFiltersBtn")?.addEventListener("click", renderPutawayLogs);
+  $("clearPutawayLogFiltersBtn")?.addEventListener("click", clearPutawayLogFilters);
 
   document.querySelectorAll(".exportBtn").forEach((btn) => {
     btn.addEventListener("click", () => exportCsv(btn.dataset.export));
   });
 
+  document.querySelectorAll(".productionExportBtn").forEach((btn) => {
+    btn.addEventListener("click", () => exportProductionCsv(btn.dataset.export));
+  });
+
+  document.querySelectorAll(".leaderboard-tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchLeaderboardView(btn.dataset.leaderboardView));
+  });
+
   document.addEventListener("input", (e) => {
-    if (e.target.closest("#putawayBody") || ["putWorker", "putDate", "putSheetNumber", "putStatus"].includes(e.target.id)) {
-      updatePutawayStats();
-      schedulePutawayDraftSave();
+    if (isPutawayDraftField(e.target)) {
+      if (e.target.closest("#putawayBody")) updatePutawayStats();
+      savePutawayDraft({ statusMessage: "Auto-saved just now" });
     }
+    if (e.target.closest("#cycleBody")) updateCycleStats();
+    if (e.target.id === "cycleWorker" && $("cycleTimerEmployee")) $("cycleTimerEmployee").value = e.target.value;
+    if (e.target.id === "cycleId" && $("cycleTimerCountId")) $("cycleTimerCountId").value = e.target.value;
+    if (e.target.id === "cycleDate" && $("cycleTimerDate")) $("cycleTimerDate").value = e.target.value;
+
     if (e.target.closest("#pickingBody")) {
       if (e.target.classList.contains("pick-picked") || e.target.classList.contains("pick-required")) {
         autoStatusForRow(e.target.closest("tr"));
@@ -163,17 +361,71 @@ function wireEvents() {
   });
 
   document.addEventListener("change", (e) => {
-    if (e.target.closest("#putawayBody") || ["putWorker", "putDate", "putSheetNumber", "putStatus"].includes(e.target.id)) {
+    if (e.target.id === "cycleWorker" && $("cycleTimerEmployee")) $("cycleTimerEmployee").value = e.target.value;
+    if (e.target.id === "cycleId" && $("cycleTimerCountId")) $("cycleTimerCountId").value = e.target.value;
+    if (e.target.id === "cycleDate" && $("cycleTimerDate")) $("cycleTimerDate").value = e.target.value;
+    if (isPutawayDraftField(e.target)) {
       updatePutawayStats();
-      schedulePutawayDraftSave();
+      savePutawayDraft({ statusMessage: "All changes saved" });
+    }
+    if (e.target.id === "putawayLogEmployeeFilter" || e.target.id === "putawayLogStartFilter" || e.target.id === "putawayLogEndFilter") {
+      renderPutawayLogs();
     }
     if (e.target.closest("#pickingBody")) updatePickingStats();
+    if (e.target.closest("#cycleBody")) updateCycleStats();
+  });
+
+  document.addEventListener("click", (e) => {
+    const startItemBtn = e.target.closest(".startItemTimerBtn");
+    if (startItemBtn) {
+      startCycleItemTimer(startItemBtn.closest("tr"));
+      return;
+    }
+
+    const endItemBtn = e.target.closest(".endItemTimerBtn");
+    if (endItemBtn) {
+      endCycleItemTimer(endItemBtn.closest("tr"));
+      return;
+    }
+
+    const reviewBtn = e.target.closest(".delayReviewBtn");
+    if (reviewBtn) {
+      reviewDelayNote(reviewBtn.dataset.timerId, reviewBtn.dataset.delayId, reviewBtn.dataset.status);
+    }
+  });
+
+  document.addEventListener(
+    "blur",
+    (e) => {
+      if (isPutawayDraftField(e.target)) {
+        flushPutawayDraftSave();
+      }
+    },
+    true
+  );
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
+  });
+
+  window.addEventListener("beforeunload", () => {
+    flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
   });
 
   syncLoginConsent();
 }
 
 function switchTab(tab) {
+  if (["cycle", "cycleProduction", "picking"].includes(tab)) {
+    tab = "putaway";
+  }
+
   document.querySelectorAll(".tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
@@ -185,10 +437,12 @@ function switchTab(tab) {
   const panel = $(`${tab}Tab`);
   if (panel) panel.classList.add("active");
 
+  if (tab === "putaway") restorePutawayDraft();
   if (tab === "history") loadHistory();
   if (tab === "itemHistory") renderItemHistory();
   if (tab === "leaderboard") renderLeaderboard();
   if (tab === "settings") syncSettingsUi();
+  if (tab === "cycleProduction") renderCycleProductionDashboard();
 }
 
 function legalUserId(user = state.user) {
@@ -249,7 +503,7 @@ async function recordTermsAcceptance(user = state.user) {
       await db.collection("termsAcceptances").doc(acceptanceId).set({
         ...record,
         userAgent: navigator.userAgent,
-        termsSummary: "QR Legends Terms of Use and Privacy Policy accepted."
+        termsSummary: "WarehouseOS Terms of Use and Privacy Policy accepted."
       }, { merge: true });
       writeJson(TERMS_STORAGE_KEY, { ...record, serverAcceptanceId: acceptanceId });
     } catch (err) {
@@ -327,6 +581,7 @@ function syncShell() {
 
   document.body.classList.toggle("demo-mode", state.isDemoMode);
   syncSettingsUi();
+  if (signedIn) restorePutawayDraft();
 }
 
 function clearLoadedState() {
@@ -345,17 +600,16 @@ function clearLoadedState() {
 }
 
 function resetWorkingForms() {
-  window.clearTimeout(putawayDraftTimer);
   clearRows("putawayBody");
+  clearRows("cycleBody");
   clearRows("pickingBody");
   setTodayDefaults();
 
+  if ($("cycleId")) $("cycleId").value = "";
   if ($("pickOrder")) $("pickOrder").value = "";
 }
 
 function logoutCurrentUser() {
-  if (putawayDraftDirty) savePutawayDraft();
-
   if (state.isDemoMode) {
     exitDemoMode();
     return;
@@ -379,7 +633,6 @@ function enterDemoMode(options = {}) {
   }
 
   resetWorkingForms();
-  restorePutawayDraft();
   syncShell();
   switchTab("putaway");
   setLoginMessage("");
@@ -466,9 +719,17 @@ function readDemoState() {
     return {
       employees: parsed.employees || [],
       putawayLogs: parsed.putawayLogs || [],
-      cycleSessions: [],
+      cycleSessions: parsed.cycleSessions || [],
       pickingSessions: parsed.pickingSessions || [],
-      activityLogs: parsed.activityLogs || []
+      activityLogs: parsed.activityLogs || [],
+      cycleTimers: parsed.cycleTimers || null,
+      cycleProduction: parsed.cycleProduction || null,
+      countCreationLog: parsed.countCreationLog || null,
+      varianceResearchLog: parsed.varianceResearchLog || null,
+      holdBatchLog: parsed.holdBatchLog || null,
+      highRiskInventory: parsed.highRiskInventory || null,
+      rootCauseLog: parsed.rootCauseLog || null,
+      cycleAuditLog: parsed.cycleAuditLog || null
     };
   } catch (err) {
     console.warn("Demo state load failed:", err);
@@ -480,18 +741,27 @@ function snapshotDemoState() {
   return {
     employees: state.employees,
     putawayLogs: state.putawayLogs,
-    cycleSessions: [],
+    cycleSessions: state.cycleSessions,
     pickingSessions: state.pickingSessions,
-    activityLogs: state.activityLogs
+    activityLogs: state.activityLogs,
+    cycleTimers: state.cycleTimers,
+    cycleProduction: state.cycleProduction,
+    countCreationLog: state.countCreationLog,
+    varianceResearchLog: state.varianceResearchLog,
+    holdBatchLog: state.holdBatchLog,
+    highRiskInventory: state.highRiskInventory,
+    rootCauseLog: state.rootCauseLog,
+    cycleAuditLog: state.cycleAuditLog
   };
 }
 
 function applyDemoState(data) {
   state.employees = data.employees || [];
   state.putawayLogs = sortByCreatedAtDesc(data.putawayLogs || []);
-  state.cycleSessions = [];
+  state.cycleSessions = sortByCreatedAtDesc(data.cycleSessions || []);
   state.pickingSessions = sortByCreatedAtDesc(data.pickingSessions || []);
   state.activityLogs = sortByCreatedAtDesc(data.activityLogs || []);
+  applyDemoCycleProductionState(data);
 
   renderEmployees();
   renderLogs();
@@ -500,13 +770,25 @@ function applyDemoState(data) {
   populateEmployeeDropdowns();
 }
 
+function applyDemoCycleProductionState(data = {}) {
+  const fallback = buildDemoCycleProductionState();
+  state.cycleTimers = Array.isArray(data.cycleTimers) ? data.cycleTimers : fallback.cycleTimers;
+  state.cycleProduction = Array.isArray(data.cycleProduction) ? data.cycleProduction : fallback.cycleProduction;
+  state.countCreationLog = Array.isArray(data.countCreationLog) ? data.countCreationLog : fallback.countCreationLog;
+  state.varianceResearchLog = Array.isArray(data.varianceResearchLog) ? data.varianceResearchLog : fallback.varianceResearchLog;
+  state.holdBatchLog = Array.isArray(data.holdBatchLog) ? data.holdBatchLog : fallback.holdBatchLog;
+  state.highRiskInventory = Array.isArray(data.highRiskInventory) ? data.highRiskInventory : fallback.highRiskInventory;
+  state.rootCauseLog = Array.isArray(data.rootCauseLog) ? data.rootCauseLog : fallback.rootCauseLog;
+  state.cycleAuditLog = Array.isArray(data.cycleAuditLog) ? data.cycleAuditLog : fallback.cycleAuditLog;
+}
+
 function buildDemoState() {
   const employees = [
     createDemoEmployee("emp-ava", "Ava Patel", "Put Away", true, 9),
     createDemoEmployee("emp-diego", "Diego Martinez", "Put Away", true, 7),
-    createDemoEmployee("emp-jordan", "Jordan Lee", "Order Picking", true, 6),
+    createDemoEmployee("emp-jordan", "Jordan Lee", "Put Away", true, 6),
     createDemoEmployee("emp-maya", "Maya Chen", "Lead", true, 12),
-    createDemoEmployee("emp-noah", "Noah Brooks", "Order Picking", false, 4)
+    createDemoEmployee("emp-noah", "Noah Brooks", "Put Away", false, 4)
   ];
 
   const putawayLogs = [
@@ -539,7 +821,74 @@ function buildDemoState() {
     }
   ];
 
-  const cycleSessions = [];
+  const cycleSessions = [
+    {
+      id: "cycle-demo-1",
+      counter: "Diego Martinez",
+      date: demoDate(0),
+      countId: "COUNT-0531-A",
+      lines: [
+        {
+          line: 1,
+          item: "SKU-1188",
+          description: "24in Packing Tape",
+          location: "B2-09",
+          systemQty: 48,
+          countedQty: 48,
+          variance: 0,
+          reason: "Count Verified",
+          done: true
+        },
+        {
+          line: 2,
+          item: "SKU-7720",
+          description: "Dock Seal Kit",
+          location: "C1-02",
+          systemQty: 22,
+          countedQty: 20,
+          variance: -2,
+          reason: "Short Pick",
+          done: true
+        },
+        {
+          line: 3,
+          item: "SKU-5521",
+          description: "Safety Gloves Large",
+          location: "E1-03",
+          systemQty: 36,
+          countedQty: 36,
+          variance: 0,
+          reason: "Count Verified",
+          done: true
+        }
+      ],
+      lineCount: 3,
+      varianceLines: 1,
+      createdAt: demoTimestamp(0, 10, 35)
+    },
+    {
+      id: "cycle-demo-2",
+      counter: "Maya Chen",
+      date: demoDate(2),
+      countId: "COUNT-0529-B",
+      lines: [
+        {
+          line: 1,
+          item: "SKU-2207",
+          description: "Stretch Wrap",
+          location: "A3-07",
+          systemQty: 15,
+          countedQty: 17,
+          variance: 2,
+          reason: "Receiving Error",
+          done: true
+        }
+      ],
+      lineCount: 1,
+      varianceLines: 1,
+      createdAt: demoTimestamp(2, 15, 22)
+    }
+  ];
 
   const pickingSessions = [
     {
@@ -627,9 +976,10 @@ function buildDemoState() {
   return {
     employees,
     putawayLogs,
-    cycleSessions: [],
+    cycleSessions,
     pickingSessions,
-    activityLogs: buildDemoActivityLogs(putawayLogs, pickingSessions)
+    activityLogs: buildDemoActivityLogs(putawayLogs, cycleSessions, pickingSessions),
+    ...buildDemoCycleProductionState()
   };
 }
 
@@ -645,9 +995,10 @@ function createDemoEmployee(id, name, role, active, daysAgo) {
   };
 }
 
-function buildDemoActivityLogs(putawayLogs, pickingSessions) {
+function buildDemoActivityLogs(putawayLogs, cycleSessions, pickingSessions) {
   const activityLogs = [
     ...putawayLogs.flatMap((session) => createActivityEntries("putaway", session, session.lines, session.createdAt)),
+    ...cycleSessions.flatMap((session) => createActivityEntries("cycleCount", session, session.lines, session.createdAt)),
     ...pickingSessions.flatMap((session) => createActivityEntries("orderPicking", session, session.lines, session.createdAt))
   ];
 
@@ -749,6 +1100,7 @@ async function loadAllData() {
     await Promise.all([
       loadCollection(COLLECTIONS.employees, "employees"),
       loadCollection(COLLECTIONS.putaway, "putawayLogs"),
+      loadCollection(COLLECTIONS.cycle, "cycleSessions"),
       loadCollection(COLLECTIONS.picking, "pickingSessions"),
       loadCollection(COLLECTIONS.activity, "activityLogs")
     ]);
@@ -758,7 +1110,9 @@ async function loadAllData() {
     renderHistory();
     renderItemHistory();
     populateEmployeeDropdowns();
-    restorePutawayDraft();
+    initializeCycleProductionData();
+    renderCyclePacketTimer();
+    renderCycleProductionDashboard();
   } catch (err) {
     console.error("Load data failed:", err);
     toast("Load failed: " + err.message);
@@ -803,16 +1157,8 @@ function isRoleOwner() {
   return String(state.user?.email || "").toLowerCase() === ROLE_OWNER_EMAIL;
 }
 
-function currentOperatorRole() {
-  return String(state.settings.operatorRole || "worker").toLowerCase();
-}
-
-function canManageHistory() {
-  return isRoleOwner() || ["lead", "manager", "admin", "platformowner"].includes(currentOperatorRole());
-}
-
 function canResetTimer() {
-  return canManageHistory();
+  return isRoleOwner() || ["lead", "manager", "admin"].includes(String(state.settings.operatorRole || "").toLowerCase());
 }
 
 function timerSeconds() {
@@ -835,8 +1181,8 @@ function formatTimer(seconds) {
 
 function formatDateTime(value) {
   if (!value) return "-";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  const date = parseDateValue(value);
+  return date ? date.toLocaleString() : value;
 }
 
 function renderReceivingTimer() {
@@ -849,9 +1195,6 @@ function renderReceivingTimer() {
   if ($("timerStartedAt")) $("timerStartedAt").textContent = formatDateTime(state.timer.startedAt);
   if ($("timerStoppedBy")) $("timerStoppedBy").textContent = state.timer.stoppedByName || "-";
   if ($("timerStoppedAt")) $("timerStoppedAt").textContent = formatDateTime(state.timer.stoppedAt);
-  if ($("startReceivingTimerBtn")) $("startReceivingTimerBtn").disabled = state.timer.status === "running";
-  if ($("stopReceivingTimerBtn")) $("stopReceivingTimerBtn").disabled = state.timer.status !== "running";
-  if ($("resetReceivingTimerBtn")) $("resetReceivingTimerBtn").disabled = !canResetTimer();
 }
 
 function persistTimer() {
@@ -894,12 +1237,6 @@ function resetReceivingTimer() {
   renderReceivingTimer();
 }
 
-function prepareNextPutawayTimer() {
-  state.timer = { status: "idle", elapsedMinutes: 0 };
-  writeJson(TIMER_STORAGE_KEY, state.timer);
-  renderReceivingTimer();
-}
-
 function addReceivingActivity(status) {
   const entry = {
     type: "receiving",
@@ -910,7 +1247,7 @@ function addReceivingActivity(status) {
     qty: timerMinutes(),
     location: "Dock",
     status,
-    notes: `Dock-To-Stock Minutes: ${timerMinutes()}`,
+    notes: `Receiving minutes: ${timerMinutes()}`,
     createdAt: new Date().toISOString(),
     createdBy: state.user?.uid || "",
     createdByEmail: state.user?.email || ""
@@ -963,27 +1300,8 @@ function calculateDockToStock() {
 
 function buildAllTables() {
   buildPutawayRows();
+  buildCycleRows();
   buildPickingRows();
-}
-
-function normalizePutawayNumber(value) {
-  return String(value || "").trim();
-}
-
-function putawayDedupeKey(sessionDoc, line) {
-  return [
-    "putaway",
-    sessionDoc.id || "",
-    sessionDoc.putawayNumber || sessionDoc.sheetNumber || "",
-    sessionDoc.date || "",
-    sessionDoc.worker || "",
-    line.line || "",
-    line.item || "",
-    line.qty ?? "",
-    line.location || ""
-  ]
-    .map((part) => String(part).trim().toLowerCase())
-    .join("|");
 }
 
 async function saveActivityLogs(type, sessionDoc, lines) {
@@ -999,6 +1317,7 @@ async function saveActivityLogs(type, sessionDoc, lines) {
   });
 
   await batch.commit();
+  return entries;
 }
 
 function createActivityEntries(type, sessionDoc, lines, createdAtBase = Date.now()) {
@@ -1016,21 +1335,25 @@ function createActivityEntries(type, sessionDoc, lines, createdAtBase = Date.now
 
 function buildActivityEntry(type, sessionDoc, line, createdAt) {
   const isPutaway = normalizeProcessValue(type) === "putaway";
-  const putawayNumber = sessionDoc.putawayNumber || sessionDoc.sheetNumber || "";
+  const putawayNumber = sessionDoc.putawayNumber || sessionDoc.sheetNumber || line.putawayNumber || line.sheetNumber || "";
   return {
     type,
     sourceCollection: isPutaway ? COLLECTIONS.putaway : historyCollection(type),
-    sourceId: sessionDoc.id || "",
+    sourceId: sessionDoc.id || line.sourceRecordId || "",
     putawayNumber,
     sheetNumber: putawayNumber,
     line: line.line || "",
-    employee: sessionDoc.worker || sessionDoc.counter || sessionDoc.picker || "",
+    ownerEmail: sessionDoc.ownerEmail || line.ownerEmail || currentOwnerEmail(),
+    tenantKey: sessionDoc.tenantKey || line.tenantKey || currentBranchId(),
+    branchId: sessionDoc.branchId || line.branchId || currentBranchId(),
+    companyId: sessionDoc.companyId || line.companyId || "warehouse-ops",
+    employee: sessionDoc.employeeName || sessionDoc.worker || sessionDoc.counter || sessionDoc.picker || "",
     employeeUid: sessionDoc.workerUid || sessionDoc.createdBy || "",
     employeeEmail: sessionDoc.workerEmail || sessionDoc.createdByEmail || "",
     date: sessionDoc.date || "",
-    item: line.item || "",
+    item: line.item || line.itemNumber || "",
     description: line.description || "",
-    qty: Number(line.qty || line.pickedQty || line.countedQty || 0),
+    qty: Number(line.qty ?? line.quantity ?? line.pickedQty ?? line.countedQty ?? 0),
     systemQty: Number(line.systemQty || 0),
     countedQty: Number(line.countedQty || 0),
     requiredQty: Number(line.requiredQty || 0),
@@ -1038,15 +1361,15 @@ function buildActivityEntry(type, sessionDoc, line, createdAt) {
     remainingQty: Number(line.remainingQty || 0),
     availableQty: Number(line.availableQty || 0),
     variance: Number(line.variance || 0),
-    location: line.location || line.slot || line.fromSlot || "",
+    location: line.location || line.binLocation || line.slot || line.fromSlot || "",
     uom: line.uom || "",
     dockToStockMinutes: Number(sessionDoc.dockToStockMinutes || 0),
     status: line.status || sessionDoc.status || "",
     reason: line.reason || "",
     notes: line.notes || "",
-    completedDate: sessionDoc.completedDate || sessionDoc.date || String(createdAt || "").slice(0, 10),
+    completedDate: sessionDoc.completedDate || sessionDoc.date || line.workDate || String(createdAt || "").slice(0, 10),
     timestamp: createdAt,
-    dedupeKey: isPutaway ? putawayDedupeKey(sessionDoc, line) : "",
+    dedupeKey: isPutaway ? [sessionDoc.id || "", putawayNumber, sessionDoc.date || "", line.line || "", line.itemNumber || line.item || "", line.quantity ?? line.qty ?? ""].join("|").toLowerCase() : "",
     createdAt,
     createdBy: state.user?.uid || "",
     createdByEmail: state.user?.email || ""
@@ -1066,20 +1389,18 @@ function buildPutawayRows() {
 
   body.innerHTML = "";
 
-  for (let i = 1; i <= 25; i++) {
-    body.insertAdjacentHTML(
-      "beforeend",
-      `
-      <tr>
-        <td>${i}</td>
-        <td><input class="item-input put-item" placeholder="Item #" /></td>
-        <td><input class="qty-input put-qty" type="number" min="0" placeholder="Qty" /></td>
-        <td><input class="loc-input put-location" placeholder="Location" /></td>
-        <td><input class="desc-input put-notes" placeholder="Notes" /></td>
-      </tr>
+  body.insertAdjacentHTML(
+    "beforeend",
     `
-    );
-  }
+    <tr class="putaway-row">
+      <td data-label="Line" class="putaway-line-number">1</td>
+      <td data-label="Item #"><input class="item-input put-item" placeholder="Item #" /></td>
+      <td data-label="Qty"><input class="qty-input put-qty" type="number" min="0" placeholder="Qty" /></td>
+      <td data-label="Bin / Location"><input class="loc-input put-location" placeholder="Bin / Location" /></td>
+      <td data-label="Notes"><input class="desc-input put-notes" placeholder="Notes" /></td>
+    </tr>
+  `
+  );
 }
 
 function buildCycleRows(rowCount = 25) {
@@ -1114,6 +1435,32 @@ function buildCycleRows(rowCount = 25) {
           </select>
         </td>
         <td><input class="cycle-done" type="checkbox" /></td>
+        <td>
+          <div class="row-actions item-timing-actions">
+            <button class="startItemTimerBtn" type="button">Start</button>
+            <button class="endItemTimerBtn" type="button">End</button>
+            <span class="item-minutes">0 min</span>
+          </div>
+        </td>
+        <td>
+          <select class="cycle-item-delay">
+            <option>Normal</option>
+            <option>Mixed Product</option>
+            <option>Wrong Bin</option>
+            <option>Product Not Found</option>
+            <option>Multiple Locations</option>
+            <option>Damaged Product</option>
+            <option>UOM Issue</option>
+            <option>Waiting For Lift</option>
+            <option>Waiting For Supervisor</option>
+            <option>Hold Batch Research</option>
+            <option>Overstock Investigation</option>
+            <option>Count Sheet Issue</option>
+            <option>GP/System Issue</option>
+            <option>Other</option>
+          </select>
+          <input class="desc-input cycle-item-delay-notes" placeholder="Item delay notes" />
+        </td>
       </tr>
     `
     );
@@ -1804,7 +2151,15 @@ function populateEmployeeDropdowns() {
     });
   }
 
-  ["pickWorker"].forEach((id) => {
+  [
+    "cycleWorker",
+    "cycleTimerEmployee",
+    "pickWorker",
+    "prodFilterEmployee",
+    "creationEmployee",
+    "varianceEmployee",
+    "holdEmployee"
+  ].forEach((id) => {
     const select = $(id);
     if (!select) return;
 
@@ -1827,6 +2182,257 @@ function populateEmployeeDropdowns() {
    SAVE / COLLECT
 ---------------------------- */
 
+function currentBranchId() {
+  const email = currentOwnerEmail();
+  return sanitizeDailyDocPart(email || "demo_branch") || "unknown_branch";
+}
+
+function currentOwnerEmail() {
+  return String(state.user?.email || auth?.currentUser?.email || "").trim().toLowerCase();
+}
+
+function tenantDocumentFields() {
+  const ownerEmail = currentOwnerEmail();
+  return {
+    ownerEmail,
+    tenantKey: currentBranchId(),
+    branchId: currentBranchId(),
+    companyId: "warehouse-ops"
+  };
+}
+
+function sanitizeDailyDocPart(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function putawayWorkDate() {
+  return $("putDate")?.value || todayValue();
+}
+
+function parseDateValue(value) {
+  if (!value) return null;
+  if (typeof value === "object" && typeof value.toDate === "function") return value.toDate();
+  if (typeof value === "object" && Number.isFinite(value.seconds)) return new Date(value.seconds * 1000);
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatSubmittedTime(value) {
+  const date = parseDateValue(value) || new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function putawayDailyDocId(branchId, employeeName, workDate, putawayNumber = "") {
+  const sheetPart = sanitizeDailyDocPart(putawayNumber);
+  return [branchId, sanitizeDailyDocPart(employeeName) || "unknown_employee", workDate, sheetPart]
+    .filter(Boolean)
+    .join("_");
+}
+
+function putawayLineSubmissionDocId(branchId, employeeName, workDate, submittedAt, putawayNumber = "") {
+  const submittedKey = String(submittedAt || new Date().toISOString())
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "");
+  const randomKey = Math.random().toString(36).slice(2, 8);
+  return [putawayDailyDocId(branchId, employeeName, workDate, putawayNumber), submittedKey, randomKey].join("_");
+}
+
+function isPermissionDeniedError(err) {
+  const code = String(err?.code || "").toLowerCase();
+  const message = String(err?.message || "").toLowerCase();
+  return code.includes("permission-denied") || message.includes("permission") || message.includes("insufficient permissions");
+}
+
+function normalizePutawayLine(line = {}, index = 0, record = {}) {
+  const submittedAt = line.submittedAt || line.createdAt || record.submittedAt || record.createdAt || "";
+  const workDate =
+    normalizeLeaderboardDate(line.workDate) ||
+    normalizeLeaderboardDate(line.submittedDate) ||
+    normalizeLeaderboardDate(record.workDate) ||
+    normalizeLeaderboardDate(record.date) ||
+    normalizeLeaderboardDate(record.submittedDate) ||
+    normalizeLeaderboardDate(submittedAt) ||
+    "";
+  const employeeName = normalizeEmployeeName(line.employeeName || line.worker || record.employeeName || record.worker || record.employee);
+  const branchId = line.branchId || record.branchId || record.tenantKey || currentBranchId();
+  return {
+    line: Number(line.line || line.lineNumber || index + 1),
+    employeeName,
+    worker: employeeName,
+    itemNumber: String(line.itemNumber ?? line.item ?? line.sku ?? "").trim(),
+    quantity: Number(line.quantity ?? line.qty ?? 0),
+    binLocation: String(line.binLocation ?? line.location ?? line.bin ?? line.slot ?? "").trim(),
+    submittedDate: workDate,
+    workDate,
+    submittedAt,
+    submittedTime: line.submittedTime || formatSubmittedTime(submittedAt),
+    branchId,
+    tenantKey: line.tenantKey || record.tenantKey || branchId,
+    companyId: line.companyId || record.companyId || "warehouse-ops",
+    ownerEmail: line.ownerEmail || record.ownerEmail || currentOwnerEmail(),
+    putawayNumber: String(line.putawayNumber ?? line.sheetNumber ?? record.putawayNumber ?? record.sheetNumber ?? "").trim(),
+    sheetNumber: String(line.sheetNumber ?? line.putawayNumber ?? record.sheetNumber ?? record.putawayNumber ?? "").trim(),
+    status: String(line.status ?? record.status ?? "Completed").trim() || "Completed",
+    notes: String(line.notes ?? line.details ?? line.note ?? "").trim()
+  };
+}
+
+function normalizePutawayRecord(record = {}) {
+  const employeeName = normalizeEmployeeName(record.employeeName || record.worker || record.employee);
+  const workDate =
+    normalizeLeaderboardDate(record.workDate) ||
+    normalizeLeaderboardDate(record.date) ||
+    normalizeLeaderboardDate(record.submittedDate) ||
+    normalizeLeaderboardDate(record.completedDate) ||
+    normalizeLeaderboardDate(record.createdAt) ||
+    todayValue();
+  const branchId = record.branchId || record.tenantKey || currentBranchId();
+  const lines = Array.isArray(record.lines)
+    ? record.lines.map((line, index) => normalizePutawayLine(line, index, record))
+    : [];
+  const totalQty = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+
+  return {
+    ...record,
+    id: record.id || putawayDailyDocId(branchId, employeeName, workDate, record.putawayNumber || record.sheetNumber || ""),
+    branchId,
+    employeeName,
+    worker: employeeName,
+    putawayNumber: String(record.putawayNumber || record.sheetNumber || "").trim(),
+    sheetNumber: String(record.sheetNumber || record.putawayNumber || "").trim(),
+    status: String(record.status || "Completed").trim() || "Completed",
+    workDate,
+    date: workDate,
+    lines,
+    totalLines: Number(record.totalLines ?? record.lineCount ?? lines.length),
+    lineCount: Number(record.totalLines ?? record.lineCount ?? lines.length),
+    totalQty: Number(record.totalQty ?? totalQty),
+    createdAt: record.createdAt || record.submittedAt || "",
+    updatedAt: record.updatedAt || record.createdAt || record.submittedAt || ""
+  };
+}
+
+function putawayRecordTotals(lines) {
+  return {
+    totalLines: lines.length,
+    lineCount: lines.length,
+    totalQty: lines.reduce((sum, line) => sum + Number(line.quantity ?? line.qty ?? 0), 0)
+  };
+}
+
+function normalizePutawayLineForSave(line, index) {
+  const submittedAt = line.submittedAt || new Date().toISOString();
+  const submittedDate =
+    normalizeLeaderboardDate(line.submittedDate) ||
+    normalizeLeaderboardDate(line.workDate) ||
+    normalizeLeaderboardDate(submittedAt) ||
+    todayValue();
+  const employeeName = normalizeEmployeeName(line.employeeName || line.worker);
+  const branchId = line.branchId || currentBranchId();
+  return {
+    line: index + 1,
+    employeeName,
+    worker: employeeName,
+    itemNumber: String(line.itemNumber || "").trim(),
+    quantity: Number(line.quantity || 0),
+    binLocation: String(line.binLocation || "").trim(),
+    submittedDate,
+    workDate: submittedDate,
+    submittedAt,
+    submittedTime: line.submittedTime || formatSubmittedTime(submittedAt),
+    branchId,
+    tenantKey: line.tenantKey || branchId,
+    companyId: line.companyId || "warehouse-ops",
+    ownerEmail: line.ownerEmail || currentOwnerEmail(),
+    putawayNumber: String(line.putawayNumber || line.sheetNumber || "").trim(),
+    sheetNumber: String(line.sheetNumber || line.putawayNumber || "").trim(),
+    status: String(line.status || "Completed").trim() || "Completed",
+    notes: String(line.notes || "").trim()
+  };
+}
+
+function upsertPutawayLogInState(record) {
+  const normalized = normalizePutawayRecord(record);
+  const next = state.putawayLogs.filter((log) => String(log.id) !== String(normalized.id));
+  state.putawayLogs = sortByCreatedAtDesc([normalized, ...next]);
+  return normalized;
+}
+
+function buildSubmittedPutawayLine(rawLine, context = {}) {
+  const submittedAt = new Date().toISOString();
+  const branchId = context.branchId || currentBranchId();
+  const employeeName = normalizeEmployeeName(context.employeeName || rawLine.employeeName || rawLine.worker);
+  const workDate = context.workDate || normalizeLeaderboardDate(submittedAt) || todayValue();
+  return {
+    employeeName,
+    worker: employeeName,
+    itemNumber: String(rawLine.item || rawLine.itemNumber || "").trim(),
+    quantity: Number(rawLine.qty ?? rawLine.quantity ?? 0),
+    binLocation: String(rawLine.location || rawLine.binLocation || "").trim(),
+    putawayNumber: String(context.putawayNumber || context.sheetNumber || "").trim(),
+    sheetNumber: String(context.sheetNumber || context.putawayNumber || "").trim(),
+    status: String(context.status || "Completed").trim() || "Completed",
+    submittedDate: workDate,
+    workDate,
+    submittedAt,
+    submittedTime: formatSubmittedTime(submittedAt),
+    branchId,
+    tenantKey: context.tenantKey || branchId,
+    companyId: context.companyId || "warehouse-ops",
+    ownerEmail: context.ownerEmail || currentOwnerEmail(),
+    notes: String(rawLine.notes || "").trim()
+  };
+}
+
+function buildPutawayDocumentFromLines({ id, branchId, employeeName, workDate, lines, createdAt }) {
+  const normalizedLines = lines.map((entry, index) => normalizePutawayLineForSave(entry, index));
+  const latestLine = normalizedLines[normalizedLines.length - 1] || {};
+  return {
+    ...tenantDocumentFields(),
+    id,
+    branchId,
+    employeeName,
+    worker: employeeName,
+    putawayNumber: latestLine.putawayNumber || "",
+    sheetNumber: latestLine.sheetNumber || latestLine.putawayNumber || "",
+    status: latestLine.status || "Completed",
+    workDate,
+    date: workDate,
+    lines: normalizedLines,
+    ...putawayRecordTotals(normalizedLines),
+    createdAt: createdAt || latestLine.submittedAt || new Date().toISOString(),
+    updatedAt: latestLine.submittedAt || new Date().toISOString(),
+    submittedAt: latestLine.submittedAt || "",
+    submittedDate: workDate,
+    submittedTime: latestLine.submittedTime || "",
+    createdBy: state.user?.uid || "",
+    createdByEmail: state.user?.email || "",
+    updatedBy: state.user?.uid || "",
+    updatedByEmail: state.user?.email || ""
+  };
+}
+
+async function savePutawayCreateOnlyFallback({ branchId, employeeName, workDate, line }) {
+  const id = putawayLineSubmissionDocId(branchId, employeeName, workDate, line.submittedAt, line.putawayNumber || line.sheetNumber || "");
+  const doc = buildPutawayDocumentFromLines({
+    id,
+    branchId,
+    employeeName,
+    workDate,
+    lines: [line],
+    createdAt: line.submittedAt
+  });
+
+  await db.collection(COLLECTIONS.putaway).doc(id).set(doc);
+  return doc;
+}
+
 function collectPutawayLines() {
   return [...document.querySelectorAll("#putawayBody tr")]
     .map((row, idx) => ({
@@ -1839,241 +2445,165 @@ function collectPutawayLines() {
     .filter((x) => x.item || x.qty || x.location || x.notes);
 }
 
-function setPutawaySaveStatus(status) {
-  const el = $("putawaySaveStatus");
-  if (!el) return;
+function confirmClearPutawayForm() {
+  const hasCurrentData = hasPutawayDraftData();
+  const hasSavedDraft = hasPutawayDraftData(readJson(PUTAWAY_DRAFT_KEY, {}));
 
-  const labels = {
-    saving: "Saving...",
-    saved: "Draft saved",
-    failed: "Save failed"
-  };
-
-  el.dataset.status = status;
-  el.textContent = labels[status] || "";
-}
-
-function setPutawaySubmitDisabled(disabled) {
-  const button = $("savePutawayBtn");
-  if (button) button.disabled = disabled;
-}
-
-// Draft snapshots stay in this browser only and never create history records.
-function collectPutawayDraftRows() {
-  return [...document.querySelectorAll("#putawayBody tr")].map((row, index) => ({
-    line: index + 1,
-    item: row.querySelector(".put-item")?.value || "",
-    qty: row.querySelector(".put-qty")?.value || "",
-    location: row.querySelector(".put-location")?.value || "",
-    notes: row.querySelector(".put-notes")?.value || ""
-  }));
-}
-
-function schedulePutawayDraftSave() {
-  putawayDraftDirty = true;
-  setPutawaySaveStatus("saving");
-  window.clearTimeout(putawayDraftTimer);
-  putawayDraftTimer = window.setTimeout(savePutawayDraft, PUTAWAY_AUTOSAVE_DELAY);
-}
-
-function savePutawayDraft() {
-  window.clearTimeout(putawayDraftTimer);
-  putawayDraftTimer = null;
-
-  const draft = {
-    worker: $("putWorker")?.value || "",
-    putawayNumber: $("putSheetNumber")?.value || "",
-    date: $("putDate")?.value || "",
-    status: $("putStatus")?.value || "Completed",
-    rows: collectPutawayDraftRows(),
-    savedAt: new Date().toISOString()
-  };
-
-  try {
-    window.localStorage.setItem(PUTAWAY_DRAFT_STORAGE_KEY, JSON.stringify(draft));
-    putawayDraftDirty = false;
-    setPutawaySaveStatus("saved");
-  } catch (err) {
-    console.error("Put Away draft save failed:", err);
-    setPutawaySaveStatus("failed");
+  if ((hasCurrentData || hasSavedDraft) && !confirm("Clear the current Put Away draft? Unsaved entries will be removed.")) {
+    return;
   }
+
+  clearPutawayDraft();
+  clearRows("putawayBody");
 }
 
-function restorePutawayDraft() {
-  const draft = readJson(PUTAWAY_DRAFT_STORAGE_KEY, null);
-  if (!draft || !Array.isArray(draft.rows)) return;
+function resetPutawayLineAfterSubmit() {
+  const worker = $("putWorker")?.value || "";
+  const workDate = $("putDate")?.value || todayValue();
 
-  if ($("putWorker")) $("putWorker").value = draft.worker || "";
-  if ($("putSheetNumber")) $("putSheetNumber").value = draft.putawayNumber || draft.sheetNumber || "";
-  if ($("putDate") && draft.date) $("putDate").value = draft.date;
-  if ($("putStatus")) $("putStatus").value = draft.status || "Completed";
-
-  const rows = [...document.querySelectorAll("#putawayBody tr")];
-  draft.rows.slice(0, 25).forEach((savedRow, index) => {
-    const row = rows[index];
-    if (!row) return;
-    const values = {
-      ".put-item": savedRow.item || "",
-      ".put-qty": savedRow.qty ?? "",
-      ".put-location": savedRow.location || "",
-      ".put-notes": savedRow.notes || ""
-    };
-    Object.entries(values).forEach(([selector, value]) => {
+  putawayDraftRows().forEach((row) => {
+    [".put-item", ".put-qty", ".put-location", ".put-notes"].forEach((selector) => {
       const input = row.querySelector(selector);
-      if (input) input.value = value;
+      if (input) input.value = "";
     });
   });
 
+  if ($("putWorker")) $("putWorker").value = worker;
+  if ($("putDate")) $("putDate").value = workDate;
   updatePutawayStats();
-  putawayDraftDirty = false;
-  setPutawaySaveStatus("saved");
-}
-
-function clearPutawayDraft() {
-  window.clearTimeout(putawayDraftTimer);
-  putawayDraftTimer = null;
-  putawayDraftDirty = false;
-  try {
-    window.localStorage.removeItem(PUTAWAY_DRAFT_STORAGE_KEY);
-  } catch (err) {
-    console.warn("Put Away draft cleanup failed:", err);
-  }
-}
-
-function resetPutawayForNextSheet() {
-  clearRows("putawayBody");
-  if ($("putSheetNumber")) $("putSheetNumber").value = "";
-  if ($("putStatus")) $("putStatus").value = "Completed";
-  setPutawaySaveStatus("");
-  updatePutawayStats();
-}
-
-function validatePutawaySubmission(lines) {
-  const worker = $("putWorker")?.value.trim() || "";
-  const date = $("putDate")?.value || "";
-  const putawayNumber = normalizePutawayNumber($("putSheetNumber")?.value);
-
-  if (!worker) return "Enter the employee name before submitting Put Away.";
-  if (!date) return "Choose the Put Away date before submitting.";
-  if (!putawayNumber) return "Enter the Put Away or sheet number before submitting.";
-  if (!lines.length) return "Enter at least one put away line.";
-
-  const missingItemLine = lines.find((line) => !line.item);
-  if (missingItemLine) {
-    return `Line ${missingItemLine.line} has data but no item number. Add the item number or clear the row.`;
-  }
-
-  return "";
-}
-
-function buildPutawayDoc(lines, options = {}) {
-  const dockToStockMinutes = calculateDockToStock();
-  const createdAt = options.createdAt || new Date().toISOString();
-  const date = $("putDate")?.value || "";
-  const status = $("putStatus")?.value || "Completed";
-  const putawayNumber = normalizePutawayNumber($("putSheetNumber")?.value);
-  const worker = $("putWorker")?.value.trim() || "";
-  const normalizedLines = lines.map((line) => ({
-    ...line,
-    item: String(line.item || "").trim(),
-    status: line.status || status,
-    dedupeKey: putawayDedupeKey(
-      {
-        id: options.id || "",
-        putawayNumber,
-        date,
-        worker
-      },
-      line
-    )
-  }));
-
-  return {
-    ...(options.id ? { id: options.id } : {}),
-    schemaVersion: 2,
-    putawayNumber,
-    sheetNumber: putawayNumber,
-    worker,
-    workerUid: state.user?.uid || "",
-    workerEmail: state.user?.email || "",
-    date,
-    status,
-    completedDate: date,
-    dockToStockMinutes,
-    timer: { ...state.timer, elapsedMinutes: dockToStockMinutes },
-    lines: normalizedLines,
-    lineCount: normalizedLines.length,
-    totalQty: normalizedLines.reduce((sum, line) => sum + Number(line.qty || 0), 0),
-    notes: normalizedLines.map((line) => line.notes).filter(Boolean).join(" | "),
-    source: options.source || "manual",
-    createdAt,
-    timestamp: createdAt,
-    createdBy: state.user?.uid || "",
-    createdByEmail: state.user?.email || ""
-  };
+  savePutawayDraft({ force: true, statusMessage: "All changes saved" });
+  document.querySelector("#putawayBody .put-item")?.focus();
 }
 
 async function savePutaway() {
-  const lines = collectPutawayLines();
-  const validationError = validatePutawaySubmission(lines);
+  flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
+  const employeeName = $("putWorker")?.value.trim() || "";
+  const putawayNumber = $("putSheetNumber")?.value.trim() || "";
+  const status = $("putStatus")?.value || "Completed";
+  const rawLines = collectPutawayLines();
 
-  if (validationError) return toast(validationError);
-  if (putawaySaveInProgress) return toast("Put away save is already in progress.");
+  if (!employeeName) {
+    $("putWorker")?.focus();
+    return toast("Enter the employee name before submitting putaway.");
+  }
 
-  putawaySaveInProgress = true;
-  setPutawaySubmitDisabled(true);
+  if (!putawayNumber) {
+    $("putSheetNumber")?.focus();
+    return toast("Enter the Putaway or sheet number before submitting.");
+  }
+
+  if (!rawLines.length) return toast("Enter one putaway line before submitting.");
+  if (!rawLines[0].item) {
+    document.querySelector("#putawayBody .put-item")?.focus();
+    return toast("Enter the item number before submitting putaway.");
+  }
+
+  const branchId = currentBranchId();
+  const workDate = putawayWorkDate();
+  const line = buildSubmittedPutawayLine(rawLines[0], { ...tenantDocumentFields(), branchId, employeeName, workDate, putawayNumber, sheetNumber: putawayNumber, status });
+  const docId = putawayDailyDocId(branchId, employeeName, workDate, putawayNumber);
 
   if (state.isDemoMode) {
-    const doc = buildPutawayDoc(lines, { id: createLocalId("put") });
+    const existing = normalizePutawayRecord(state.putawayLogs.find((log) => String(log.id) === docId) || {
+      id: docId,
+      branchId,
+      employeeName,
+      worker: employeeName,
+      putawayNumber,
+      sheetNumber: putawayNumber,
+      status,
+      workDate,
+      date: workDate,
+      lines: [],
+      createdAt: line.submittedAt
+    });
+    const lines = [...existing.lines, normalizePutawayLineForSave(line, existing.lines.length)];
+    const doc = {
+      ...existing,
+      ...tenantDocumentFields(),
+      id: docId,
+      branchId,
+      employeeName,
+      worker: employeeName,
+      workDate,
+      date: workDate,
+      lines,
+      ...putawayRecordTotals(lines),
+      updatedAt: line.submittedAt,
+      submittedAt: line.submittedAt,
+      submittedDate: workDate,
+      submittedTime: line.submittedTime,
+      createdBy: state.user?.uid || "",
+      createdByEmail: state.user?.email || ""
+    };
 
-    state.putawayLogs = sortByCreatedAtDesc([{ ...doc }, ...state.putawayLogs]);
-    appendDemoActivityEntries("putaway", doc, doc.lines);
+    upsertPutawayLogInState(doc);
+    appendDemoActivityEntries("putaway", doc, [line]);
     persistDemoState();
     renderLogs();
     renderHistory();
     renderItemHistory();
-    clearPutawayDraft();
-    resetPutawayForNextSheet();
-    prepareNextPutawayTimer();
-    putawaySaveInProgress = false;
-    setPutawaySubmitDisabled(false);
+    resetPutawayLineAfterSubmit();
     toast("Put away log saved.");
     return;
   }
 
   try {
-    const ref = db.collection(COLLECTIONS.putaway).doc();
-    const doc = buildPutawayDoc(lines, { id: ref.id });
-    const writeDoc = { ...doc };
-    delete writeDoc.id;
+    let savedDoc;
 
-    const batch = db.batch();
-    batch.set(ref, writeDoc);
-    const activityEntries = createActivityEntries("putaway", doc, doc.lines);
-    activityEntries.forEach((entry) => {
-      batch.set(db.collection(COLLECTIONS.activity).doc(), entry);
-    });
-    await batch.commit();
+    try {
+      const ref = db.collection(COLLECTIONS.putaway).doc(docId);
+      savedDoc = await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(ref);
+        const existing = snap.exists ? normalizePutawayRecord({ id: snap.id, ...snap.data() }) : {
+          id: docId,
+          branchId,
+          employeeName,
+          worker: employeeName,
+          workDate,
+          date: workDate,
+          lines: [],
+          createdAt: line.submittedAt
+        };
+        const nextLines = [...(existing.lines || []), normalizePutawayLineForSave(line, existing.lines?.length || 0)];
+        const nextDoc = buildPutawayDocumentFromLines({
+          id: docId,
+          branchId,
+          employeeName,
+          workDate,
+          lines: nextLines,
+          createdAt: existing.createdAt || line.submittedAt
+        });
 
-    state.putawayLogs.unshift({ id: ref.id, ...doc });
-    state.activityLogs = sortByCreatedAtDesc([...activityEntries, ...state.activityLogs]).slice(0, 500);
+        transaction.set(ref, nextDoc, { merge: true });
+        return nextDoc;
+      });
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+      console.warn("Daily putaway append denied; saving as a new line document.", err);
+      savedDoc = await savePutawayCreateOnlyFallback({ branchId, employeeName, workDate, line });
+    }
 
-    await loadHistory();
+    try {
+      const activityEntries = await saveActivityLogs("putaway", savedDoc, [line]);
+      if (activityEntries?.length) {
+        state.activityLogs = sortByCreatedAtDesc([...activityEntries, ...state.activityLogs]).slice(0, 500);
+      }
+    } catch (err) {
+      console.warn("Putaway saved, but activity log write failed.", err);
+    }
+
+    upsertPutawayLogInState(savedDoc);
 
     renderLogs();
+    renderHistory();
     renderItemHistory();
-    clearPutawayDraft();
-    resetPutawayForNextSheet();
-    prepareNextPutawayTimer();
+    resetPutawayLineAfterSubmit();
 
     toast("Put away log saved.");
   } catch (err) {
     console.error("Put away save failed:", err);
-    setPutawaySaveStatus("failed");
     toast("Save failed: " + err.message);
-  } finally {
-    putawaySaveInProgress = false;
-    setPutawaySubmitDisabled(false);
   }
 }
 
@@ -2088,7 +2618,12 @@ function collectCycleLines() {
       countedQty: rowNumber(row, ".cycle-counted"),
       variance: rowNumber(row, ".cycle-counted") - rowNumber(row, ".cycle-system"),
       reason: rowValue(row, ".cycle-reason"),
-      done: row.querySelector(".cycle-done")?.checked || false
+      done: row.querySelector(".cycle-done")?.checked || false,
+      itemStartedAt: row.dataset.itemStartedAt || null,
+      itemFinishedAt: row.dataset.itemFinishedAt || null,
+      itemMinutes: row.dataset.itemMinutes ? Number(row.dataset.itemMinutes) : null,
+      itemDelayReason: rowValue(row, ".cycle-item-delay") || "Normal",
+      itemDelayNotes: rowValue(row, ".cycle-item-delay-notes") || ""
     }))
     .filter((x) => x.item || x.location || x.systemQty || x.countedQty);
 }
@@ -2277,6 +2812,7 @@ function normalizeLeaderboardDate(value) {
 
 function getRecordDate(record) {
   return (
+    normalizeLeaderboardDate(record?.workDate) ||
     normalizeLeaderboardDate(record?.completedDate) ||
     normalizeLeaderboardDate(record?.date) ||
     normalizeLeaderboardDate(record?.timestamp) ||
@@ -2327,7 +2863,7 @@ function numericValue(value, fallback = 0) {
 }
 
 function normalizedLineCount(record) {
-  const savedCount = numericValue(record?.lineCount, NaN);
+  const savedCount = numericValue(record?.totalLines ?? record?.lineCount, NaN);
   if (Number.isFinite(savedCount) && savedCount >= 0) return savedCount;
   return Array.isArray(record?.lines) ? record.lines.length : 0;
 }
@@ -2356,7 +2892,7 @@ function sortLeaderboardRows(rows, primaryField) {
 }
 
 function calculatePutawayStats(records) {
-  const groups = groupRecordsByEmployee(records, ["worker", "employee"]);
+  const groups = groupRecordsByEmployee(records, ["employeeName", "worker", "employee"]);
 
   return sortLeaderboardRows(
     Object.entries(groups).map(([employee, employeeRecords]) => {
@@ -2440,21 +2976,26 @@ function calculateTransferStats(records) {
   );
 }
 
-function calculateOverallLeaderboard(putawayRows, transferRows) {
+function calculateOverallLeaderboard(putawayRows, cycleRows, transferRows) {
   const byEmployee = {};
 
   putawayRows.forEach((row) => {
-    byEmployee[row.employee] ||= { employee: row.employee, putawayLines: 0, transferLines: 0, totalScore: 0 };
+    byEmployee[row.employee] ||= { employee: row.employee, putawayLines: 0, cycleCounts: 0, transferLines: 0, totalScore: 0 };
     byEmployee[row.employee].putawayLines += numericValue(row.totalLines);
   });
 
+  cycleRows.forEach((row) => {
+    byEmployee[row.employee] ||= { employee: row.employee, putawayLines: 0, cycleCounts: 0, transferLines: 0, totalScore: 0 };
+    byEmployee[row.employee].cycleCounts += numericValue(row.totalCounts);
+  });
+
   transferRows.forEach((row) => {
-    byEmployee[row.employee] ||= { employee: row.employee, putawayLines: 0, transferLines: 0, totalScore: 0 };
+    byEmployee[row.employee] ||= { employee: row.employee, putawayLines: 0, cycleCounts: 0, transferLines: 0, totalScore: 0 };
     byEmployee[row.employee].transferLines += numericValue(row.totalTransferLines);
   });
 
   Object.values(byEmployee).forEach((row) => {
-    row.totalScore = row.putawayLines + row.transferLines;
+    row.totalScore = row.putawayLines + row.cycleCounts + row.transferLines;
   });
 
   return sortLeaderboardRows(Object.values(byEmployee), "totalScore");
@@ -2514,6 +3055,7 @@ function switchLeaderboardView(view) {
 function getLeaderboardSourceRecords(range) {
   return {
     putaway: getRecordsByDateRange(state.putawayLogs, range.start, range.end, { includeUndated: range.includeUndated }),
+    cycle: getRecordsByDateRange(state.cycleSessions, range.start, range.end, { includeUndated: range.includeUndated }),
     transfer: getRecordsByDateRange(state.pickingSessions, range.start, range.end, { includeUndated: range.includeUndated })
   };
 }
@@ -2521,25 +3063,39 @@ function getLeaderboardSourceRecords(range) {
 function buildLeaderboardRows(range) {
   const records = getLeaderboardSourceRecords(range);
   const putawayRows = calculatePutawayStats(records.putaway);
+  const cycleRows = calculateCycleCountStats(records.cycle);
   const transferRows = calculateTransferStats(records.transfer);
 
   const view = state.leaderboard.activeView || "putaway";
   const rowsByView = {
     putaway: putawayRows,
+    cycle: cycleRows,
     transfer: transferRows,
-    overall: calculateOverallLeaderboard(putawayRows, transferRows)
+    overall: calculateOverallLeaderboard(putawayRows, cycleRows, transferRows)
   };
 
   const recordCounts = {
     putaway: records.putaway.length,
+    cycle: records.cycle.length,
     transfer: records.transfer.length,
-    overall: records.putaway.length + records.transfer.length
+    overall: records.putaway.length + records.cycle.length + records.transfer.length
   };
 
   return { rows: rowsByView[view] || [], recordCount: recordCounts[view] || 0 };
 }
 
 function leaderboardColumns(view) {
+  if (view === "cycle") {
+    return [
+      ["employee", "Employee"],
+      ["totalCounts", "Counts Completed"],
+      ["varianceItems", "Variance Items"],
+      ["accuracyPercentage", "Accuracy"],
+      ["averageCountsPerDay", "Avg Counts / Day"],
+      ["lastActivityDate", "Last Activity"]
+    ];
+  }
+
   if (view === "transfer") {
     return [
       ["employee", "Employee"],
@@ -2555,6 +3111,7 @@ function leaderboardColumns(view) {
       ["employee", "Employee"],
       ["totalScore", "Total Score"],
       ["putawayLines", "Putaway Lines"],
+      ["cycleCounts", "Cycle Counts"],
       ["transferLines", "Transfer Lines"]
     ];
   }
@@ -2643,8 +3200,129 @@ function exportLeaderboardCsv() {
    RENDER LOGS
 ---------------------------- */
 
+function buildPutawayDailyGroups(records = state.putawayLogs) {
+  const groupMap = new Map();
+
+  (records || []).forEach((record) => {
+    const normalized = normalizePutawayRecord(record);
+    const key = [
+      normalized.branchId || currentBranchId(),
+      normalizeEmployeeName(normalized.employeeName).toLowerCase(),
+      normalized.workDate,
+      String(normalized.putawayNumber || normalized.sheetNumber || "").toLowerCase()
+    ].join("|");
+    const group = groupMap.get(key) || {
+      key,
+      branchId: normalized.branchId || currentBranchId(),
+      employeeName: normalized.employeeName,
+      putawayNumber: normalized.putawayNumber || normalized.sheetNumber || "",
+      sheetNumber: normalized.sheetNumber || normalized.putawayNumber || "",
+      status: normalized.status || "Completed",
+      workDate: normalized.workDate,
+      sourceRecords: [],
+      lines: [],
+      createdAt: normalized.createdAt,
+      updatedAt: normalized.updatedAt
+    };
+
+    group.sourceRecords.push(normalized);
+    normalized.lines.forEach((line, lineIndex) => {
+      group.lines.push({
+        ...line,
+        sourceRecordId: normalized.id,
+        sourceLineIndex: lineIndex
+      });
+    });
+    group.createdAt = [group.createdAt, normalized.createdAt].filter(Boolean).sort()[0] || group.createdAt;
+    group.updatedAt = [group.updatedAt, normalized.updatedAt, normalized.submittedAt].filter(Boolean).sort().pop() || group.updatedAt;
+    groupMap.set(key, group);
+  });
+
+  return [...groupMap.values()]
+    .map((group) => ({
+      ...group,
+      lines: sortPutawayLinesBySubmittedAt(group.lines),
+      totalLines: group.lines.length,
+      totalQty: group.lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
+    }))
+    .sort((a, b) => String(b.workDate || b.updatedAt || "").localeCompare(String(a.workDate || a.updatedAt || "")));
+}
+
+function putawayLineTimestamp(line = {}) {
+  const raw = line.submittedAt || `${line.submittedDate || line.workDate || ""} ${line.submittedTime || ""}`.trim();
+  const date = parseDateValue(raw);
+  return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+}
+
+function sortPutawayLinesBySubmittedAt(lines = []) {
+  return [...lines].sort((a, b) => putawayLineTimestamp(a) - putawayLineTimestamp(b));
+}
+
+function lastPutawaySubmittedAt(group = {}) {
+  return sortPutawayLinesBySubmittedAt(group.lines || []).at(-1)?.submittedAt || group.updatedAt || "";
+}
+
+function formatGapMinutes(minutes) {
+  if (minutes === null || minutes === undefined || Number.isNaN(Number(minutes))) return "-";
+  const rounded = Math.round(Number(minutes));
+  if (rounded < 1) return "<1 min";
+  return `${rounded} min`;
+}
+
+function putawayLinesWithGaps(lines = []) {
+  let previousTimestamp = null;
+  return sortPutawayLinesBySubmittedAt(lines).map((line) => {
+    const timestamp = putawayLineTimestamp(line);
+    const gapMinutes = previousTimestamp && timestamp ? (timestamp - previousTimestamp) / 60000 : null;
+    if (timestamp) previousTimestamp = timestamp;
+    return {
+      ...line,
+      gapMinutes,
+      possibleDowntime: Number(gapMinutes || 0) > 25
+    };
+  });
+}
+
+function readPutawayLogFilters() {
+  state.putawayLogFilters = {
+    employee: $("putawayLogEmployeeFilter")?.value.trim().toLowerCase() || "",
+    start: $("putawayLogStartFilter")?.value || "",
+    end: $("putawayLogEndFilter")?.value || ""
+  };
+  return state.putawayLogFilters;
+}
+
+function filterPutawayGroups(groups = []) {
+  const filters = readPutawayLogFilters();
+  return groups.filter((group) => {
+    const worker = String(group.employeeName || "").toLowerCase();
+    const date = group.workDate || "";
+    if (filters.employee && !worker.includes(filters.employee)) return false;
+    if (filters.start && (!date || date < filters.start)) return false;
+    if (filters.end && (!date || date > filters.end)) return false;
+    return true;
+  });
+}
+
+function clearPutawayLogFilters() {
+  if ($("putawayLogEmployeeFilter")) $("putawayLogEmployeeFilter").value = "";
+  if ($("putawayLogStartFilter")) $("putawayLogStartFilter").value = "";
+  if ($("putawayLogEndFilter")) $("putawayLogEndFilter").value = "";
+  state.putawayLogFilters = { employee: "", start: "", end: "" };
+  renderPutawayLogs();
+}
+
+function putawayPreview(lines) {
+  return (lines || [])
+    .slice(0, 3)
+    .map((line) => `${line.itemNumber || ""} x${line.quantity || 0} @ ${line.binLocation || ""}`)
+    .filter((text) => text.trim() !== "x0 @")
+    .join("; ");
+}
+
 function renderLogs() {
   renderPutawayLogs();
+  renderCycleLogs();
   renderPickingLogs();
   renderLeaderboard();
 }
@@ -2655,22 +3333,33 @@ function renderPutawayLogs() {
 
   body.innerHTML = "";
 
-  state.putawayLogs.forEach((log) => {
+  state.putawayDailyGroups = buildPutawayDailyGroups();
+  const visibleGroups = filterPutawayGroups(state.putawayDailyGroups);
+
+  if (!visibleGroups.length) {
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="7">No putaway records found for this filter.</td></tr>`);
+    return;
+  }
+
+  visibleGroups.forEach((group) => {
+    const encodedKey = encodeURIComponent(group.key);
     body.insertAdjacentHTML(
       "beforeend",
       `
       <tr>
-        <td>${escapeHtml(log.date || "")}</td>
-        <td>${escapeHtml(log.worker || "")}</td>
-        <td>${log.lineCount || log.lines?.length || 0}</td>
-        <td>${log.totalQty || 0}</td>
-        <td>${log.dockToStockMinutes || 0} min</td>
-        <td>${escapeHtml(
-          (log.lines || [])
-            .slice(0, 3)
-            .map((x) => `${x.item} x${x.qty} @ ${x.location}`)
-            .join(" | ")
-        )}</td>
+        <td>${escapeHtml(group.workDate || "")}</td>
+        <td>${escapeHtml(formatDateTime(lastPutawaySubmittedAt(group)))}</td>
+        <td>${escapeHtml(group.employeeName || "")}</td>
+        <td>${group.totalLines || 0}</td>
+        <td>${group.totalQty || 0}</td>
+        <td>${escapeHtml(putawayPreview(group.lines))}</td>
+        <td>
+          <div class="row-actions">
+            <button type="button" onclick="openPutawayDailyRecord('${encodedKey}', 'view')">View</button>
+            <button type="button" onclick="openPutawayDailyRecord('${encodedKey}', 'edit')">Edit</button>
+            <button type="button" class="danger" onclick="openPutawayDailyRecord('${encodedKey}', 'delete')">Delete</button>
+          </div>
+        </td>
       </tr>
     `
     );
@@ -2770,18 +3459,19 @@ function buildItemHistoryRows() {
   const fallbackRows = [];
   [
     ["putaway", state.putawayLogs],
+    ["cycleCount", state.cycleSessions],
     ["orderPicking", state.pickingSessions]
   ].forEach(([type, sessions]) => {
     (sessions || []).forEach((session) => {
       (session.lines || []).forEach((line) => {
         fallbackRows.push({
-          date: session.date || String(session.createdAt || "").slice(0, 10),
+          date: session.workDate || session.date || String(session.createdAt || "").slice(0, 10),
           process: processLabel(type),
-          worker: session.worker || session.counter || session.picker || "",
-          item: line.item || "",
+          worker: session.employeeName || session.worker || session.counter || session.picker || "",
+          item: line.item || line.itemNumber || "",
           description: line.description || "",
-          qty: line.qty ?? line.countedQty ?? line.pickedQty ?? "",
-          location: line.location || line.fromSlot || line.slot || "",
+          qty: line.qty ?? line.quantity ?? line.countedQty ?? line.pickedQty ?? "",
+          location: line.location || line.binLocation || line.fromSlot || line.slot || "",
           status: line.status || (Number(line.variance || 0) ? "Variance" : line.done ? "Counted" : ""),
           notes: line.notes || line.reason || "",
           createdAt: session.createdAt || ""
@@ -2881,30 +3571,125 @@ function historyCollection(type) {
   return "";
 }
 
-function openHistoryRecord(type, id, mode = "view") {
-  if (mode === "edit" && !canManageHistory()) {
-    toast("Only admins and managers can edit history.");
+function parseHistoryLines(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn("History lines could not be parsed:", err);
+    return [];
+  }
+}
+
+function historyLineValue(line, keys, fallback = "") {
+  for (const key of keys) {
+    const value = line?.[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+
+  return fallback;
+}
+
+function renderHistoryLinesView(lines) {
+  const body = $("historyLinesTableBody");
+  const notesBody = $("historyLinesNotesBody");
+  if (!body || !notesBody) return;
+
+  body.innerHTML = "";
+  notesBody.innerHTML = "";
+
+  if (!lines.length) {
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="5">No saved worksheet lines found.</td></tr>`);
+  } else {
+    lines.forEach((line, index) => {
+      const lineNumber = historyLineValue(line, ["line", "lineNumber"], index + 1);
+      const item = historyLineValue(line, ["item", "itemNumber", "sku"]);
+      const location = historyLineValue(line, ["location", "fromSlot", "slot", "bin"]);
+      const qty = historyLineValue(line, ["qty", "countedQty", "pickedQty", "requiredQty"], 0);
+
+      body.insertAdjacentHTML(
+        "beforeend",
+        `
+        <tr>
+          <td data-label="#">${index + 1}</td>
+          <td data-label="Item">${escapeHtml(item)}</td>
+          <td data-label="Location">${escapeHtml(location)}</td>
+          <td data-label="Qty">${escapeHtml(qty)}</td>
+          <td data-label="Line">${escapeHtml(lineNumber)}</td>
+        </tr>
+      `
+      );
+    });
+  }
+
+  const notes = lines
+    .map((line, index) => ({
+      line: historyLineValue(line, ["line", "lineNumber"], index + 1),
+      notes: String(historyLineValue(line, ["notes", "note"], "")).trim()
+    }))
+    .filter((entry) => entry.notes);
+
+  if (!notes.length) {
+    notesBody.innerHTML = `<p class="history-no-notes">No notes available for this record.</p>`;
     return;
   }
 
+  notes.forEach((entry) => {
+    notesBody.insertAdjacentHTML(
+      "beforeend",
+      `
+      <div class="history-note-row">
+        <strong>Line ${escapeHtml(entry.line)}</strong>
+        <p>${escapeHtml(entry.notes)}</p>
+      </div>
+    `
+    );
+  });
+}
+
+function openHistoryRecord(type, id, mode = "view") {
   const key = historyStateKey(type);
   const record = (state[key] || []).find((row) => String(row.id) === String(id));
   if (!record) return;
 
+  const lines = parseHistoryLines(record.lines);
   state.editingHistory = { type, id, mode };
   $("historyModalTitle").textContent = mode === "edit" ? "Edit History Record" : "View History Record";
   $("historyEditDate").value = record.date || record.completedDate || "";
   $("historyEditWorker").value = record.worker || record.counter || record.picker || "";
   $("historyEditReference").value = record.countId || record.orderNumber || "";
-  $("historyEditLines").value = JSON.stringify(record.lines || [], null, 2);
   $("historyEditMessage").textContent = mode === "view" ? "Viewing saved worksheet lines." : "";
 
   const editable = mode === "edit";
+  const linesView = $("historyLinesView");
+  const linesEditField = $("historyLinesEditField");
+  const linesEditor = $("historyEditLines");
+
+  if (linesView) {
+    linesView.hidden = editable;
+    linesView.classList.toggle("hidden", editable);
+  }
+
+  if (linesEditField) {
+    linesEditField.hidden = !editable;
+    linesEditField.classList.toggle("hidden", !editable);
+  }
+
+  if (editable) {
+    if (linesEditor) linesEditor.value = JSON.stringify(lines, null, 2);
+  } else {
+    if (linesEditor) linesEditor.value = "";
+    renderHistoryLinesView(lines);
+  }
+
   ["historyEditDate", "historyEditWorker", "historyEditReference", "historyEditLines"].forEach((fieldId) => {
     if ($(fieldId)) $(fieldId).disabled = !editable;
   });
   if ($("saveHistoryEditBtn")) $("saveHistoryEditBtn").classList.toggle("hidden", !editable);
-  if ($("deleteHistoryRecordBtn")) $("deleteHistoryRecordBtn").classList.toggle("hidden", !canManageHistory());
+  if ($("deleteHistoryRecordBtn")) $("deleteHistoryRecordBtn").classList.toggle("hidden", false);
   $("historyModal")?.classList.remove("hidden");
   $("historyModal")?.setAttribute("aria-hidden", "false");
 }
@@ -2940,7 +3725,9 @@ async function saveHistoryEdit() {
 
   if (context.type === "putaway") {
     record.worker = $("historyEditWorker")?.value.trim() || "";
-    record.totalQty = lines.reduce((sum, line) => sum + Number(line.qty || 0), 0);
+    record.employeeName = record.worker;
+    record.totalLines = lines.length;
+    record.totalQty = lines.reduce((sum, line) => sum + Number(line.qty ?? line.quantity ?? 0), 0);
   }
   if (context.type === "cycle") {
     record.counter = $("historyEditWorker")?.value.trim() || "";
@@ -2978,14 +3765,13 @@ async function deleteHistoryRecord() {
 }
 
 async function deleteHistoryRecordByKey(type, id) {
-  if (!canManageHistory()) {
-    toast("Only admins and managers can delete history.");
-    return;
-  }
-
   const key = historyStateKey(type);
   const record = (state[key] || []).find((row) => String(row.id) === String(id));
   if (!record) return;
+  if (type === "putaway") {
+    toast("Use the Putaway Log detail view to delete individual lines.");
+    return;
+  }
   if (!confirm(`Delete ${processLabel(type)} history record?`)) return;
 
   state[key] = state[key].filter((row) => String(row.id) !== String(id));
@@ -3002,9 +3788,871 @@ async function deleteHistoryRecordByKey(type, id) {
   toast("History record deleted.");
 }
 
+function findPutawayDailyGroup(encodedKey) {
+  const key = decodeURIComponent(encodedKey || "");
+  if (!state.putawayDailyGroups.length) state.putawayDailyGroups = buildPutawayDailyGroups();
+  return state.putawayDailyGroups.find((group) => group.key === key);
+}
+
+function openPutawayDailyRecord(encodedKey, mode = "view") {
+  const group = findPutawayDailyGroup(encodedKey);
+  if (!group) return toast("Putaway record not found.");
+
+  state.editingPutawayDaily = { key: group.key, mode };
+
+  if ($("putawayDailyModalTitle")) {
+    $("putawayDailyModalTitle").textContent = `${mode === "view" ? "View" : mode === "edit" ? "Edit" : "Delete"} Putaway Lines`;
+  }
+  if ($("putawayDailyModalSummary")) {
+    $("putawayDailyModalSummary").textContent = `${group.employeeName} - ${group.workDate} - ${group.totalLines} line${group.totalLines === 1 ? "" : "s"}`;
+  }
+
+  renderPutawayDailyModalLines(group, mode);
+  $("putawayDailyModal")?.classList.remove("hidden");
+  $("putawayDailyModal")?.setAttribute("aria-hidden", "false");
+}
+
+function closePutawayDailyModal() {
+  state.editingPutawayDaily = null;
+  $("putawayDailyModal")?.classList.add("hidden");
+  $("putawayDailyModal")?.setAttribute("aria-hidden", "true");
+}
+
+function renderPutawayDailyModalLines(group, mode) {
+  const body = $("putawayDailyLinesBody");
+  if (!body) return;
+  body.innerHTML = "";
+
+  if (!group.lines.length) {
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No saved lines remain for this employee and date.</td></tr>`);
+    return;
+  }
+
+  putawayLinesWithGaps(group.lines).forEach((line, index) => {
+    const rowKey = `${line.sourceRecordId}|${line.sourceLineIndex}`;
+    const actionCell = mode === "view"
+      ? ""
+      : mode === "edit"
+        ? `<button type="button" class="primary" onclick="savePutawayDailyLine('${escapeHtml(line.sourceRecordId)}', ${Number(line.sourceLineIndex)})">Save Line</button>`
+        : `<button type="button" class="danger" onclick="deletePutawayDailyLine('${escapeHtml(line.sourceRecordId)}', ${Number(line.sourceLineIndex)})">Delete Line</button>`;
+    const valueCell = (field, value, type = "text") => {
+      if (mode === "view" || mode === "delete") return escapeHtml(value);
+      return `<input id="putawayLine_${escapeHtml(rowKey)}_${field}" type="${type}" value="${escapeHtml(value)}" />`;
+    };
+
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
+      <tr class="${line.possibleDowntime ? "downtime-flag" : ""}">
+        <td>${index + 1}</td>
+        <td>${valueCell("item", line.itemNumber)}</td>
+        <td>${valueCell("qty", line.quantity, "number")}</td>
+        <td>${valueCell("bin", line.binLocation)}</td>
+        <td>${escapeHtml(formatDateTime(line.submittedAt))}</td>
+        <td>${escapeHtml(line.submittedTime || formatSubmittedTime(line.submittedAt))}</td>
+        <td>
+          <span class="${line.possibleDowntime ? "gap-badge alert" : "gap-badge"}">${escapeHtml(formatGapMinutes(line.gapMinutes))}</span>
+          ${line.possibleDowntime ? `<span class="downtime-label">Possible downtime</span>` : ""}
+        </td>
+        <td>
+          ${mode === "edit" ? valueCell("notes", line.notes) : escapeHtml(line.notes || "")}
+          <div class="row-actions putaway-line-actions">${actionCell}</div>
+        </td>
+      </tr>
+    `
+    );
+  });
+}
+
+function findPutawayRecord(recordId) {
+  return state.putawayLogs.find((record) => String(record.id) === String(recordId));
+}
+
+async function updatePutawayRecordLines(recordId, updateFn) {
+  const record = findPutawayRecord(recordId);
+  if (!record) return toast("Putaway record not found.");
+
+  const normalized = normalizePutawayRecord(record);
+  const nextLines = updateFn([...(normalized.lines || [])]).map(normalizePutawayLineForSave);
+  const now = new Date().toISOString();
+  const updated = {
+    ...normalized,
+    ...tenantDocumentFields(),
+    lines: nextLines,
+    ...putawayRecordTotals(nextLines),
+    updatedAt: now,
+    updatedBy: state.user?.uid || "",
+    updatedByEmail: state.user?.email || ""
+  };
+
+  const index = state.putawayLogs.findIndex((row) => String(row.id) === String(recordId));
+  if (index >= 0) state.putawayLogs[index] = updated;
+
+  if (state.isDemoMode) {
+    persistDemoState();
+  } else {
+    await db.collection(COLLECTIONS.putaway).doc(recordId).set(updated, { merge: true });
+  }
+
+  renderLogs();
+  renderHistory();
+  renderItemHistory();
+  renderLeaderboard();
+
+  if (state.editingPutawayDaily) {
+    const group = findPutawayDailyGroup(encodeURIComponent(state.editingPutawayDaily.key));
+    if (group) {
+      renderPutawayDailyModalLines(group, state.editingPutawayDaily.mode);
+      if ($("putawayDailyModalSummary")) {
+        $("putawayDailyModalSummary").textContent = `${group.employeeName} - ${group.workDate} - ${group.totalLines} line${group.totalLines === 1 ? "" : "s"}`;
+      }
+    }
+  }
+}
+
+async function savePutawayDailyLine(recordId, lineIndex) {
+  const rowKey = `${recordId}|${lineIndex}`;
+  await updatePutawayRecordLines(recordId, (lines) => {
+    if (!lines[lineIndex]) return lines;
+    lines[lineIndex] = normalizePutawayLineForSave({
+      ...lines[lineIndex],
+      itemNumber: $(`putawayLine_${rowKey}_item`)?.value || "",
+      quantity: $(`putawayLine_${rowKey}_qty`)?.value || 0,
+      binLocation: $(`putawayLine_${rowKey}_bin`)?.value || "",
+      notes: $(`putawayLine_${rowKey}_notes`)?.value || ""
+    }, lineIndex);
+    return lines;
+  });
+  toast("Putaway line updated.");
+}
+
+async function deletePutawayDailyLine(recordId, lineIndex) {
+  if (!confirm("Delete this putaway line?")) return;
+  await updatePutawayRecordLines(recordId, (lines) => lines.filter((_, index) => index !== Number(lineIndex)));
+  toast("Putaway line deleted.");
+}
+
 window.openHistoryRecord = openHistoryRecord;
 window.deleteHistoryRecordByKey = deleteHistoryRecordByKey;
-window.canManageHistory = canManageHistory;
+window.buildPutawayDailyGroups = buildPutawayDailyGroups;
+window.openPutawayDailyRecord = openPutawayDailyRecord;
+window.savePutawayDailyLine = savePutawayDailyLine;
+window.deletePutawayDailyLine = deletePutawayDailyLine;
+
+/* ---------------------------
+   CYCLE COUNT PRODUCTION
+   Additive storage only. Existing keys and old records are preserved.
+---------------------------- */
+
+function allWarehouseStorageKeys() {
+  return [
+    DEMO_STORAGE_KEY,
+    TIMER_STORAGE_KEY,
+    SETTINGS_STORAGE_KEY,
+    TERMS_STORAGE_KEY,
+    PUTAWAY_DRAFT_KEY,
+    CYCLE_TIMER_KEY,
+    CYCLE_AUDIT_KEY,
+    CYCLE_PRODUCTION_KEY,
+    COUNT_CREATION_KEY,
+    VARIANCE_RESEARCH_KEY,
+    HOLD_BATCH_KEY,
+    HIGH_RISK_KEY,
+    ROOT_CAUSE_KEY,
+    DEMO_PRODUCTION_CLEANUP_KEY
+  ];
+}
+
+function cycleProductionStorageKeys() {
+  return [
+    CYCLE_TIMER_KEY,
+    CYCLE_AUDIT_KEY,
+    CYCLE_PRODUCTION_KEY,
+    COUNT_CREATION_KEY,
+    VARIANCE_RESEARCH_KEY,
+    HOLD_BATCH_KEY,
+    HIGH_RISK_KEY,
+    ROOT_CAUSE_KEY
+  ];
+}
+
+function isCycleProductionStorageKey(key) {
+  return cycleProductionStorageKeys().includes(key);
+}
+
+function initializeDataProtection() {
+  window.warehouseOpsRollbackLatestBackup = rollbackLatestWarehouseOpsBackup;
+  backupKnownStorageKeys("startup");
+  storageBackupCreatedThisSession = true;
+}
+
+function backupKnownStorageKeys(reason = "manual") {
+  const created = [];
+  const timestamp = new Date().toISOString();
+
+  allWarehouseStorageKeys().forEach((key) => {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return;
+    const backupKey = nextBackupKey(key);
+    window.localStorage.setItem(backupKey, raw);
+    created.push({ key, backupKey, timestamp, reason });
+  });
+
+  if (created.length) {
+    const metadata = readArrayJson(DATA_BACKUP_META_KEY);
+    window.localStorage.setItem(DATA_BACKUP_META_KEY, JSON.stringify([...created, ...metadata].slice(0, 250)));
+  }
+
+  return created;
+}
+
+function nextBackupKey(key) {
+  let version = 1;
+  while (window.localStorage.getItem(`${key}_backup_v${version}`) !== null) {
+    version += 1;
+  }
+  return `${key}_backup_v${version}`;
+}
+
+function rollbackLatestWarehouseOpsBackup() {
+  if (!canResetTimer()) return toast("Only Supervisor/Admin can run rollback.");
+  if (!confirm("Restore latest localStorage backups for WarehouseOS keys? Current values will be backed up first.")) return;
+
+  backupKnownStorageKeys("pre_rollback");
+  const metadata = readArrayJson(DATA_BACKUP_META_KEY);
+  const restored = [];
+
+  allWarehouseStorageKeys().forEach((key) => {
+    const latest = metadata.find((entry) => entry.key === key && entry.backupKey);
+    if (!latest) return;
+    const raw = window.localStorage.getItem(latest.backupKey);
+    if (raw === null) return;
+    window.localStorage.setItem(key, raw);
+    restored.push(key);
+  });
+
+  reloadCycleProductionState();
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+  toast(restored.length ? `Rollback restored ${restored.length} keys.` : "No backups were available to restore.");
+}
+
+function safeWriteStorageKey(key, value, reason) {
+  if (!storageBackupCreatedThisSession) {
+    backupKnownStorageKeys(reason);
+    storageBackupCreatedThisSession = true;
+  }
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function safeSaveArray(key, stateKey, rows, reason) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (state.isDemoMode && isCycleProductionStorageKey(key)) {
+    state[stateKey] = safeRows;
+    persistDemoState();
+    return;
+  }
+  safeWriteStorageKey(key, safeRows, reason);
+  state[stateKey] = safeRows;
+}
+
+function safeUpsertArrayRecord(key, stateKey, record, reason) {
+  if (!record || !validateRecordId(record.id)) {
+    console.error("Invalid record blocked:", record);
+    toast("Record was not saved because its ID was invalid.");
+    return null;
+  }
+  const rows = state.isDemoMode && isCycleProductionStorageKey(key)
+    ? (Array.isArray(state[stateKey]) ? state[stateKey] : [])
+    : readArrayJson(key);
+  const index = rows.findIndex((row) => row.id === record.id);
+  const merged = index >= 0
+    ? { ...rows[index], ...record, updatedAt: new Date().toISOString() }
+    : { ...record, createdAt: record.createdAt || new Date().toISOString() };
+  const nextRows = index >= 0
+    ? rows.map((row, idx) => (idx === index ? merged : row))
+    : [merged, ...rows];
+  safeSaveArray(key, stateKey, nextRows, reason);
+  return merged;
+}
+
+function validateRecordId(id) {
+  return typeof id === "string" && /^[a-z0-9_-]{3,}$/i.test(id);
+}
+
+function reloadCycleProductionState() {
+  if (state.isDemoMode) {
+    const savedDemoState = readDemoState();
+    applyDemoCycleProductionState(savedDemoState || buildDemoState());
+    return;
+  }
+
+  removeDemoCycleProductionFromStandardStorage();
+  state.cycleTimers = readArrayJson(CYCLE_TIMER_KEY);
+  state.cycleProduction = readArrayJson(CYCLE_PRODUCTION_KEY);
+  state.countCreationLog = readArrayJson(COUNT_CREATION_KEY);
+  state.varianceResearchLog = readArrayJson(VARIANCE_RESEARCH_KEY);
+  state.holdBatchLog = readArrayJson(HOLD_BATCH_KEY);
+  state.highRiskInventory = readArrayJson(HIGH_RISK_KEY);
+  state.rootCauseLog = readArrayJson(ROOT_CAUSE_KEY);
+  state.cycleAuditLog = readArrayJson(CYCLE_AUDIT_KEY);
+}
+
+function initializeCycleProductionData() {
+  const today = todayValue();
+  if ($("cycleTimerDate")) $("cycleTimerDate").value = today;
+  ["creationDate", "varianceDate", "holdDate", "riskDate"].forEach((id) => {
+    if ($(id) && !$(id).value) $(id).value = today;
+  });
+  if (state.isDemoMode) {
+    applyDemoCycleProductionState(readDemoState() || buildDemoState());
+  } else {
+    reloadCycleProductionState();
+  }
+  syncSupervisorControls();
+}
+
+function removeDemoCycleProductionFromStandardStorage() {
+  if (state.isDemoMode) return 0;
+  const userEmail = String(state.user?.email || "").toLowerCase();
+  const cleanupReason = DEMO_PRODUCTION_USER_EMAILS.has(userEmail)
+    ? `demo_cleanup_${userEmail}`
+    : "demo_cleanup_standard_mode";
+  const targets = [
+    { key: CYCLE_TIMER_KEY, stateKey: "cycleTimers" },
+    { key: CYCLE_AUDIT_KEY, stateKey: "cycleAuditLog" },
+    { key: CYCLE_PRODUCTION_KEY, stateKey: "cycleProduction" },
+    { key: COUNT_CREATION_KEY, stateKey: "countCreationLog" },
+    { key: VARIANCE_RESEARCH_KEY, stateKey: "varianceResearchLog" },
+    { key: HOLD_BATCH_KEY, stateKey: "holdBatchLog" },
+    { key: HIGH_RISK_KEY, stateKey: "highRiskInventory" },
+    { key: ROOT_CAUSE_KEY, stateKey: "rootCauseLog" }
+  ];
+  let removedTotal = 0;
+
+  targets.forEach(({ key, stateKey }) => {
+    const rows = readArrayJson(key);
+    if (!rows.length) {
+      state[stateKey] = rows;
+      return;
+    }
+
+    const keptRows = rows.filter((row) => !isDemoCycleProductionRecord(row));
+    const removed = rows.length - keptRows.length;
+    removedTotal += removed;
+
+    if (removed > 0) {
+      safeSaveArray(key, stateKey, keptRows, cleanupReason);
+    } else {
+      state[stateKey] = rows;
+    }
+  });
+
+  if (removedTotal > 0) {
+    writeDemoProductionCleanupReceipt(userEmail || "standard_mode", removedTotal);
+  }
+
+  return removedTotal;
+}
+
+function writeDemoProductionCleanupReceipt(userEmail, removedTotal) {
+  const receipts = readArrayJson(DEMO_PRODUCTION_CLEANUP_KEY);
+  safeWriteStorageKey(DEMO_PRODUCTION_CLEANUP_KEY, [
+    {
+      id: createLocalId("demo-cleanup"),
+      userEmail,
+      removedTotal,
+      timestamp: new Date().toISOString(),
+      note: "Removed seeded cycle count production demo records from standard app storage only."
+    },
+    ...receipts
+  ].slice(0, 50), "demo_production_cleanup_receipt");
+}
+
+function isDemoCycleProductionRecord(row = {}) {
+  const id = String(row.id || "").toLowerCase();
+  const stockCountId = String(row.stockCountId || row.countId || "").toUpperCase();
+  const employee = String(row.employee || "").toLowerCase();
+  const startedBy = String(row.timing?.startedBy || row.startedBy || "").toLowerCase();
+  const finishedBy = String(row.timing?.finishedBy || row.finishedBy || "").toLowerCase();
+  const demoEmployees = ["ava patel", "diego martinez", "jordan lee", "maya chen"];
+  const demoIdPrefixes = ["timer-demo-", "creation-demo-", "variance-demo-", "hold-demo-", "risk-demo-", "audit-demo-", "demo-"];
+
+  return demoIdPrefixes.some((prefix) => id.startsWith(prefix))
+    || stockCountId.startsWith("COUNT-DEMO")
+    || (demoEmployees.includes(employee) && (startedBy === DEMO_USER.email || finishedBy === DEMO_USER.email));
+}
+
+function buildDemoCycleProductionState() {
+  const seeds = buildCycleProductionDemoRecords();
+  return {
+    cycleTimers: seeds.timers,
+    cycleProduction: [],
+    countCreationLog: seeds.creation,
+    varianceResearchLog: seeds.variance,
+    holdBatchLog: seeds.holdBatch,
+    highRiskInventory: seeds.highRisk,
+    rootCauseLog: seeds.rootCause,
+    cycleAuditLog: seeds.audit
+  };
+}
+
+function buildCycleProductionDemoRecords() {
+  const baseDate = todayValue();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+  const now = Date.now();
+  const adjusted = demoTimer("timer-demo-adjusted", "Maya Chen", "COUNT-DEMO-105", twoDaysAgo, "2", demoTimestamp(2, 12, 0), demoTimestamp(2, 14, 20), 118, []);
+  adjusted.timing.status = "supervisor_adjusted";
+  adjusted.supervisorNote = "Adjusted for confirmed lunch overlap.";
+  return {
+    timers: [
+      demoTimer("timer-demo-normal", "Diego Martinez", "COUNT-DEMO-100", baseDate, "1", new Date(now - 105 * 60000).toISOString(), new Date(now - 30 * 60000).toISOString(), 100, []),
+      demoTimer("timer-demo-mixed", "Maya Chen", "COUNT-DEMO-101", yesterday, "1", demoTimestamp(1, 8, 0), demoTimestamp(1, 9, 25), 86, [demoDelay("Mixed Product", "Mixed cartons in A3-07 needed sort before count.")]),
+      demoTimer("timer-demo-lift", "Diego Martinez", "COUNT-DEMO-102", yesterday, "2", demoTimestamp(1, 10, 0), demoTimestamp(1, 11, 40), 92, [demoDelay("Waiting For Lift", "Needed lift driver to pull top rack pallet.")]),
+      { ...demoTimer("timer-demo-flag", "Jordan Lee", "COUNT-DEMO-103", twoDaysAgo, "1", demoTimestamp(2, 7, 0), demoTimestamp(2, 7, 3), 60, []), flags: [buildFlag("packet_under_5_minutes", "high", "Packet finished in under 5 minutes.")] },
+      {
+        id: "timer-demo-active",
+        employee: "Ava Patel",
+        stockCountId: "COUNT-DEMO-104",
+        date: baseDate,
+        packetNumber: "3",
+        lineCount: 0,
+        timing: { packetStartedAt: new Date(now - 42 * 60000).toISOString(), packetFinishedAt: null, totalElapsedMinutes: null, activeMinutes: null, startedBy: "demo@warehouse-ops-app.local", finishedBy: "", status: "active", deviceInfo: deviceInfo() },
+        delayNotes: [],
+        flags: [],
+        createdAt: new Date(now - 42 * 60000).toISOString()
+      },
+      adjusted
+    ],
+    creation: [{ id: "creation-demo-1", date: baseDate, employee: "Maya Chen", stockCountId: "COUNT-DEMO-100", packetsCreated: 2, countLinesCreated: 205, reason: "ABC Count", notes: "GP packet created for fast movers.", createdAt: new Date().toISOString() }],
+    variance: [{ id: "variance-demo-1", date: baseDate, employee: "Diego Martinez", stockCountId: "COUNT-DEMO-101", itemNumber: "SKU-7720", binLocation: "C1-02", varianceQuantity: -2, varianceDollarAmount: 184, status: "Researching", rootCause: "Picking Error", actionTaken: "Recounted", notes: "Found short-pick pattern in history.", createdAt: new Date().toISOString() }],
+    holdBatch: [{ id: "hold-demo-1", date: baseDate, employee: "Ava Patel", batchId: "HB-4451", itemNumber: "SKU-2207", binLocation: "A3-07", issueType: "Negative Quantity", status: "Open", actionTaken: "Sent To Supervisor", notes: "Needs GP quantity review.", createdAt: new Date().toISOString() }],
+    highRisk: [{ id: "risk-demo-1", dateAdded: baseDate, itemNumber: "SKU-1188", binLocation: "B2-09", aisle: "B", riskType: "Fast Mover", priority: "High", notes: "Count weekly until variance trend stabilizes.", lastCountDate: yesterday, nextRecommendedCountDate: baseDate, status: "Active", createdAt: new Date().toISOString() }],
+    rootCause: [],
+    audit: []
+  };
+}
+
+function demoTimer(id, employee, stockCountId, date, packetNumber, startedAt, finishedAt, lineCount, delayNotes) {
+  const minutes = Math.max(0, Math.round((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 60000));
+  return { id, employee, stockCountId, date, packetNumber, lineCount, timing: { packetStartedAt: startedAt, packetFinishedAt: finishedAt, totalElapsedMinutes: minutes, activeMinutes: minutes, startedBy: "demo@warehouse-ops-app.local", finishedBy: "demo@warehouse-ops-app.local", status: "finished", deviceInfo: deviceInfo() }, delayNotes, flags: [], createdAt: startedAt };
+}
+
+function demoDelay(reason, note) {
+  return { id: createLocalId("delay"), timestamp: new Date().toISOString(), employee: "Demo User", reason, note, approvalStatus: "pending", supervisorNote: "", reviewedBy: "", reviewedAt: "" };
+}
+
+function currentRole() {
+  return String(state.settings.operatorRole || "worker").toLowerCase();
+}
+
+function syncSupervisorControls() {
+  const supervisor = canResetTimer();
+  document.querySelectorAll(".supervisor-only-action").forEach((el) => {
+    el.disabled = !supervisor;
+    el.classList.toggle("hidden", !supervisor);
+  });
+}
+
+function cycleTimerFormValues() {
+  return { employee: $("cycleTimerEmployee")?.value || $("cycleWorker")?.value || currentOperatorName(), stockCountId: $("cycleTimerCountId")?.value.trim() || $("cycleId")?.value.trim() || "", date: $("cycleTimerDate")?.value || $("cycleDate")?.value || todayValue(), packetNumber: $("cycleTimerPacket")?.value.trim() || "" };
+}
+
+function findActiveCycleTimer(values = cycleTimerFormValues()) {
+  return state.cycleTimers.find((timer) => timer.timing?.status === "active" && timer.employee === values.employee && (!values.stockCountId || timer.stockCountId === values.stockCountId));
+}
+
+function startCyclePacket() {
+  const values = cycleTimerFormValues();
+  if (!values.employee || !values.stockCountId || !values.date) return toast("Employee, Stock Count ID, and Date are required.");
+  if (state.cycleTimers.some((timer) => timer.timing?.status === "active" && timer.employee === values.employee)) return toast("This employee already has an active unfinished packet.");
+  const startedAt = new Date().toISOString();
+  const record = { id: createLocalId("cycle-timer"), ...values, lineCount: 0, timing: { packetStartedAt: startedAt, packetFinishedAt: null, totalElapsedMinutes: null, activeMinutes: null, startedBy: state.user?.email || "", finishedBy: "", status: "active", deviceInfo: deviceInfo() }, delayNotes: [], flags: [], createdAt: startedAt };
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", record, "cycle_packet_started");
+  writeCycleAudit("packet_started", record, null, record);
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+  toast("Cycle count packet started.");
+}
+
+function finishCyclePacket() {
+  const active = findActiveCycleTimer(cycleTimerFormValues());
+  if (!active) return toast("Start a packet before finishing.");
+  const startedMs = new Date(active.timing.packetStartedAt).getTime();
+  if (!startedMs || Number.isNaN(startedMs)) return toast("Invalid start timestamp. Supervisor review required.");
+  const lines = collectCycleLines();
+  const minutes = Math.max(0, Math.round((Date.now() - startedMs) / 60000));
+  const next = { ...active, lineCount: lines.length, varianceLines: lines.filter((line) => Number(line.variance || 0) !== 0).length, timing: { ...active.timing, packetFinishedAt: new Date().toISOString(), totalElapsedMinutes: minutes, activeMinutes: minutes, finishedBy: state.user?.email || "", status: "finished" } };
+  next.flags = buildCycleFlags(next);
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, "cycle_packet_finished");
+  writeCycleAudit("packet_finished", next, active, next);
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+  toast("Cycle count packet finished.");
+}
+
+function addCycleDelayNote() {
+  const active = findActiveCycleTimer(cycleTimerFormValues());
+  if (!active) return toast("Start a packet before adding delay notes.");
+  const reason = $("cycleDelayReason")?.value || "Normal";
+  const note = $("cycleDelayNote")?.value.trim() || "";
+  if (reason === "Other" && !note) return toast("Notes are required when Delay Reason is Other.");
+  const delay = { id: createLocalId("delay"), timestamp: new Date().toISOString(), employee: active.employee, reason, note, approvalStatus: "pending", supervisorNote: "", reviewedBy: "", reviewedAt: "" };
+  const next = { ...active, delayNotes: [...(active.delayNotes || []), delay] };
+  next.flags = buildCycleFlags(next);
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, "cycle_delay_added");
+  writeCycleAudit("delay_added", next, null, delay);
+  if ($("cycleDelayNote")) $("cycleDelayNote").value = "";
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+}
+
+function resetCyclePacketBySupervisor() {
+  if (!canResetTimer()) return toast("Only Supervisor/Admin can reset cycle timers.");
+  const active = findActiveCycleTimer();
+  if (!active) return toast("No active matching packet to reset.");
+  const next = { ...active, timing: { ...active.timing, status: "supervisor_adjusted", packetFinishedAt: null, totalElapsedMinutes: null, activeMinutes: null }, supervisorNote: "Timer reset by Supervisor/Admin.", flags: [...(active.flags || []), buildFlag("timer_reset_by_admin", "medium", "Timer reset by Supervisor/Admin.")] };
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, "cycle_timer_reset");
+  writeCycleAudit("timer_reset_by_admin", next, active, next);
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+}
+
+function voidCyclePacketBySupervisor() {
+  if (!canResetTimer()) return toast("Only Supervisor/Admin can void cycle timers.");
+  const values = cycleTimerFormValues();
+  const timer = findActiveCycleTimer(values) || state.cycleTimers.find((row) => row.employee === values.employee && row.stockCountId === values.stockCountId);
+  if (!timer) return toast("No matching packet found.");
+  const next = { ...timer, timing: { ...(timer.timing || {}), status: "voided" }, flags: [...(timer.flags || []), buildFlag("record_voided_by_admin", "high", "Record voided by Supervisor/Admin.")] };
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, "cycle_timer_voided");
+  writeCycleAudit("record_voided_by_admin", next, timer, next);
+  renderCyclePacketTimer();
+  renderCycleProductionDashboard();
+}
+
+function renderCyclePacketTimer() {
+  syncSupervisorControls();
+  const values = cycleTimerFormValues();
+  const active = findActiveCycleTimer(values) || state.cycleTimers.find((timer) => timer.timing?.status === "active" && timer.employee === values.employee);
+  const status = active?.timing?.status || "inactive";
+  if ($("cycleTimerStatusBadge")) {
+    $("cycleTimerStatusBadge").textContent = titleCase(status);
+    $("cycleTimerStatusBadge").className = `status-pill ${status}`;
+  }
+  if ($("cyclePacketClock")) {
+    const startedMs = active?.timing?.packetStartedAt ? new Date(active.timing.packetStartedAt).getTime() : 0;
+    $("cyclePacketClock").textContent = startedMs ? formatDuration(Date.now() - startedMs) : "00:00:00";
+  }
+  if ($("cyclePacketStartedAt")) $("cyclePacketStartedAt").textContent = active?.timing?.packetStartedAt ? formatDateTime(active.timing.packetStartedAt) : "-";
+  if ($("cyclePacketFinishedAt")) $("cyclePacketFinishedAt").textContent = active?.timing?.packetFinishedAt ? formatDateTime(active.timing.packetFinishedAt) : "-";
+  if ($("finishCyclePacketBtn")) $("finishCyclePacketBtn").disabled = !active;
+  if ($("cycleTimerMessage")) $("cycleTimerMessage").textContent = active ? `Active packet for ${active.employee} / ${active.stockCountId}.` : "No active packet selected.";
+}
+
+function startCycleItemTimer(row) {
+  if (!row) return;
+  row.dataset.itemStartedAt = new Date().toISOString();
+  row.dataset.itemFinishedAt = "";
+  row.dataset.itemMinutes = "";
+  updateItemTimerDisplay(row);
+  writeCycleAudit("item_started", { stockCountId: $("cycleId")?.value || "" }, null, collectCycleLineFromRow(row));
+}
+
+function endCycleItemTimer(row) {
+  if (!row) return;
+  if (!row.dataset.itemStartedAt) return toast("Start item before ending item.");
+  row.dataset.itemFinishedAt = new Date().toISOString();
+  row.dataset.itemMinutes = String(Math.max(0, Math.round((new Date(row.dataset.itemFinishedAt) - new Date(row.dataset.itemStartedAt)) / 60000)));
+  updateItemTimerDisplay(row);
+  writeCycleAudit("item_finished", { stockCountId: $("cycleId")?.value || "" }, null, collectCycleLineFromRow(row));
+}
+
+function updateItemTimerDisplay(row) {
+  const el = row.querySelector(".item-minutes");
+  if (el) el.textContent = row.dataset.itemMinutes ? `${row.dataset.itemMinutes} min` : row.dataset.itemStartedAt ? "Running" : "0 min";
+}
+
+function collectCycleLineFromRow(row) {
+  return { item: rowValue(row, ".cycle-item"), location: rowValue(row, ".cycle-location"), itemStartedAt: row.dataset.itemStartedAt || null, itemFinishedAt: row.dataset.itemFinishedAt || null, itemMinutes: row.dataset.itemMinutes || null };
+}
+
+function buildCycleFlags(record) {
+  const flags = [...(record.flags || [])];
+  const add = (type, severity, message) => {
+    if (!flags.some((flag) => flag.type === type)) flags.push(buildFlag(type, severity, message));
+  };
+  const minutes = Number(record.timing?.activeMinutes ?? record.timing?.totalElapsedMinutes ?? 0);
+  const lineCount = Number(record.lineCount || 0);
+  const countsPerHour = minutes > 0 ? lineCount / minutes * 60 : 0;
+  if (record.timing?.status === "finished" && minutes < 5) add("packet_under_5_minutes", "high", "Packet finished in under 5 minutes.");
+  if (record.timing?.status === "active" && elapsedMinutes(record.timing.packetStartedAt) > 240) add("packet_over_4_hours", "high", "Packet active over 4 hours.");
+  if (record.timing?.status === "active" && !record.timing?.packetFinishedAt) add("missing_finish_time", "medium", "Packet is active with no finish time.");
+  if ((record.delayNotes || []).some((note) => note.reason === "Other" && !note.note)) add("other_delay_no_notes", "medium", "Other delay reason has no notes.");
+  if ((record.delayNotes || []).length > 3) add("more_than_3_delay_notes", "medium", "More than 3 delay notes on one packet.");
+  if (record.timing?.status === "finished" && lineCount === 0) add("finished_zero_lines", "high", "Finished packet has 0 count lines.");
+  if (countsPerHour > 300) add("counts_per_hour_high", "medium", "Counts per hour unusually high.");
+  if (record.timing?.status === "finished" && countsPerHour > 0 && countsPerHour < 25) add("counts_per_hour_low", "medium", "Counts per hour unusually low.");
+  return flags;
+}
+
+function buildFlag(type, severity, message) {
+  return { type, severity, message, createdAt: new Date().toISOString(), reviewed: false, reviewedBy: "", reviewedAt: "", supervisorNote: "" };
+}
+
+function elapsedMinutes(iso) {
+  const ms = iso ? new Date(iso).getTime() : 0;
+  return ms ? Math.round((Date.now() - ms) / 60000) : 0;
+}
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  return `${pad(Math.floor(totalSeconds / 3600))}:${pad(Math.floor((totalSeconds % 3600) / 60))}:${pad(totalSeconds % 60)}`;
+}
+
+function deviceInfo() {
+  return { userAgent: navigator.userAgent, platform: navigator.platform || "", capturedAt: new Date().toISOString() };
+}
+
+function writeCycleAudit(actionType, context = {}, oldValue = null, newValue = null) {
+  const entry = { id: createLocalId("audit"), timestamp: new Date().toISOString(), actionType, employee: context.employee || currentOperatorName(), role: currentRole(), stockCountId: context.stockCountId || context.countId || $("cycleId")?.value || "", itemNumber: newValue?.item || newValue?.itemNumber || "", oldValue, newValue, notes: context.supervisorNote || "", deviceInfo: deviceInfo() };
+  safeUpsertArrayRecord(CYCLE_AUDIT_KEY, "cycleAuditLog", entry, `audit_${actionType}`);
+}
+
+function currentRole() {
+  return String(state.settings.operatorRole || "worker").toLowerCase();
+}
+
+function saveCountCreationLog() {
+  const record = { id: createLocalId("creation"), date: $("creationDate")?.value || todayValue(), employee: $("creationEmployee")?.value || currentOperatorName(), stockCountId: $("creationCountId")?.value.trim() || "", packetsCreated: Number($("creationPackets")?.value || 0), countLinesCreated: Number($("creationLines")?.value || 0), reason: $("creationReason")?.value || "Other", notes: $("creationNotes")?.value.trim() || "" };
+  if (!record.employee || !record.stockCountId) return toast("Employee and Stock Count ID are required.");
+  safeUpsertArrayRecord(COUNT_CREATION_KEY, "countCreationLog", record, "count_creation_added");
+  writeCycleAudit("count_creation_added", record, null, record);
+  renderCycleProductionDashboard();
+}
+
+function saveVarianceResearchLog() {
+  const record = { id: createLocalId("variance"), date: $("varianceDate")?.value || todayValue(), employee: $("varianceEmployee")?.value || currentOperatorName(), stockCountId: $("varianceCountId")?.value.trim() || "", itemNumber: $("varianceItem")?.value.trim() || "", binLocation: $("varianceBin")?.value.trim() || "", varianceQuantity: Number($("varianceQty")?.value || 0), varianceDollarAmount: Number($("varianceDollars")?.value || 0), status: $("varianceStatus")?.value || "Open", rootCause: $("varianceRootCause")?.value || "Unknown", actionTaken: $("varianceAction")?.value || "", notes: $("varianceNotes")?.value.trim() || "" };
+  if (!record.employee || !record.stockCountId || !record.itemNumber) return toast("Employee, Stock Count ID, and Item Number are required.");
+  safeUpsertArrayRecord(VARIANCE_RESEARCH_KEY, "varianceResearchLog", record, "variance_log_added");
+  writeCycleAudit("variance_log_added", record, null, record);
+  renderCycleProductionDashboard();
+}
+
+function saveHoldBatchLog() {
+  const record = { id: createLocalId("hold"), date: $("holdDate")?.value || todayValue(), employee: $("holdEmployee")?.value || currentOperatorName(), batchId: $("holdBatchId")?.value.trim() || "", itemNumber: $("holdItem")?.value.trim() || "", binLocation: $("holdBin")?.value.trim() || "", issueType: $("holdIssue")?.value || "Other", status: $("holdStatus")?.value || "Open", actionTaken: $("holdAction")?.value.trim() || "", notes: $("holdNotes")?.value.trim() || "" };
+  if (!record.employee || !record.batchId) return toast("Employee and Batch ID are required.");
+  safeUpsertArrayRecord(HOLD_BATCH_KEY, "holdBatchLog", record, "hold_batch_added");
+  writeCycleAudit("hold_batch_added", record, null, record);
+  renderCycleProductionDashboard();
+}
+
+function saveHighRiskInventory() {
+  const record = { id: createLocalId("risk"), dateAdded: $("riskDate")?.value || todayValue(), itemNumber: $("riskItem")?.value.trim() || "", binLocation: $("riskBin")?.value.trim() || "", aisle: $("riskAisle")?.value.trim() || "", riskType: $("riskType")?.value || "Other", priority: $("riskPriority")?.value || "Medium", notes: $("riskNotes")?.value.trim() || "", lastCountDate: $("riskLastCount")?.value || "", nextRecommendedCountDate: $("riskNextCount")?.value || "", status: $("riskStatus")?.value || "Active" };
+  if (!record.itemNumber && !record.binLocation) return toast("Item Number or Bin Location is required.");
+  safeUpsertArrayRecord(HIGH_RISK_KEY, "highRiskInventory", record, "high_risk_item_added");
+  writeCycleAudit("high_risk_item_added", record, null, record);
+  renderCycleProductionDashboard();
+}
+
+function clearProductionFilters() {
+  ["prodFilterDate", "prodFilterStart", "prodFilterEnd", "prodFilterEmployee", "prodFilterRole", "prodFilterCountId", "prodFilterDelay", "prodFilterRootCause", "prodFilterFlag"].forEach((id) => {
+    if ($(id)) $(id).value = "";
+  });
+  renderCycleProductionDashboard();
+}
+
+function filteredCycleTimers() {
+  const date = $("prodFilterDate")?.value || "";
+  const start = $("prodFilterStart")?.value || "";
+  const end = $("prodFilterEnd")?.value || "";
+  const employee = $("prodFilterEmployee")?.value || "";
+  const countId = ($("prodFilterCountId")?.value || "").toLowerCase();
+  const delay = $("prodFilterDelay")?.value || "";
+  const flag = $("prodFilterFlag")?.value || "";
+  return state.cycleTimers.filter((row) => {
+    const rowDate = row.date || "";
+    const hasDelay = !delay || (row.delayNotes || []).some((note) => note.reason === delay);
+    const hasFlag = (row.flags || []).length > 0;
+    const reviewed = (row.flags || []).some((f) => f.reviewed);
+    return (!date || rowDate === date) && (!start || rowDate >= start) && (!end || rowDate <= end) && (!employee || row.employee === employee) && (!countId || String(row.stockCountId || "").toLowerCase().includes(countId)) && hasDelay && (!flag || (flag === "flagged" && hasFlag) || (flag === "reviewed" && reviewed) || (flag === "unreviewed" && hasFlag && !reviewed));
+  });
+}
+
+function renderCycleProductionDashboard() {
+  reloadCycleProductionState();
+  populateProductionFilterOptions();
+  syncSupervisorControls();
+  const rows = filteredCycleTimers();
+  const finishedRows = rows.filter((row) => ["finished", "supervisor_adjusted"].includes(row.timing?.status));
+  const today = todayValue();
+  const weekStart = getWeekStart(today);
+  const dailyLines = finishedRows.filter((row) => row.date === today).reduce((sum, row) => sum + Number(row.lineCount || 0), 0);
+  const weeklyLines = finishedRows.filter((row) => row.date >= weekStart).reduce((sum, row) => sum + Number(row.lineCount || 0), 0);
+  const totalMinutes = finishedRows.reduce((sum, row) => sum + Number(row.timing?.activeMinutes || row.timing?.totalElapsedMinutes || 0), 0);
+  const totalLines = finishedRows.reduce((sum, row) => sum + Number(row.lineCount || 0), 0);
+  setText("dailyProductionLines", dailyLines);
+  setText("weeklyProductionLines", weeklyLines);
+  setText("packetsCompleted", finishedRows.length);
+  setText("countsPerHour", totalMinutes ? Math.round(totalLines / totalMinutes * 60) : 0);
+  setText("goalPercent", `${Math.round(dailyLines / DAILY_COUNT_GOAL * 100)}%`);
+  setText("flaggedRecords", rows.filter((row) => (row.flags || []).length).length);
+  renderRootCauseSummary();
+  renderFlaggedRecords(rows);
+  renderDelayReviewList(rows);
+  renderProductionRecords(rows);
+}
+
+function populateProductionFilterOptions() {
+  populateSimpleSelect("prodFilterEmployee", state.employees.filter((e) => e.active).map((e) => e.name), "All");
+}
+
+function populateSimpleSelect(id, values, blankLabel = "Select") {
+  const select = $(id);
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = `<option value="">${blankLabel}</option>`;
+  [...new Set(values.filter(Boolean))].sort().forEach((value) => {
+    select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`);
+  });
+  select.value = current;
+}
+
+function renderRootCauseSummary() {
+  const rootCauses = {};
+  state.varianceResearchLog.forEach((row) => {
+    rootCauses[row.rootCause || "Unknown"] = (rootCauses[row.rootCause || "Unknown"] || 0) + 1;
+  });
+  renderSummaryList("rootCauseSummary", Object.entries(rootCauses).map(([label, count]) => ({ label, value: `${count}` })), "No root causes logged.");
+}
+
+function renderFlaggedRecords(rows) {
+  const flagged = rows.flatMap((row) => (row.flags || []).map((flag) => ({ label: `${row.employee} / ${row.stockCountId}`, value: `${flag.severity}: ${flag.message}` })));
+  renderSummaryList("flaggedRecordList", flagged, "No flagged records.");
+}
+
+function renderDelayReviewList(rows) {
+  const el = $("delayReviewList");
+  if (!el) return;
+  const notes = rows.flatMap((row) => (row.delayNotes || [])
+    .filter((note) => note.approvalStatus === "pending")
+    .map((note) => ({ row, note })));
+  if (!notes.length) {
+    el.innerHTML = '<div class="empty-state">No pending delay notes.</div>';
+    return;
+  }
+  el.innerHTML = notes.map(({ row, note }) => `
+    <div class="summary-row">
+      <strong>${escapeHtml(row.employee)} / ${escapeHtml(row.stockCountId)}</strong>
+      <span>${escapeHtml(note.reason)}: ${escapeHtml(note.note || "No note")}</span>
+      <div class="row-actions">
+        <button class="delayReviewBtn" data-timer-id="${escapeHtml(row.id)}" data-delay-id="${escapeHtml(note.id)}" data-status="approved" type="button">Approve</button>
+        <button class="delayReviewBtn danger" data-timer-id="${escapeHtml(row.id)}" data-delay-id="${escapeHtml(note.id)}" data-status="rejected" type="button">Reject</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function reviewDelayNote(timerId, delayId, status) {
+  if (!canResetTimer()) return toast("Only Supervisor/Admin can review delay notes.");
+  const timer = state.cycleTimers.find((row) => row.id === timerId);
+  if (!timer) return toast("Timer record not found.");
+  const delayNotes = (timer.delayNotes || []).map((note) => {
+    if (note.id !== delayId) return note;
+    return {
+      ...note,
+      approvalStatus: status,
+      reviewedBy: currentOperatorName(),
+      reviewedAt: new Date().toISOString()
+    };
+  });
+  const next = { ...timer, delayNotes };
+  safeUpsertArrayRecord(CYCLE_TIMER_KEY, "cycleTimers", next, status === "approved" ? "delay_approved" : "delay_rejected");
+  writeCycleAudit(status === "approved" ? "delay_approved" : "delay_rejected", next, timer, next);
+  renderCycleProductionDashboard();
+}
+
+function renderProductionRecords(rows) {
+  const items = rows.slice(0, 10).map((row) => ({ label: `${row.date || "-"} ${row.employee || "-"}`, value: `${row.stockCountId || "-"} / ${row.lineCount || 0} lines / ${row.timing?.status || "-"}` }));
+  renderSummaryList("productionRecordList", items, "No production records.");
+}
+
+function renderSummaryList(id, rows, emptyText) {
+  const el = $(id);
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty-state">${escapeHtml(emptyText)}</div>`;
+    return;
+  }
+  el.innerHTML = rows.map((row) => `<div class="summary-row"><strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(row.value)}</span></div>`).join("");
+}
+
+function setText(id, value) {
+  if ($(id)) $(id).textContent = value;
+}
+
+function getWeekStart(dateText) {
+  const date = new Date(`${dateText}T00:00:00`);
+  const day = date.getDay();
+  date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+  return date.toISOString().slice(0, 10);
+}
+
+function exportProductionCsv(type) {
+  let rows = [];
+  if (type === "daily") rows = filteredCycleTimers().filter((row) => row.date === todayValue());
+  if (type === "weekly") rows = filteredCycleTimers().filter((row) => row.date >= getWeekStart(todayValue()));
+  if (type === "employee") rows = employeeProductionRows(filteredCycleTimers());
+  if (type === "delays") rows = delayReasonRows(filteredCycleTimers());
+  if (type === "rootCauses") rows = state.varianceResearchLog;
+  if (type === "creation") rows = state.countCreationLog;
+  if (type === "variance") rows = state.varianceResearchLog;
+  if (type === "holdBatch") rows = state.holdBatchLog;
+  if (type === "highRisk") rows = state.highRiskInventory;
+  if (type === "flags") rows = flagExportRows(filteredCycleTimers());
+  if (type === "audit") {
+    if (!canResetTimer()) return toast("Only Supervisor/Admin can export audit log.");
+    rows = state.cycleAuditLog;
+  }
+  if (!rows.length) return toast("No production data to export.");
+  downloadCsv(rows.map(flattenProductionRow), `cycle-${type}-${todayValue()}.csv`);
+}
+
+function employeeProductionRows(rows) {
+  const map = {};
+  rows.forEach((row) => {
+    const key = row.employee || "Unknown";
+    map[key] ||= { employee: key, countLinesCompleted: 0, packetsCompleted: 0, activeMinutes: 0, delayNotes: 0, varianceLines: 0 };
+    map[key].countLinesCompleted += Number(row.lineCount || 0);
+    map[key].packetsCompleted += ["finished", "supervisor_adjusted"].includes(row.timing?.status) ? 1 : 0;
+    map[key].activeMinutes += Number(row.timing?.activeMinutes || row.timing?.totalElapsedMinutes || 0);
+    map[key].delayNotes += (row.delayNotes || []).length;
+    map[key].varianceLines += Number(row.varianceLines || 0);
+  });
+  return Object.values(map).map((row) => ({ ...row, countsPerHour: row.activeMinutes ? Math.round(row.countLinesCompleted / row.activeMinutes * 60) : 0, goalPercent: Math.round(row.countLinesCompleted / DAILY_COUNT_GOAL * 100) }));
+}
+
+function delayReasonRows(rows) {
+  return rows.flatMap((row) => (row.delayNotes || []).map((note) => ({ stockCountId: row.stockCountId, employee: row.employee, date: row.date, ...note })));
+}
+
+function flagExportRows(rows) {
+  return rows.flatMap((row) => (row.flags || []).map((flag) => ({ stockCountId: row.stockCountId, employee: row.employee, date: row.date, ...flag })));
+}
+
+function flattenProductionRow(row) {
+  const out = { ...row };
+  if (row.timing) {
+    Object.entries(row.timing).forEach(([key, value]) => {
+      out[`timing_${key}`] = typeof value === "object" ? JSON.stringify(value) : value;
+    });
+    delete out.timing;
+  }
+  if (Array.isArray(row.delayNotes)) out.delayNotes = JSON.stringify(row.delayNotes);
+  if (Array.isArray(row.flags)) out.flags = JSON.stringify(row.flags);
+  if (row.deviceInfo && typeof row.deviceInfo === "object") out.deviceInfo = JSON.stringify(row.deviceInfo);
+  return out;
+}
 
 /* ---------------------------
    CLEAR / EXPORT
@@ -3013,7 +4661,11 @@ window.canManageHistory = canManageHistory;
 function clearRows(bodyId) {
   if (bodyId === "putawayBody") {
     buildPutawayRows();
+    if ($("putWorker")) $("putWorker").value = "";
+    if ($("putDate")) $("putDate").value = todayValue();
   }
+
+  if (bodyId === "cycleBody") buildCycleRows();
 
   if (bodyId === "pickingBody") {
     buildPickingRows();
@@ -3023,6 +4675,7 @@ function clearRows(bodyId) {
   }
 
   updatePutawayStats();
+  updateCycleStats();
   updatePickingStats();
 }
 
@@ -3067,6 +4720,11 @@ function exportCurrentCycle() {
     variance: line.variance,
     reason: line.reason,
     done: line.done ? "Yes" : "No",
+    itemStartedAt: line.itemStartedAt || "",
+    itemFinishedAt: line.itemFinishedAt || "",
+    itemMinutes: line.itemMinutes ?? "",
+    itemDelayReason: line.itemDelayReason || "",
+    itemDelayNotes: line.itemDelayNotes || "",
     timestamp: new Date().toISOString()
   }));
 
@@ -3077,6 +4735,7 @@ function exportCsv(type) {
   let rows = [];
 
   if (type === "putaway") rows = flattenSessions(state.putawayLogs, "putaway");
+  if (type === "cycle") rows = flattenSessions(state.cycleSessions, "cycle");
   if (type === "picking") rows = flattenSessions(state.pickingSessions, "picking");
   if (type === "history") rows = state.activityLogs;
 
@@ -3089,19 +4748,21 @@ function flattenSessions(sessions, type) {
   const out = [];
 
   sessions.forEach((session) => {
-    (session.lines || []).forEach((line) => {
+    const normalizedSession = type === "putaway" ? normalizePutawayRecord(session) : session;
+    const lines = type === "putaway" ? putawayLinesWithGaps(normalizedSession.lines || []) : (normalizedSession.lines || []);
+    lines.forEach((line) => {
       out.push({
         type,
-        sourceId: session.id || "",
-        sessionDate: session.date,
-        completedDate: session.completedDate || session.date || "",
-        putawayNumber: session.putawayNumber || session.sheetNumber || "",
-        worker: session.worker || session.counter || session.picker,
-        workerUid: session.workerUid || session.createdBy || "",
-        workerEmail: session.workerEmail || session.createdByEmail || "",
-        status: line.status || session.status || "",
-        timestamp: session.timestamp || session.createdAt || "",
-        dockToStockMinutes: session.dockToStockMinutes || "",
+        sessionDate: normalizedSession.workDate || normalizedSession.date,
+        worker: line.employeeName || normalizedSession.employeeName || normalizedSession.worker || normalizedSession.counter || normalizedSession.picker,
+        item: line.item || line.itemNumber || "",
+        qty: line.qty ?? line.quantity ?? "",
+        location: line.location || line.binLocation || "",
+        submittedDate: line.submittedDate || normalizedSession.workDate || normalizedSession.date || "",
+        submittedAt: line.submittedAt || "",
+        submittedTime: line.submittedTime || "",
+        gapMinutes: line.gapMinutes ?? "",
+        possibleDowntime: line.possibleDowntime ? "Yes" : "",
         ...line
       });
     });

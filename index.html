@@ -6,8 +6,8 @@
 
   <title>WarehouseOS Inventory Control Dashboard</title>
 
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="stylesheet" href="responsive-upgrade.css?v=20260604-1" />
+  <link rel="stylesheet" href="styles.css?v=20260615-1" />
+  <link rel="stylesheet" href="responsive-upgrade.css?v=20260615-1" />
   <link rel="stylesheet" href="responsive-fix.css?v=20260604-1" />
 
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -39,7 +39,7 @@
   <header class="topbar">
     <div>
       <h1>WarehouseOS</h1>
-      <p>Put Away · Order Picking · Employees · History</p>
+      <p>Put Away · Employees · History</p>
     </div>
 
     <div class="top-actions">
@@ -107,7 +107,6 @@
 
       <nav class="tabs">
         <button class="tab active" data-tab="putaway">Put Away Log</button>
-        <button class="tab" data-tab="picking">Order Picking</button>
         <button class="tab" data-tab="leaderboard">Leaderboard</button>
         <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
@@ -118,45 +117,18 @@
       <!-- PUT AWAY -->
       <section id="putawayTab" class="tab-panel active">
         <div class="card">
-          <h2>Receiving Timer</h2>
-
-          <div class="timer-layout">
-            <div class="timer-face">
-              <strong id="receivingClock">00:00:00</strong>
-            </div>
-            <div class="stats kpi-compact">
-              <div><strong id="dockToStockStat">0</strong><span>Dock-To-Stock Minutes</span></div>
-              <div><strong id="timerStatus">Idle</strong><span>Status</span></div>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="startReceivingTimerBtn" class="primary">Start</button>
-            <button id="stopReceivingTimerBtn">Stop</button>
-            <button id="resetReceivingTimerBtn" class="danger">Reset</button>
-          </div>
-
-          <div class="timer-meta">
-            <div><span>Started By</span><strong id="timerStartedBy">-</strong></div>
-            <div><span>Started At</span><strong id="timerStartedAt">-</strong></div>
-            <div><span>Stopped By</span><strong id="timerStoppedBy">-</strong></div>
-            <div><span>Stopped At</span><strong id="timerStoppedAt">-</strong></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h2>Put Away Log — 25 Lines</h2>
+          <h2>Putaway Log - One Line</h2>
 
           <div class="grid">
-            <label>Worker
-              <input id="putWorker" list="workerOptions" placeholder="Worker name" />
+            <label>Employee
+              <input id="putWorker" list="workerOptions" placeholder="Employee name" required />
             </label>
 
-            <label>Put Away / Sheet #
-              <input id="putSheetNumber" placeholder="Sheet or putaway number" />
+            <label>Putaway / Sheet #
+              <input id="putSheetNumber" placeholder="Sheet or putaway number" required />
             </label>
 
-            <label>Date
+            <label>Work Date
               <input id="putDate" type="date" />
             </label>
 
@@ -169,19 +141,18 @@
           </div>
 
           <div class="stats">
-            <div><strong id="putUsed">0</strong><span>Used Lines</span></div>
+            <div><strong id="putUsed">0</strong><span>Line Ready</span></div>
             <div><strong id="putQty">0</strong><span>Total Qty</span></div>
-            <div><strong id="dockToStockSheetStat">0</strong><span>Dock-To-Stock Min</span></div>
           </div>
 
-          <div class="table-wrap workflow-entry-table">
-            <table>
+          <div class="table-wrap">
+            <table class="putaway-entry-table">
               <thead>
                 <tr>
-                  <th>Line #</th>
+                  <th>#</th>
                   <th>Item #</th>
                   <th>Qty</th>
-                  <th>Location</th>
+                  <th>Bin / Location</th>
                   <th>Notes</th>
                 </tr>
               </thead>
@@ -189,27 +160,49 @@
             </table>
           </div>
 
-          <div class="actions">
-            <button id="savePutawayBtn" class="primary">Submit Put Away</button>
+          <div class="actions putaway-form-actions">
+            <button id="savePutawayBtn" class="primary">Submit Putaway Line</button>
             <button id="clearPutawayBtn">Clear Form</button>
-            <span id="putawaySaveStatus" class="putaway-save-status" aria-live="polite"></span>
+            <p id="putawayAutosaveStatus" class="message" aria-live="polite">All changes saved</p>
           </div>
         </div>
 
         <div class="card">
-          <h3>Recent Put Away Logs</h3>
-          <button class="exportBtn" data-export="putaway">Export CSV</button>
+          <div class="section-heading">
+            <div>
+              <h3>Recent Put Away Logs</h3>
+              <p class="hint">Filter saved putaway by worker and completed date.</p>
+            </div>
+            <button class="exportBtn" data-export="putaway">Export CSV</button>
+          </div>
+
+          <div class="grid putaway-log-filters">
+            <label>Employee
+              <input id="putawayLogEmployeeFilter" list="workerOptions" placeholder="All employees" />
+            </label>
+            <label>Start Date
+              <input id="putawayLogStartFilter" type="date" />
+            </label>
+            <label>End Date
+              <input id="putawayLogEndFilter" type="date" />
+            </label>
+            <div class="actions filter-actions">
+              <button id="applyPutawayLogFiltersBtn" class="primary" type="button">Apply</button>
+              <button id="clearPutawayLogFiltersBtn" type="button">Clear</button>
+            </div>
+          </div>
 
           <div class="table-wrap small">
             <table>
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Completed Date</th>
+                  <th>Last Submitted</th>
                   <th>Worker</th>
                   <th>Lines</th>
                   <th>Total Qty</th>
-                  <th>Dock-To-Stock</th>
-                  <th>Preview</th>
+                  <th>Preview / Details</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="putawayLogBody"></tbody>
@@ -217,127 +210,19 @@
           </div>
         </div>
       </section>
-
-      <!-- ORDER PICKING -->
-      <section id="pickingTab" class="tab-panel">
-        <div class="card">
-          <h2>Order Picking Worksheet — Upload or Enter Manually</h2>
-
-          <div class="grid">
-            <label>Picker
-              <select id="pickWorker"></select>
-            </label>
-
-            <label>Order / Transfer #
-              <input id="pickOrder" placeholder="SXFR0203013" />
-            </label>
-
-            <label>Date
-              <input id="pickDate" type="date" />
-            </label>
-          </div>
-
-          <div class="upload-card">
-            <h3>Upload Transfer / Pick Ticket</h3>
-            <p class="hint">
-              Upload .xlsx, .xls, or .csv. The app finds the BIN LOC / ITEM # row and fills the table automatically.
-            </p>
-
-            <div class="actions">
-              <input id="pickFileUpload" type="file" accept=".xlsx,.xls,.csv" />
-              <button id="loadPickFileBtn" class="primary">Load Pick Ticket</button>
-              <button id="exportCurrentPickingBtn">Export Current Pick Sheet</button>
-            </div>
-
-            <p id="uploadMessage" class="message"></p>
-          </div>
-
-          <div class="table-wrap workflow-entry-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Line #</th>
-                  <th>Item #</th>
-                  <th>Description</th>
-                  <th>From Slot</th>
-                  <th>Required Qty</th>
-                  <th>Available Qty</th>
-                  <th>Picked Qty</th>
-                  <th>Remaining</th>
-                  <th>Status</th>
-                  <th>UOM</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody id="pickingBody"></tbody>
-            </table>
-          </div>
-
-          <div class="stats">
-            <div><strong id="pickRows">0</strong><span>Rows Used</span></div>
-            <div><strong id="pickQty">0</strong><span>Total Picked</span></div>
-            <div><strong id="pickIssues">0</strong><span>Issue Lines</span></div>
-          </div>
-
-          <h3>Auto Totals by Item</h3>
-
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Required Total</th>
-                  <th>Picked Total</th>
-                  <th>Remaining</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="pickSummaryBody"></tbody>
-            </table>
-          </div>
-
-          <div class="actions">
-            <button id="savePickingBtn" class="primary">Save Picking Session</button>
-            <button id="clearPickingBtn">Clear Form</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>Saved Picking Sessions</h3>
-          <button class="exportBtn" data-export="picking">Export Saved Picking CSV</button>
-
-          <div class="table-wrap small">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Picker</th>
-                  <th>Order</th>
-                  <th>Lines</th>
-                  <th>Total Picked</th>
-                  <th>Issues</th>
-                </tr>
-              </thead>
-              <tbody id="pickingLogBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
       <!-- LEADERBOARD -->
       <section id="leaderboardTab" class="tab-panel">
         <div class="card leaderboard-card">
           <div class="section-heading">
             <div>
               <h2>Leaderboard</h2>
-              <p class="hint">Rankings use saved Put Away and Transfer Order records.</p>
+              <p class="hint">Rankings use saved Putaway records.</p>
             </div>
             <button id="exportLeaderboardBtn" class="primary">Export CSV</button>
           </div>
 
           <nav class="leaderboard-tabs" aria-label="Leaderboard categories">
             <button class="leaderboard-tab active" data-leaderboard-view="putaway">Putaway</button>
-            <button class="leaderboard-tab" data-leaderboard-view="transfer">Transfer Orders</button>
             <button class="leaderboard-tab" data-leaderboard-view="overall">Overall</button>
           </nav>
 
@@ -396,7 +281,6 @@
               <select id="itemHistoryProcess">
                 <option value="">All Processes</option>
                 <option value="putaway">Put Away</option>
-                <option value="orderPicking">Order Picking</option>
                 <option value="receiving">Receiving</option>
               </select>
             </label>
@@ -445,7 +329,6 @@
             <label>Role
               <select id="employeeRole">
                 <option>Put Away</option>
-                <option>Order Picking</option>
                 <option>Lead</option>
               </select>
             </label>
@@ -485,7 +368,6 @@
 
           <nav class="history-tabs">
             <button class="history-tab active" data-history-tab="putaway">Put Away Log</button>
-            <button class="history-tab" data-history-tab="picking">Order Picking</button>
           </nav>
 
           <section id="putawayHistoryPanel" class="history-panel active">
@@ -502,7 +384,7 @@
               <label>Item #
                 <input id="putawayHistoryItem" placeholder="Item number" />
               </label>
-              <label>Put Away #
+              <label>Putaway #
                 <input id="putawayHistoryNumber" placeholder="Sheet number" />
               </label>
               <label>Status
@@ -523,53 +405,17 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Completed Date</th>
-                    <th>Worker</th>
-                    <th>Put Away #</th>
-                    <th>Item #</th>
-                    <th>Qty</th>
-                    <th>Status</th>
-                    <th>Dock-to-Stock Minutes</th>
-                    <th>Notes</th>
-                    <th>Actions</th>
+                  <th>Completed Date</th>
+                  <th>Worker</th>
+                  <th>Putaway #</th>
+                  <th>Item #</th>
+                  <th>Qty</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                  <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="putawayHistoryBody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="pickingHistoryPanel" class="history-panel">
-            <div class="history-toolbar">
-              <label>Start Date
-                <input id="pickingHistoryStart" type="date" />
-              </label>
-              <label>End Date
-                <input id="pickingHistoryEnd" type="date" />
-              </label>
-              <div class="actions">
-                <button class="historyFilterBtn primary" data-history-type="picking">Search / Filter</button>
-                <button class="historyClearBtn" data-history-type="picking">Clear Filter</button>
-                <button class="historyExportBtn" data-history-type="picking">Export Order Picking History CSV</button>
-              </div>
-            </div>
-
-            <div class="table-wrap small history-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Completed Date</th>
-                    <th>Picker</th>
-                    <th>Order / Transfer #</th>
-                    <th>Lines</th>
-                    <th>Total Picked</th>
-                    <th>Issue Lines</th>
-                    <th>Status</th>
-                    <th>Preview / Details</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="pickingHistoryBody"></tbody>
               </table>
             </div>
           </section>
@@ -603,7 +449,7 @@
   </main>
 
   <footer class="site-footer">
-    <p>&copy; 2026 QR Legends. Built and owned by Brandon Evanshine. All rights reserved.</p>
+    <p>&copy; 2026 WarehouseOS. Built and owned by Brandon Evanshine. All rights reserved.</p>
     <nav aria-label="Legal">
       <a href="terms.html">Terms of Use</a>
       <a href="privacy.html">Privacy Policy</a>
@@ -611,6 +457,36 @@
   </footer>
 
   <datalist id="workerOptions"></datalist>
+
+  <div id="putawayDailyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="putawayDailyModalTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="putawayDailyModalTitle">Putaway Lines</h2>
+          <p id="putawayDailyModalSummary" class="hint"></p>
+        </div>
+        <button id="closePutawayDailyModalBtn">Close</button>
+      </div>
+
+      <div class="table-wrap small history-table-wrap">
+        <table class="history-lines-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Item Number</th>
+              <th>Qty</th>
+              <th>Bin / Location</th>
+              <th>Submitted At</th>
+              <th>Submitted Time</th>
+              <th>Gap</th>
+              <th>Notes / Action</th>
+            </tr>
+          </thead>
+          <tbody id="putawayDailyLinesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
   <div id="termsModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card terms-card" role="dialog" aria-modal="true" aria-labelledby="termsTitle">
@@ -621,7 +497,7 @@
         </div>
       </div>
       <div class="terms-box">
-        <h3>Ownership and Proprietary Technology</h3>
+        <h3>Ownership</h3>
         <p>The software, design, workflows, code structure, branding, dashboards, reports, forms, QR systems, and database logic are owned by Brandon Evanshine unless otherwise stated.</p>
         <h3>Limited Permission to Use</h3>
         <p>Users are granted permission to use the system only for approved business purposes. Login access does not transfer ownership or licensing rights.</p>
@@ -663,7 +539,29 @@
           <input id="historyEditReference" />
         </label>
       </div>
-      <label>Lines
+      <section id="historyLinesView" class="history-lines-view hidden" aria-label="Saved worksheet lines">
+        <h3>Lines</h3>
+        <div class="table-wrap history-lines-table-wrap">
+          <table class="history-lines-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th>Location</th>
+                <th>Qty</th>
+                <th>Line</th>
+              </tr>
+            </thead>
+            <tbody id="historyLinesTableBody"></tbody>
+          </table>
+        </div>
+
+        <section class="history-lines-notes" aria-labelledby="historyLinesNotesTitle">
+          <h3 id="historyLinesNotesTitle">Notes</h3>
+          <div id="historyLinesNotesBody"></div>
+        </section>
+      </section>
+      <label id="historyLinesEditField">Lines
         <textarea id="historyEditLines" rows="8"></textarea>
       </label>
       <div class="actions">
@@ -676,7 +574,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20260615-1"></script>
   <script src="history-upgrade.js"></script>
   <script src="responsive-ui.js?v=20260604-1"></script>
 </body>
