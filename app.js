@@ -54,6 +54,7 @@ const state = {
 
 let pendingLegalConsent = false;
 let storageBackupCreatedThisSession = false;
+let putawaySubmissionInProgress = false;
 
 const COLLECTIONS = {
   employees: "employees",
@@ -114,7 +115,35 @@ function setTodayDefaults() {
 }
 
 function todayValue() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey(new Date());
+}
+
+function localDateKey(value = new Date()) {
+  if (!value) return "";
+
+  if (typeof value === "object" && typeof value.toDate === "function") {
+    return localDateKey(value.toDate());
+  }
+
+  if (typeof value === "object" && Number.isFinite(value.seconds)) {
+    return localDateKey(new Date(value.seconds * 1000));
+  }
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  const text = String(value).trim();
+  if (!text) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : localDateKey(parsed);
 }
 
 function initializePutawayDraft() {
@@ -1009,7 +1038,7 @@ function demoDate(daysAgo) {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
   date.setDate(date.getDate() - daysAgo);
-  return date.toISOString().slice(0, 10);
+  return localDateKey(date);
 }
 
 function demoDateTimeLocal(daysAgo, hours, minutes) {
@@ -1097,18 +1126,10 @@ async function loadAllData() {
   if (state.isDemoMode) return;
 
   try {
-    await Promise.all([
-      loadCollection(COLLECTIONS.employees, "employees"),
-      loadCollection(COLLECTIONS.putaway, "putawayLogs"),
-      loadCollection(COLLECTIONS.cycle, "cycleSessions"),
-      loadCollection(COLLECTIONS.picking, "pickingSessions"),
-      loadCollection(COLLECTIONS.activity, "activityLogs")
-    ]);
+    await loadCollection(COLLECTIONS.employees, "employees");
 
     renderEmployees();
     renderLogs();
-    renderHistory();
-    renderItemHistory();
     populateEmployeeDropdowns();
     initializeCycleProductionData();
     renderCyclePacketTimer();
@@ -1140,7 +1161,8 @@ async function loadHistory() {
   }
 
   try {
-    await loadCollection(COLLECTIONS.activity, "activityLogs");
+    await loadCollection(COLLECTIONS.putaway, "putawayLogs");
+    renderLogs();
     renderHistory();
     toast("History refreshed.");
   } catch (err) {
@@ -1241,7 +1263,7 @@ function addReceivingActivity(status) {
   const entry = {
     type: "receiving",
     employee: currentOperatorName(),
-    date: new Date().toISOString().slice(0, 10),
+    date: todayValue(),
     item: "",
     description: "Receiving Timer",
     qty: timerMinutes(),
@@ -1383,24 +1405,26 @@ function appendDemoActivityEntries(type, sessionDoc, lines) {
   ]);
 }
 
-function buildPutawayRows() {
+function buildPutawayRows(rowCount = 25) {
   const body = $("putawayBody");
   if (!body) return;
 
   body.innerHTML = "";
 
-  body.insertAdjacentHTML(
-    "beforeend",
+  for (let i = 1; i <= rowCount; i++) {
+    body.insertAdjacentHTML(
+      "beforeend",
+      `
+      <tr class="putaway-row">
+        <td data-label="Line" class="putaway-line-number">${i}</td>
+        <td data-label="Item #"><input class="item-input put-item" placeholder="Item #" /></td>
+        <td data-label="Qty"><input class="qty-input put-qty" type="number" min="0" placeholder="Qty" /></td>
+        <td data-label="Bin / Location"><input class="loc-input put-location" placeholder="Bin / Location" /></td>
+        <td data-label="Notes"><input class="desc-input put-notes" placeholder="Notes" /></td>
+      </tr>
     `
-    <tr class="putaway-row">
-      <td data-label="Line" class="putaway-line-number">1</td>
-      <td data-label="Item #"><input class="item-input put-item" placeholder="Item #" /></td>
-      <td data-label="Qty"><input class="qty-input put-qty" type="number" min="0" placeholder="Qty" /></td>
-      <td data-label="Bin / Location"><input class="loc-input put-location" placeholder="Bin / Location" /></td>
-      <td data-label="Notes"><input class="desc-input put-notes" placeholder="Notes" /></td>
-    </tr>
-  `
-  );
+    );
+  }
 }
 
 function buildCycleRows(rowCount = 25) {
@@ -1912,7 +1936,7 @@ function updatePutawayStats() {
 
   const qty = rows.reduce((sum, r) => sum + rowNumber(r, ".put-qty"), 0);
 
-  if ($("putUsed")) $("putUsed").textContent = used;
+  if ($("putUsed")) $("putUsed").textContent = `${used} / ${rows.length || 25}`;
   if ($("putQty")) $("putQty").textContent = qty;
 }
 
@@ -2243,6 +2267,22 @@ function putawayLineSubmissionDocId(branchId, employeeName, workDate, submittedA
   return [putawayDailyDocId(branchId, employeeName, workDate, putawayNumber), submittedKey, randomKey].join("_");
 }
 
+function putawaySubmissionDocId(branchId, employeeName, workDate, putawayNumber, submittedAt, clientSubmissionId = "") {
+  const submittedKey = String(submittedAt || new Date().toISOString())
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "");
+  const clientKey = sanitizeDailyDocPart(clientSubmissionId) || Math.random().toString(36).slice(2, 10);
+  return [
+    "put",
+    sanitizeDailyDocPart(branchId) || "branch",
+    sanitizeDailyDocPart(employeeName) || "employee",
+    workDate,
+    sanitizeDailyDocPart(putawayNumber) || "sheet",
+    submittedKey,
+    clientKey
+  ].join("_");
+}
+
 function isPermissionDeniedError(err) {
   const code = String(err?.code || "").toLowerCase();
   const message = String(err?.message || "").toLowerCase();
@@ -2279,6 +2319,10 @@ function normalizePutawayLine(line = {}, index = 0, record = {}) {
     putawayNumber: String(line.putawayNumber ?? line.sheetNumber ?? record.putawayNumber ?? record.sheetNumber ?? "").trim(),
     sheetNumber: String(line.sheetNumber ?? line.putawayNumber ?? record.sheetNumber ?? record.putawayNumber ?? "").trim(),
     status: String(line.status ?? record.status ?? "Completed").trim() || "Completed",
+    active: line.active === false ? false : true,
+    deletedAt: line.deletedAt || "",
+    deletedBy: line.deletedBy || "",
+    deletedByEmail: line.deletedByEmail || "",
     notes: String(line.notes ?? line.details ?? line.note ?? "").trim()
   };
 }
@@ -2293,9 +2337,18 @@ function normalizePutawayRecord(record = {}) {
     normalizeLeaderboardDate(record.createdAt) ||
     todayValue();
   const branchId = record.branchId || record.tenantKey || currentBranchId();
-  const lines = Array.isArray(record.lines)
-    ? record.lines.map((line, index) => normalizePutawayLine(line, index, record))
-    : [];
+  const sourceLines = Array.isArray(record.lines) && record.lines.length
+    ? record.lines
+    : (record.itemNumber || record.item || record.sku)
+      ? [{
+          line: record.line || 1,
+          itemNumber: record.itemNumber || record.item || record.sku,
+          quantity: record.quantity ?? record.qty ?? 0,
+          binLocation: record.binLocation || record.location || "",
+          notes: record.notes || ""
+        }]
+      : [];
+  const lines = sourceLines.map((line, index) => normalizePutawayLine(line, index, record));
   const totalQty = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
 
   return {
@@ -2319,10 +2372,11 @@ function normalizePutawayRecord(record = {}) {
 }
 
 function putawayRecordTotals(lines) {
+  const activeLines = (lines || []).filter((line) => line.active !== false);
   return {
-    totalLines: lines.length,
-    lineCount: lines.length,
-    totalQty: lines.reduce((sum, line) => sum + Number(line.quantity ?? line.qty ?? 0), 0)
+    totalLines: activeLines.length,
+    lineCount: activeLines.length,
+    totalQty: activeLines.reduce((sum, line) => sum + Number(line.quantity ?? line.qty ?? 0), 0)
   };
 }
 
@@ -2353,6 +2407,10 @@ function normalizePutawayLineForSave(line, index) {
     putawayNumber: String(line.putawayNumber || line.sheetNumber || "").trim(),
     sheetNumber: String(line.sheetNumber || line.putawayNumber || "").trim(),
     status: String(line.status || "Completed").trim() || "Completed",
+    active: line.active === false ? false : true,
+    deletedAt: line.deletedAt || "",
+    deletedBy: line.deletedBy || "",
+    deletedByEmail: line.deletedByEmail || "",
     notes: String(line.notes || "").trim()
   };
 }
@@ -2365,7 +2423,7 @@ function upsertPutawayLogInState(record) {
 }
 
 function buildSubmittedPutawayLine(rawLine, context = {}) {
-  const submittedAt = new Date().toISOString();
+  const submittedAt = context.submittedAt || new Date().toISOString();
   const branchId = context.branchId || currentBranchId();
   const employeeName = normalizeEmployeeName(context.employeeName || rawLine.employeeName || rawLine.worker);
   const workDate = context.workDate || normalizeLeaderboardDate(submittedAt) || todayValue();
@@ -2470,6 +2528,8 @@ function resetPutawayLineAfterSubmit() {
 
   if ($("putWorker")) $("putWorker").value = worker;
   if ($("putDate")) $("putDate").value = workDate;
+  if ($("putSheetNumber")) $("putSheetNumber").value = "";
+  if ($("putStatus")) $("putStatus").value = "Completed";
   updatePutawayStats();
   savePutawayDraft({ force: true, statusMessage: "All changes saved" });
   document.querySelector("#putawayBody .put-item")?.focus();
@@ -2481,6 +2541,7 @@ async function savePutaway() {
   const putawayNumber = $("putSheetNumber")?.value.trim() || "";
   const status = $("putStatus")?.value || "Completed";
   const rawLines = collectPutawayLines();
+  const saveButton = $("savePutawayBtn");
 
   if (!employeeName) {
     $("putWorker")?.focus();
@@ -2492,118 +2553,80 @@ async function savePutaway() {
     return toast("Enter the Putaway or sheet number before submitting.");
   }
 
-  if (!rawLines.length) return toast("Enter one putaway line before submitting.");
-  if (!rawLines[0].item) {
-    document.querySelector("#putawayBody .put-item")?.focus();
-    return toast("Enter the item number before submitting putaway.");
+  if (!rawLines.length) return toast("Enter at least one putaway line before submitting.");
+
+  const invalidLine = rawLines.find((line) => !line.item || !Number.isFinite(Number(line.qty)) || Number(line.qty) < 0);
+  if (invalidLine) {
+    if (!invalidLine.item) return toast(`Line ${invalidLine.line} requires an item number.`);
+    return toast(`Line ${invalidLine.line} requires a valid non-negative quantity.`);
   }
+
+  if (putawaySubmissionInProgress) {
+    return toast("Putaway save already in progress.");
+  }
+
+  putawaySubmissionInProgress = true;
+  if (saveButton) saveButton.disabled = true;
 
   const branchId = currentBranchId();
   const workDate = putawayWorkDate();
-  const line = buildSubmittedPutawayLine(rawLines[0], { ...tenantDocumentFields(), branchId, employeeName, workDate, putawayNumber, sheetNumber: putawayNumber, status });
-  const docId = putawayDailyDocId(branchId, employeeName, workDate, putawayNumber);
-
-  if (state.isDemoMode) {
-    const existing = normalizePutawayRecord(state.putawayLogs.find((log) => String(log.id) === docId) || {
-      id: docId,
+  const submittedAt = new Date().toISOString();
+  const clientSubmissionId = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const lines = rawLines.map((line) =>
+    buildSubmittedPutawayLine(line, {
+      ...tenantDocumentFields(),
       branchId,
       employeeName,
-      worker: employeeName,
+      workDate,
       putawayNumber,
       sheetNumber: putawayNumber,
       status,
-      workDate,
-      date: workDate,
-      lines: [],
-      createdAt: line.submittedAt
-    });
-    const lines = [...existing.lines, normalizePutawayLineForSave(line, existing.lines.length)];
-    const doc = {
-      ...existing,
-      ...tenantDocumentFields(),
-      id: docId,
-      branchId,
-      employeeName,
-      worker: employeeName,
-      workDate,
-      date: workDate,
-      lines,
-      ...putawayRecordTotals(lines),
-      updatedAt: line.submittedAt,
-      submittedAt: line.submittedAt,
-      submittedDate: workDate,
-      submittedTime: line.submittedTime,
-      createdBy: state.user?.uid || "",
-      createdByEmail: state.user?.email || ""
-    };
+      submittedAt
+    })
+  );
+  const docId = putawaySubmissionDocId(branchId, employeeName, workDate, putawayNumber, submittedAt, clientSubmissionId);
+  const doc = buildPutawayDocumentFromLines({
+    id: docId,
+    branchId,
+    employeeName,
+    workDate,
+    lines,
+    createdAt: submittedAt
+  });
+  doc.clientSubmissionId = clientSubmissionId;
+  doc.submissionType = "groupedPutaway";
+  doc.workerUid = state.user?.uid || "";
+  doc.workerEmail = state.user?.email || "";
 
+  if (state.isDemoMode) {
     upsertPutawayLogInState(doc);
-    appendDemoActivityEntries("putaway", doc, [line]);
     persistDemoState();
     renderLogs();
     renderHistory();
     renderItemHistory();
     resetPutawayLineAfterSubmit();
-    toast("Put away log saved.");
+    putawaySubmissionInProgress = false;
+    if (saveButton) saveButton.disabled = false;
+    toast(`${doc.totalLines} putaway line${doc.totalLines === 1 ? "" : "s"} saved.`);
     return;
   }
 
   try {
-    let savedDoc;
-
-    try {
-      const ref = db.collection(COLLECTIONS.putaway).doc(docId);
-      savedDoc = await db.runTransaction(async (transaction) => {
-        const snap = await transaction.get(ref);
-        const existing = snap.exists ? normalizePutawayRecord({ id: snap.id, ...snap.data() }) : {
-          id: docId,
-          branchId,
-          employeeName,
-          worker: employeeName,
-          workDate,
-          date: workDate,
-          lines: [],
-          createdAt: line.submittedAt
-        };
-        const nextLines = [...(existing.lines || []), normalizePutawayLineForSave(line, existing.lines?.length || 0)];
-        const nextDoc = buildPutawayDocumentFromLines({
-          id: docId,
-          branchId,
-          employeeName,
-          workDate,
-          lines: nextLines,
-          createdAt: existing.createdAt || line.submittedAt
-        });
-
-        transaction.set(ref, nextDoc, { merge: true });
-        return nextDoc;
-      });
-    } catch (err) {
-      if (!isPermissionDeniedError(err)) throw err;
-      console.warn("Daily putaway append denied; saving as a new line document.", err);
-      savedDoc = await savePutawayCreateOnlyFallback({ branchId, employeeName, workDate, line });
-    }
-
-    try {
-      const activityEntries = await saveActivityLogs("putaway", savedDoc, [line]);
-      if (activityEntries?.length) {
-        state.activityLogs = sortByCreatedAtDesc([...activityEntries, ...state.activityLogs]).slice(0, 500);
-      }
-    } catch (err) {
-      console.warn("Putaway saved, but activity log write failed.", err);
-    }
-
-    upsertPutawayLogInState(savedDoc);
+    await db.collection(COLLECTIONS.putaway).doc(docId).set(doc);
+    upsertPutawayLogInState(doc);
 
     renderLogs();
     renderHistory();
     renderItemHistory();
     resetPutawayLineAfterSubmit();
 
-    toast("Put away log saved.");
+    toast(`${doc.totalLines} putaway line${doc.totalLines === 1 ? "" : "s"} saved.`);
   } catch (err) {
     console.error("Put away save failed:", err);
     toast("Save failed: " + err.message);
+  } finally {
+    putawaySubmissionInProgress = false;
+    if (saveButton) saveButton.disabled = false;
   }
 }
 
@@ -2786,28 +2809,7 @@ async function savePicking() {
 ---------------------------- */
 
 function normalizeLeaderboardDate(value) {
-  if (!value) return "";
-
-  if (typeof value === "object" && typeof value.toDate === "function") {
-    return value.toDate().toISOString().slice(0, 10);
-  }
-
-  if (typeof value === "object" && Number.isFinite(value.seconds)) {
-    return new Date(value.seconds * 1000).toISOString().slice(0, 10);
-  }
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
-
-  const text = String(value).trim();
-  if (!text) return "";
-
-  const isoMatch = text.match(/\d{4}-\d{2}-\d{2}/);
-  if (isoMatch) return isoMatch[0];
-
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+  return localDateKey(value);
 }
 
 function getRecordDate(record) {
@@ -3004,7 +3006,7 @@ function calculateOverallLeaderboard(putawayRows, cycleRows, transferRows) {
 function getLeaderboardDateRange() {
   const preset = $("leaderboardRangePreset")?.value || "today";
   const today = new Date();
-  const todayText = today.toISOString().slice(0, 10);
+  const todayText = localDateKey(today);
 
   if (preset === "all") {
     return { preset, start: "", end: "", label: "All time", includeUndated: true };
@@ -3019,12 +3021,12 @@ function getLeaderboardDateRange() {
   if (preset === "week") {
     const start = new Date(today);
     start.setDate(today.getDate() - today.getDay());
-    return { preset, start: start.toISOString().slice(0, 10), end: todayText, label: "This week", includeUndated: false };
+    return { preset, start: localDateKey(start), end: todayText, label: "This week", includeUndated: false };
   }
 
   if (preset === "month") {
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { preset, start: start.toISOString().slice(0, 10), end: todayText, label: "This month", includeUndated: false };
+    return { preset, start: localDateKey(start), end: todayText, label: "This month", includeUndated: false };
   }
 
   return { preset: "today", start: todayText, end: todayText, label: "Today", includeUndated: false };
@@ -3227,6 +3229,7 @@ function buildPutawayDailyGroups(records = state.putawayLogs) {
 
     group.sourceRecords.push(normalized);
     normalized.lines.forEach((line, lineIndex) => {
+      if (line.active === false) return;
       group.lines.push({
         ...line,
         sourceRecordId: normalized.id,
@@ -3869,8 +3872,15 @@ function findPutawayRecord(recordId) {
 }
 
 async function updatePutawayRecordLines(recordId, updateFn) {
-  const record = findPutawayRecord(recordId);
+  let record = findPutawayRecord(recordId);
   if (!record) return toast("Putaway record not found.");
+
+  if (!state.isDemoMode) {
+    const snapshot = await db.collection(COLLECTIONS.putaway).doc(recordId).get();
+    if (snapshot.exists) {
+      record = { id: snapshot.id, ...snapshot.data() };
+    }
+  }
 
   const normalized = normalizePutawayRecord(record);
   const nextLines = updateFn([...(normalized.lines || [])]).map(normalizePutawayLineForSave);
@@ -3928,7 +3938,19 @@ async function savePutawayDailyLine(recordId, lineIndex) {
 
 async function deletePutawayDailyLine(recordId, lineIndex) {
   if (!confirm("Delete this putaway line?")) return;
-  await updatePutawayRecordLines(recordId, (lines) => lines.filter((_, index) => index !== Number(lineIndex)));
+  await updatePutawayRecordLines(recordId, (lines) => {
+    const index = Number(lineIndex);
+    if (!lines[index]) return lines;
+    lines[index] = {
+      ...lines[index],
+      active: false,
+      status: "Deleted",
+      deletedAt: new Date().toISOString(),
+      deletedBy: state.user?.uid || "",
+      deletedByEmail: state.user?.email || ""
+    };
+    return lines;
+  });
   toast("Putaway line deleted.");
 }
 
@@ -4199,8 +4221,8 @@ function buildDemoCycleProductionState() {
 
 function buildCycleProductionDemoRecords() {
   const baseDate = todayValue();
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+  const yesterday = localDateKey(new Date(Date.now() - 86400000));
+  const twoDaysAgo = localDateKey(new Date(Date.now() - 2 * 86400000));
   const now = Date.now();
   const adjusted = demoTimer("timer-demo-adjusted", "Maya Chen", "COUNT-DEMO-105", twoDaysAgo, "2", demoTimestamp(2, 12, 0), demoTimestamp(2, 14, 20), 118, []);
   adjusted.timing.status = "supervisor_adjusted";
@@ -4595,7 +4617,7 @@ function getWeekStart(dateText) {
   const date = new Date(`${dateText}T00:00:00`);
   const day = date.getDay();
   date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
-  return date.toISOString().slice(0, 10);
+  return localDateKey(date);
 }
 
 function exportProductionCsv(type) {

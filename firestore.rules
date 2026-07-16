@@ -93,7 +93,7 @@ service cloud.firestore {
           request.resource.data.employeeName.size() > 0 &&
           request.resource.data.putawayNumber is string &&
           request.resource.data.putawayNumber.size() > 0 &&
-          request.resource.data.status in ['Completed', 'Pending Review', 'Imported'] &&
+          request.resource.data.status in ['Completed', 'Pending Review', 'Pending', 'Partial', 'Imported'] &&
           request.resource.data.workDate is string &&
           request.resource.data.createdAt is string &&
           request.resource.data.updatedAt is string &&
@@ -204,7 +204,7 @@ service cloud.firestore {
             request.resource.data.item.size() > 0 &&
             request.resource.data.putawayNumber is string &&
             request.resource.data.putawayNumber.size() > 0 &&
-            request.resource.data.status in ['Completed', 'Pending Review', 'Imported']
+            request.resource.data.status in ['Completed', 'Pending Review', 'Pending', 'Partial', 'Imported']
           )
         );
       allow update, delete: if canManageHistory() && keepsMyTenant();

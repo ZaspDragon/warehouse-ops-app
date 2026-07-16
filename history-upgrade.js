@@ -37,7 +37,22 @@
   }
 
   function todayDate() {
-    return new Date().toISOString().slice(0, 10);
+    return localDateKey(new Date());
+  }
+
+  function localDateKey(value = new Date()) {
+    if (!value) return "";
+    if (typeof value === "object" && typeof value.toDate === "function") return localDateKey(value.toDate());
+    if (typeof value === "object" && Number.isFinite(value.seconds)) return localDateKey(new Date(value.seconds * 1000));
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) return "";
+      return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+    }
+    const text = String(value).trim();
+    if (!text) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? "" : localDateKey(parsed);
   }
 
   function timeOfDay() {
@@ -68,7 +83,7 @@
         status: base.status || "Completed",
         workDate: base.workDate || base.date || todayDate(),
         submittedAt,
-        submittedDate: submittedAt.slice(0, 10),
+        submittedDate: localDateKey(submittedAt),
         submittedTime: base.submittedTime || timeOfDay()
       };
     }
@@ -183,13 +198,11 @@
       if (app?.isDemoMode) return;
 
       try {
-        await Promise.all([
-          window.loadCollection(COLLECTION_NAMES.employees, "employees"),
-          window.loadCollection(COLLECTION_NAMES.putaway, "putawayLogs"),
-          window.loadCollection(COLLECTION_NAMES.activity, "activityLogs")
-        ]);
+        await window.loadCollection(COLLECTION_NAMES.employees, "employees");
 
         if (app) {
+          app.putawayLogs = app.putawayLogs || [];
+          app.activityLogs = app.activityLogs || [];
           app.cycleSessions = [];
           app.pickingSessions = [];
           app.cycleProduction = [];
@@ -204,6 +217,23 @@
       } catch (err) {
         console.error("Tenant data load failed:", err);
         window.toast?.("Load failed: " + err.message);
+      }
+    };
+
+    window.loadHistory = async function tenantLoadHistory() {
+      const app = appState();
+      if (app?.isDemoMode) {
+        window.renderHistory?.();
+        return;
+      }
+
+      try {
+        await window.loadCollection(COLLECTION_NAMES.putaway, "putawayLogs");
+        window.renderLogs?.();
+        window.renderHistory?.();
+      } catch (err) {
+        console.error("Putaway history load failed:", err);
+        window.toast?.("History failed: " + err.message);
       }
     };
 
@@ -226,20 +256,6 @@
       }
 
       await originalSave();
-
-      const app = appState();
-      if (app?.putawayLogs?.length) {
-        const latest = app.putawayLogs[0];
-        latest.worker = worker;
-        latest.submittedAt = latest.submittedAt || nowIso();
-        latest.submittedDate = latest.submittedDate || latest.submittedAt.slice(0, 10);
-        latest.submittedTime = latest.submittedTime || timeOfDay();
-        latest.workDate = latest.workDate || latest.date || todayDate();
-        Object.assign(latest, tenantFields());
-      }
-
-      window.renderLogs?.();
-      window.renderHistory?.();
     };
 
     wrappedSave.__tenantWrapped = true;
@@ -286,7 +302,7 @@
       body.innerHTML = "";
 
       if (!rows.length) {
-        body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No putaway records found for these filters.</td></tr>`);
+        body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No putaway records match these filters.</td></tr>`);
         return;
       }
 
@@ -333,7 +349,7 @@
       const encodedKey = group.key ? encodeURIComponent(group.key) : "";
       return (group.lines || []).map((line) => ({
         encodedKey,
-        workDate: line.workDate || group.workDate || group.date || "",
+        workDate: localDateKey(line.workDate || line.submittedDate || group.workDate || group.date || group.completedDate || line.submittedAt || group.createdAt),
         employeeName: line.employeeName || group.employeeName || group.worker || "",
         putawayNumber: line.putawayNumber || line.sheetNumber || group.putawayNumber || group.sheetNumber || "",
         itemNumber: line.itemNumber || line.item || "",
@@ -342,7 +358,7 @@
         notes: line.notes || ""
       }));
     }).filter((row) => {
-      const rowDate = row.workDate || "";
+      const rowDate = localDateKey(row.workDate);
       if (filters.start && rowDate < filters.start) return false;
       if (filters.end && rowDate > filters.end) return false;
       if (filters.worker && !String(row.employeeName || "").toLowerCase().includes(filters.worker)) return false;
@@ -376,7 +392,7 @@
           : [];
         const rows = filteredPutawayRows(groups);
         if (!rows.length) return window.toast?.("No data to export.");
-        downloadRows(rows, `putaway-history-${todayDate()}.csv`);
+        downloadRows(rows.map(({ encodedKey, ...row }) => row), `putaway-history-${todayDate()}.csv`);
       });
     });
   }
