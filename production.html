@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarehouseOS Receiving Production</title>
+  <link rel="stylesheet" href="styles.css?v=20260724-production" />
+  <link rel="stylesheet" href="responsive-upgrade.css?v=20260724-production" />
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <style>
+    .production-shell { max-width: 1400px; margin: 0 auto; padding: 18px; }
+    .production-toolbar, .production-grid { display: grid; gap: 14px; }
+    .production-toolbar { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+    .production-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 16px 0; }
+    .metric { padding: 18px; border: 1px solid #d9e0e7; border-radius: 12px; background: #fff; }
+    .metric strong { display: block; font-size: 1.8rem; }
+    .metric span { color: #59636e; }
+    .progress-track { height: 10px; background: #e9edf1; border-radius: 999px; overflow: hidden; }
+    .progress-bar { height: 100%; background: #2575c4; width: 0; }
+    .status-good { font-weight: 700; color: #167543; }
+    .status-watch { font-weight: 700; color: #a35b00; }
+    .status-behind { font-weight: 700; color: #b42318; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .wide { grid-column: 1 / -1; }
+    .page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .read-note { font-size: .9rem; color: #59636e; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>WarehouseOS</h1>
+      <p>Receiving Production · Putaways · Trucks</p>
+    </div>
+    <div class="top-actions">
+      <a href="./" class="button">Back to WarehouseOS</a>
+      <span id="userBadge">Checking login…</span>
+    </div>
+  </header>
+
+  <main class="production-shell">
+    <section id="loginNotice" class="card hidden">
+      <h2>Sign in required</h2>
+      <p>Please sign in on the main WarehouseOS page, then return here.</p>
+      <a href="./" class="primary button">Open Login</a>
+    </section>
+
+    <section id="productionApp" class="hidden">
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>Daily Receiving Production</h2>
+            <p class="read-note">Loads only the selected day. No live listener and no automatic polling.</p>
+          </div>
+          <div class="page-actions">
+            <button id="refreshBtn" class="primary" type="button">Refresh Day</button>
+          </div>
+        </div>
+        <div class="production-toolbar">
+          <label>Work Date
+            <input id="workDate" type="date" />
+          </label>
+          <label>Employee
+            <select id="employeeFilter"><option value="">All employees</option></select>
+          </label>
+          <label>Putaway Goal
+            <input id="putawayGoal" type="number" min="1" value="45" />
+          </label>
+        </div>
+        <p id="loadStatus" class="message"></p>
+      </section>
+
+      <section class="production-grid">
+        <div class="metric"><strong id="totalPutaways">0</strong><span>Putaways completed</span></div>
+        <div class="metric"><strong id="goalPercent">0%</strong><span>Putaway goal</span></div>
+        <div class="metric"><strong id="totalTrucks">0</strong><span>Trucks unloaded</span></div>
+        <div class="metric"><strong id="totalPallets">0</strong><span>Pallets unloaded</span></div>
+        <div class="metric"><strong id="avgPalletsTruck">0</strong><span>Average pallets / truck</span></div>
+        <div class="metric"><strong id="avgPalletsHour">0</strong><span>Average pallets / hour</span></div>
+      </section>
+
+      <section class="card">
+        <h3>Putaway Goal Progress</h3>
+        <div class="progress-track"><div id="goalBar" class="progress-bar"></div></div>
+        <p id="goalStatus" class="status-behind">No production loaded.</p>
+      </section>
+
+      <section class="card">
+        <h2>Record Truck Unloading</h2>
+        <form id="truckForm" class="form-grid">
+          <label>Employee / Team
+            <input id="truckEmployee" required placeholder="Employee or team" />
+          </label>
+          <label>Truck / Trailer #
+            <input id="truckNumber" required placeholder="Trailer or reference number" />
+          </label>
+          <label>Truck Type
+            <select id="truckType">
+              <option>Transfer</option><option>LTL</option><option>Container</option><option>Other</option>
+            </select>
+          </label>
+          <label>Pallets Unloaded
+            <input id="truckPallets" type="number" min="0" required />
+          </label>
+          <label>Start Time
+            <input id="truckStart" type="time" required />
+          </label>
+          <label>Finish Time
+            <input id="truckFinish" type="time" required />
+          </label>
+          <label>Problem / Damaged Pallets
+            <input id="truckProblems" type="number" min="0" value="0" />
+          </label>
+          <label class="wide">Notes
+            <textarea id="truckNotes" rows="2" placeholder="Optional notes"></textarea>
+          </label>
+          <div class="wide page-actions">
+            <button class="primary" type="submit">Save Truck Record</button>
+          </div>
+        </form>
+        <p id="saveStatus" class="message"></p>
+      </section>
+
+      <section class="card">
+        <div class="section-heading"><h2>Employee Production</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Employee</th><th>Putaways</th><th>Goal</th><th>Production</th><th>Trucks</th><th>Pallets</th><th>Pallets / Hour</th><th>Status</th></tr></thead>
+            <tbody id="employeeBody"><tr><td colspan="8">Select Refresh Day to load production.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading"><h2>Truck Records</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Truck</th><th>Type</th><th>Employee / Team</th><th>Pallets</th><th>Minutes</th><th>Pallets / Hour</th><th>Problems</th><th>Notes</th></tr></thead>
+            <tbody id="truckBody"><tr><td colspan="8">No records loaded.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+<script>
+(() => {
+  const firebaseConfig = {
+    apiKey: "AIzaSyAAJgxXqBqKgvWnNIIBaG72iwiZ3PFykoU",
+    authDomain: "put-away-log-cw.firebaseapp.com",
+    projectId: "put-away-log-cw",
+    storageBucket: "put-away-log-cw.firebasestorage.app",
+    messagingSenderId: "23183103971",
+    appId: "1:23183103971:web:75f097b4270cd38874f2d6"
+  };
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const $ = (id) => document.getElementById(id);
+  let currentUser = null;
+  let putawayRows = [];
+  let truckRows = [];
+
+  const dateKey = (value) => {
+    if (!value) return "";
+    if (value.toDate) value = value.toDate();
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
+  const today = () => dateKey(new Date());
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const person = (row) => String(row.employeeName || row.worker || row.employee || row.team || "Unassigned").trim() || "Unassigned";
+  const recordDate = (row) => dateKey(row.workDate || row.date || row.submittedDate || row.submittedAt || row.createdAt);
+  const lineCount = (row) => Array.isArray(row.lines) ? row.lines.filter(line => [line.item,line.itemNumber,line.location,line.qty,line.quantity].some(Boolean)).length : Number(row.lineCount || row.linesUsed || 1);
+  const minutesBetween = (start, finish) => {
+    if (!start || !finish) return 0;
+    const [sh,sm] = start.split(":").map(Number), [fh,fm] = finish.split(":").map(Number);
+    let mins = (fh*60+fm)-(sh*60+sm); if (mins < 0) mins += 1440; return mins;
+  };
+
+  async function tenantQuery(collection, selectedDate, max = 250) {
+    const rows = new Map();
+    const add = snap => snap.docs.forEach(doc => rows.set(doc.id, { id: doc.id, ...doc.data() }));
+    const ref = db.collection(collection);
+    try { add(await ref.where("ownerEmail", "==", currentUser.email.toLowerCase()).limit(max).get()); } catch (e) { console.warn(e); }
+    try { add(await ref.where("createdByEmail", "==", currentUser.email.toLowerCase()).limit(max).get()); } catch (e) { console.warn(e); }
+    return [...rows.values()].filter(row => recordDate(row) === selectedDate);
+  }
+
+  async function loadDay() {
+    if (!currentUser) return;
+    const selectedDate = $("workDate").value || today();
+    $("loadStatus").textContent = "Loading selected day…";
+    $("refreshBtn").disabled = true;
+    try {
+      const [putaways, activities] = await Promise.all([
+        tenantQuery("putAwayLogs", selectedDate, 300),
+        tenantQuery("activityLogs", selectedDate, 200)
+      ]);
+      putawayRows = putaways;
+      truckRows = activities.filter(row => row.type === "receivingTruck" || row.process === "receivingTruck");
+      render();
+      $("loadStatus").textContent = `Loaded ${selectedDate}. Two date-scoped collection reads completed.`;
+    } catch (err) {
+      console.error(err);
+      $("loadStatus").textContent = `Production could not be loaded: ${err.message}`;
+    } finally { $("refreshBtn").disabled = false; }
+  }
+
+  function filteredRows(rows) {
+    const filter = $("employeeFilter").value;
+    return filter ? rows.filter(row => person(row) === filter) : rows;
+  }
+
+  function render() {
+    const goal = Math.max(1, Number($("putawayGoal").value || 45));
+    const people = new Map();
+    const allNames = new Set([...putawayRows.map(person), ...truckRows.map(person)]);
+    [...allNames].sort().forEach(name => {
+      if (!people.has(name)) people.set(name, { name, putaways:0, trucks:0, pallets:0, minutes:0 });
+    });
+    putawayRows.forEach(row => { const p = people.get(person(row)); p.putaways += lineCount(row); });
+    truckRows.forEach(row => { const p = people.get(person(row)); p.trucks += 1; p.pallets += Number(row.pallets || 0); p.minutes += Number(row.unloadMinutes || minutesBetween(row.startTime,row.finishTime)); });
+
+    const current = $("employeeFilter").value;
+    $("employeeFilter").innerHTML = '<option value="">All employees</option>' + [...people.keys()].sort().map(n => `<option ${n===current?'selected':''}>${esc(n)}</option>`).join("");
+    const selectedPeople = [...people.values()].filter(p => !current || p.name === current);
+    const selectedPutaways = filteredRows(putawayRows).reduce((sum,row)=>sum+lineCount(row),0);
+    const selectedTrucks = filteredRows(truckRows);
+    const pallets = selectedTrucks.reduce((s,r)=>s+Number(r.pallets||0),0);
+    const minutes = selectedTrucks.reduce((s,r)=>s+Number(r.unloadMinutes||minutesBetween(r.startTime,r.finishTime)),0);
+    const target = goal * Math.max(1, selectedPeople.length || (current ? 1 : 0));
+    const percent = target ? Math.round(selectedPutaways/target*100) : 0;
+
+    $("totalPutaways").textContent = selectedPutaways;
+    $("goalPercent").textContent = `${percent}%`;
+    $("totalTrucks").textContent = selectedTrucks.length;
+    $("totalPallets").textContent = pallets;
+    $("avgPalletsTruck").textContent = selectedTrucks.length ? (pallets/selectedTrucks.length).toFixed(1) : "0";
+    $("avgPalletsHour").textContent = minutes ? (pallets/(minutes/60)).toFixed(1) : "0";
+    $("goalBar").style.width = `${Math.min(100, percent)}%`;
+    const status = $("goalStatus");
+    status.className = percent >= 100 ? "status-good" : percent >= 75 ? "status-watch" : "status-behind";
+    status.textContent = percent >= 100 ? "Goal reached." : `${Math.max(0,target-selectedPutaways)} putaways remaining to reach the selected goal.`;
+
+    $("employeeBody").innerHTML = selectedPeople.length ? selectedPeople.sort((a,b)=>b.putaways-a.putaways).map(p => {
+      const pct = Math.round(p.putaways/goal*100), pph = p.minutes ? (p.pallets/(p.minutes/60)).toFixed(1) : "0";
+      return `<tr><td>${esc(p.name)}</td><td>${p.putaways}</td><td>${goal}</td><td>${pct}%</td><td>${p.trucks}</td><td>${p.pallets}</td><td>${pph}</td><td class="${pct>=100?'status-good':pct>=75?'status-watch':'status-behind'}">${pct>=100?'Goal reached':pct>=75?'Near goal':'Below goal'}</td></tr>`;
+    }).join("") : '<tr><td colspan="8">No employee production for this date.</td></tr>';
+
+    $("truckBody").innerHTML = selectedTrucks.length ? selectedTrucks.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).map(r => {
+      const mins = Number(r.unloadMinutes || minutesBetween(r.startTime,r.finishTime));
+      const pph = mins ? (Number(r.pallets||0)/(mins/60)).toFixed(1) : "0";
+      return `<tr><td>${esc(r.truckNumber)}</td><td>${esc(r.truckType)}</td><td>${esc(person(r))}</td><td>${Number(r.pallets||0)}</td><td>${mins}</td><td>${pph}</td><td>${Number(r.problemPallets||0)}</td><td>${esc(r.notes)}</td></tr>`;
+    }).join("") : '<tr><td colspan="8">No truck records for this date.</td></tr>';
+  }
+
+  async function saveTruck(event) {
+    event.preventDefault();
+    const startTime = $("truckStart").value, finishTime = $("truckFinish").value;
+    const payload = {
+      type: "receivingTruck", process: "receivingTruck", workDate: $("workDate").value || today(),
+      employeeName: $("truckEmployee").value.trim(), truckNumber: $("truckNumber").value.trim(),
+      truckType: $("truckType").value, pallets: Number($("truckPallets").value || 0),
+      startTime, finishTime, unloadMinutes: minutesBetween(startTime, finishTime),
+      problemPallets: Number($("truckProblems").value || 0), notes: $("truckNotes").value.trim(),
+      ownerEmail: currentUser.email.toLowerCase(), createdByEmail: currentUser.email.toLowerCase(),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    $("saveStatus").textContent = "Saving truck record…";
+    try {
+      await db.collection("activityLogs").add(payload);
+      $("truckForm").reset(); $("truckProblems").value = 0;
+      $("saveStatus").textContent = "Truck record saved.";
+      await loadDay();
+    } catch (err) { console.error(err); $("saveStatus").textContent = `Could not save: ${err.message}`; }
+  }
+
+  $("workDate").value = today();
+  $("refreshBtn").addEventListener("click", loadDay);
+  $("employeeFilter").addEventListener("change", render);
+  $("putawayGoal").addEventListener("change", render);
+  $("truckForm").addEventListener("submit", saveTruck);
+  auth.onAuthStateChanged(user => {
+    currentUser = user;
+    $("userBadge").textContent = user?.email || "Signed out";
+    $("loginNotice").classList.toggle("hidden", Boolean(user));
+    $("productionApp").classList.toggle("hidden", !user);
+    if (user) loadDay();
+  });
+})();
+</script>
+</body>
+</html>
