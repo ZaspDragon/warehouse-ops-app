@@ -1,0 +1,1 @@
+This branch separates Daily Receiving Production, Truck & Pallet Tracking, and PO Checker Tracking while keeping the daily tab limited to putaway production only.
