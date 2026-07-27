@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarehouseOS PO Checking Production</title>
+  <link rel="stylesheet" href="styles.css?v=20260726-po-checking" />
+  <link rel="stylesheet" href="responsive-upgrade.css?v=20260726-po-checking" />
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    .checker-shell { max-width: 1400px; margin: 0 auto; padding: 18px; }
+    .page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .summary-grid, .form-grid { display: grid; gap: 12px; }
+    .summary-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 16px 0; }
+    .form-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+    .metric { padding: 16px; border: 1px solid #d9e0e7; border-radius: 12px; background: #fff; }
+    .metric strong { display: block; font-size: 1.75rem; }
+    .wide { grid-column: 1 / -1; }
+    .file-box { border: 2px dashed #aab4bf; border-radius: 12px; padding: 16px; background: #f8fafc; }
+    .line-editor { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(90px, .5fr) auto; gap: 8px; align-items: end; margin-bottom: 8px; }
+    .read-note { color: #59636e; font-size: .92rem; }
+    .hidden { display: none !important; }
+    @media (max-width: 760px) {
+      .checker-shell { padding: 10px; }
+      .topbar { align-items: flex-start; gap: 10px; }
+      .top-actions, .page-actions { width: 100%; }
+      .top-actions .button, .page-actions button, .page-actions .button { flex: 1 1 160px; min-height: 44px; }
+      .form-grid, .summary-grid { grid-template-columns: 1fr; }
+      .line-editor { grid-template-columns: 1fr 1fr; }
+      .line-editor button { grid-column: 1 / -1; min-height: 44px; }
+      input, select, textarea, button { font-size: 16px; }
+      .table-wrap table, .table-wrap thead, .table-wrap tbody, .table-wrap th, .table-wrap td, .table-wrap tr { display: block; }
+      .table-wrap thead { display: none; }
+      .table-wrap tr { border: 1px solid #d9e0e7; border-radius: 10px; margin-bottom: 10px; padding: 8px; }
+      .table-wrap td { display: grid; grid-template-columns: 42% 58%; gap: 8px; border: 0; padding: 7px; }
+      .table-wrap td::before { content: attr(data-label); font-weight: 700; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div><h1>WarehouseOS</h1><p>Receiving · PO Checker Production</p></div>
+    <div class="top-actions">
+      <a href="./" class="button">Main App</a>
+      <a href="production.html" class="button">Truck & Pallet Tracker</a>
+      <span id="userBadge">Checking login…</span>
+    </div>
+  </header>
+
+  <main class="checker-shell">
+    <section id="loginNotice" class="card hidden">
+      <h2>Sign in required</h2>
+      <p>Sign in on the main WarehouseOS page, then return here.</p>
+      <a href="./" class="primary button">Open Login</a>
+    </section>
+
+    <section id="checkerApp" class="hidden">
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>PO Checker Production</h2>
+            <p class="read-note">The PO is read in this browser. Only one small summary record is saved per PO—never one Firestore record per item line.</p>
+          </div>
+          <div class="page-actions"><button id="refreshBtn" class="primary" type="button">Refresh Day</button></div>
+        </div>
+        <div class="form-grid">
+          <label>Work Date<input id="workDate" type="date" /></label>
+          <label>Checker<input id="checkerName" list="checkerOptions" required placeholder="Employee name" /></label>
+          <label>PO Number<input id="poNumber" required placeholder="PO number" /></label>
+          <label>Start Time<input id="startTime" type="time" /></label>
+          <label>Finish Time<input id="finishTime" type="time" /></label>
+          <label>Exceptions Found<input id="exceptions" type="number" min="0" value="0" /></label>
+        </div>
+        <datalist id="checkerOptions"></datalist>
+      </section>
+
+      <section class="card">
+        <h2>Upload PO</h2>
+        <div class="file-box">
+          <label>Excel or CSV PO file<input id="poFile" type="file" accept=".xlsx,.xls,.csv" /></label>
+          <div class="page-actions"><button id="readPoBtn" class="primary" type="button">Read PO File</button></div>
+          <p id="fileStatus" class="message">Nothing uploaded yet.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div><h2>Detected / Manual PO Lines</h2><p class="read-note">Review the item numbers and quantities before saving.</p></div>
+          <div class="page-actions"><button id="addLineBtn" type="button">Add Manual Line</button><button id="clearLinesBtn" type="button">Clear Lines</button></div>
+        </div>
+        <div id="manualLines"></div>
+        <div class="summary-grid">
+          <div class="metric"><strong id="lineCount">0</strong><span>PO item lines</span></div>
+          <div class="metric"><strong id="totalQty">0</strong><span>Total item quantity</span></div>
+          <div class="metric"><strong id="linesPerHour">0</strong><span>Lines per hour</span></div>
+        </div>
+        <label>Notes<textarea id="notes" rows="3" placeholder="Optional checker notes"></textarea></label>
+        <div class="page-actions"><button id="savePoBtn" class="primary" type="button">Save PO Checking Summary</button></div>
+        <p id="saveStatus" class="message"></p>
+      </section>
+
+      <section class="card">
+        <h2>Checker Leaderboard</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Checker</th><th>POs</th><th>Lines</th><th>Total Qty</th><th>Lines / Hour</th><th>Exceptions</th></tr></thead>
+            <tbody id="leaderboardBody"><tr><td colspan="6">No records loaded.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>PO Records</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>PO</th><th>Checker</th><th>Lines</th><th>Total Qty</th><th>Minutes</th><th>Lines / Hour</th><th>Exceptions</th><th>File</th></tr></thead>
+            <tbody id="recordsBody"><tr><td colspan="8">No records loaded.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+<script>
+(() => {
+  const firebaseConfig = {
+    apiKey: "AIzaSyAAJgxXqBqKgvWnNIIBaG72iwiZ3PFykoU",
+    authDomain: "put-away-log-cw.firebaseapp.com",
+    projectId: "put-away-log-cw",
+    storageBucket: "put-away-log-cw.firebasestorage.app",
+    messagingSenderId: "23183103971",
+    appId: "1:23183103971:web:75f097b4270cd38874f2d6"
+  };
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const $ = id => document.getElementById(id);
+  let currentUser = null;
+  let dayRows = [];
+
+  const today = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const minutesBetween = (start, finish) => {
+    if (!start || !finish) return 0;
+    const [sh,sm] = start.split(":").map(Number), [fh,fm] = finish.split(":").map(Number);
+    let mins = (fh*60+fm)-(sh*60+sm); if (mins < 0) mins += 1440; return mins;
+  };
+  const rowDate = row => String(row.workDate || row.date || "").slice(0,10);
+
+  function lineRows() { return [...document.querySelectorAll(".line-editor")]; }
+  function collectLines() {
+    return lineRows().map(row => ({
+      itemNumber: row.querySelector(".item-number").value.trim(),
+      quantity: Number(row.querySelector(".item-qty").value || 0)
+    })).filter(line => line.itemNumber);
+  }
+  function addLine(itemNumber = "", quantity = "") {
+    const row = document.createElement("div");
+    row.className = "line-editor";
+    row.innerHTML = `<label>Item Number<input class="item-number" value="${esc(itemNumber)}" placeholder="Item #" /></label><label>Quantity<input class="item-qty" type="number" min="0" value="${esc(quantity)}" /></label><button class="danger remove-line" type="button">Remove</button>`;
+    row.querySelector(".remove-line").addEventListener("click", () => { row.remove(); updateTotals(); });
+    row.querySelectorAll("input").forEach(input => input.addEventListener("input", updateTotals));
+    $("manualLines").appendChild(row);
+    updateTotals();
+  }
+  function updateTotals() {
+    const lines = collectLines();
+    const minutes = minutesBetween($("startTime").value, $("finishTime").value);
+    $("lineCount").textContent = lines.length;
+    $("totalQty").textContent = lines.reduce((sum,line)=>sum+Number(line.quantity||0),0);
+    $("linesPerHour").textContent = minutes ? (lines.length/(minutes/60)).toFixed(1) : "0";
+  }
+
+  function detectColumns(headers) {
+    const clean = headers.map(h => String(h || "").trim().toLowerCase());
+    const itemIndex = clean.findIndex(h => /item|sku|part|product/.test(h));
+    const qtyIndex = clean.findIndex(h => /qty|quantity|ordered|received/.test(h));
+    const poIndex = clean.findIndex(h => /po\s*(number|#)?|purchase order/.test(h));
+    return { itemIndex, qtyIndex, poIndex };
+  }
+
+  async function readPoFile() {
+    const file = $("poFile").files[0];
+    if (!file) { $("fileStatus").textContent = "Choose an Excel or CSV file first."; return; }
+    $("fileStatus").textContent = "Reading file locally…";
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      let headerRow = -1, columns = null;
+      for (let i=0; i<Math.min(rows.length, 30); i++) {
+        const found = detectColumns(rows[i]);
+        if (found.itemIndex >= 0) { headerRow = i; columns = found; break; }
+      }
+      if (headerRow < 0) throw new Error("Could not find an Item Number column.");
+      $("manualLines").innerHTML = "";
+      let detectedPo = "";
+      rows.slice(headerRow + 1).forEach(values => {
+        const item = String(values[columns.itemIndex] || "").trim();
+        if (!item || /total/i.test(item)) return;
+        const qty = columns.qtyIndex >= 0 ? Number(values[columns.qtyIndex] || 0) : 0;
+        if (!detectedPo && columns.poIndex >= 0) detectedPo = String(values[columns.poIndex] || "").trim();
+        addLine(item, Number.isFinite(qty) ? qty : 0);
+      });
+      if (detectedPo && !$("poNumber").value) $("poNumber").value = detectedPo;
+      $("fileStatus").textContent = `Detected ${collectLines().length} item lines from ${file.name}. No PO rows were uploaded to Firestore.`;
+    } catch (err) {
+      console.error(err);
+      $("fileStatus").textContent = `Could not read file: ${err.message}`;
+    }
+  }
+
+  async function loadDay() {
+    if (!currentUser) return;
+    const selectedDate = $("workDate").value || today();
+    $("refreshBtn").disabled = true;
+    try {
+      const email = currentUser.email.toLowerCase();
+      const rows = new Map();
+      const add = snap => snap.docs.forEach(doc => rows.set(doc.id, { id: doc.id, ...doc.data() }));
+      const ref = db.collection("activityLogs");
+      try { add(await ref.where("ownerEmail", "==", email).limit(300).get()); } catch (e) { console.warn(e); }
+      try { add(await ref.where("createdByEmail", "==", email).limit(300).get()); } catch (e) { console.warn(e); }
+      dayRows = [...rows.values()].filter(row => (row.type === "poChecking" || row.process === "poChecking") && rowDate(row) === selectedDate);
+      renderDay();
+    } catch (err) { $("saveStatus").textContent = `Could not load checker production: ${err.message}`; }
+    finally { $("refreshBtn").disabled = false; }
+  }
+
+  function renderDay() {
+    const people = new Map();
+    dayRows.forEach(row => {
+      const name = String(row.checkerName || row.employeeName || "Unassigned");
+      const p = people.get(name) || { name, pos:0, lines:0, qty:0, minutes:0, exceptions:0 };
+      p.pos += 1; p.lines += Number(row.lineCount||0); p.qty += Number(row.totalQty||0); p.minutes += Number(row.checkMinutes||0); p.exceptions += Number(row.exceptions||0);
+      people.set(name,p);
+    });
+    $("checkerOptions").innerHTML = [...people.keys()].sort().map(name => `<option value="${esc(name)}"></option>`).join("");
+    $("leaderboardBody").innerHTML = people.size ? [...people.values()].sort((a,b)=>b.lines-a.lines).map(p => `<tr><td data-label="Checker">${esc(p.name)}</td><td data-label="POs">${p.pos}</td><td data-label="Lines">${p.lines}</td><td data-label="Total Qty">${p.qty}</td><td data-label="Lines / Hour">${p.minutes ? (p.lines/(p.minutes/60)).toFixed(1) : "0"}</td><td data-label="Exceptions">${p.exceptions}</td></tr>`).join("") : '<tr><td colspan="6">No checker records for this date.</td></tr>';
+    $("recordsBody").innerHTML = dayRows.length ? dayRows.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).map(row => `<tr><td data-label="PO">${esc(row.poNumber)}</td><td data-label="Checker">${esc(row.checkerName)}</td><td data-label="Lines">${Number(row.lineCount||0)}</td><td data-label="Total Qty">${Number(row.totalQty||0)}</td><td data-label="Minutes">${Number(row.checkMinutes||0)}</td><td data-label="Lines / Hour">${Number(row.linesPerHour||0).toFixed(1)}</td><td data-label="Exceptions">${Number(row.exceptions||0)}</td><td data-label="File">${esc(row.sourceFile||"Manual")}</td></tr>`).join("") : '<tr><td colspan="8">No PO records for this date.</td></tr>';
+  }
+
+  async function savePo() {
+    if (!currentUser) return;
+    const checkerName = $("checkerName").value.trim();
+    const poNumber = $("poNumber").value.trim();
+    const lines = collectLines();
+    if (!checkerName || !poNumber || !lines.length) { $("saveStatus").textContent = "Enter the checker, PO number, and at least one item line."; return; }
+    const workDate = $("workDate").value || today();
+    const duplicate = dayRows.some(row => String(row.poNumber||"").toLowerCase() === poNumber.toLowerCase() && String(row.checkerName||"").toLowerCase() === checkerName.toLowerCase());
+    if (duplicate && !window.confirm("This checker already has this PO saved for the selected date. Save another summary anyway?")) return;
+    const checkMinutes = minutesBetween($("startTime").value, $("finishTime").value);
+    const totalQty = lines.reduce((sum,line)=>sum+Number(line.quantity||0),0);
+    const payload = {
+      type:"poChecking", process:"poChecking", workDate, checkerName, employeeName:checkerName, poNumber,
+      lineCount:lines.length, totalQty, checkMinutes, linesPerHour:checkMinutes ? lines.length/(checkMinutes/60) : 0,
+      exceptions:Number($("exceptions").value||0), startTime:$("startTime").value, finishTime:$("finishTime").value,
+      sourceFile:$("poFile").files[0]?.name || "Manual Entry", notes:$("notes").value.trim(),
+      linePreview:lines.slice(0,25),
+      ownerEmail:currentUser.email.toLowerCase(), createdByEmail:currentUser.email.toLowerCase(),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    };
+    $("savePoBtn").disabled = true; $("saveStatus").textContent = "Saving one PO summary record…";
+    try {
+      await db.collection("activityLogs").add(payload);
+      $("saveStatus").textContent = `PO ${poNumber} saved as one summary record with ${lines.length} checked lines.`;
+      $("poNumber").value = ""; $("exceptions").value = 0; $("notes").value = ""; $("poFile").value = ""; $("manualLines").innerHTML = ""; addLine();
+      await loadDay();
+    } catch (err) { console.error(err); $("saveStatus").textContent = `Could not save PO summary: ${err.message}`; }
+    finally { $("savePoBtn").disabled = false; }
+  }
+
+  $("workDate").value = today();
+  addLine();
+  $("addLineBtn").addEventListener("click", () => addLine());
+  $("clearLinesBtn").addEventListener("click", () => { $("manualLines").innerHTML = ""; addLine(); });
+  $("readPoBtn").addEventListener("click", readPoFile);
+  $("refreshBtn").addEventListener("click", loadDay);
+  $("savePoBtn").addEventListener("click", savePo);
+  ["startTime","finishTime"].forEach(id => $(id).addEventListener("change", updateTotals));
+  auth.onAuthStateChanged(user => {
+    currentUser = user;
+    $("userBadge").textContent = user?.email || "Signed out";
+    $("loginNotice").classList.toggle("hidden", Boolean(user));
+    $("checkerApp").classList.toggle("hidden", !user);
+    if (user) loadDay();
+  });
+})();
+</script>
+</body>
+</html>
