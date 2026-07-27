@@ -1,0 +1,1 @@
+Daily receiving, truck and pallet tracking, and PO checker tracking are separated into dedicated pages. Navigation links are styled without underlines.
