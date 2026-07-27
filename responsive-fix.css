@@ -10,4 +10,31 @@ body {
   .upload-card {
     max-width: 100%;
   }
+
+  /* Keep all operational tabs reachable on phones without squeezing labels. */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tabs .tab {
+    flex: 0 0 auto;
+    min-height: 44px;
+    scroll-snap-align: start;
+    white-space: nowrap;
+  }
+
+  /* The 25-line putaway grid should scroll inside its card, not widen the page. */
+  .putaway-entry-table {
+    min-width: 680px;
+  }
+
+  .putaway-form-actions button,
+  .filter-actions button {
+    min-height: 44px;
+  }
 }
