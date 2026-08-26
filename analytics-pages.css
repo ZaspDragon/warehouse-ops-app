@@ -14,9 +14,23 @@
 .badge-removed, .badge-long { background: #fee2e2; color: #991b1b; }
 .badge-unposted, .badge-repeat { background: #fef3c7; color: #92400e; }
 .numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.adjustment-bottom-summary { margin-top: 22px; padding-top: 20px; border-top: 2px solid #dbe4ef; }
+.bottom-total-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 14px; margin: 12px 0 24px; }
+.bottom-total { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px; border-radius: 10px; border: 1px solid #dbe4ef; background: #f8fafc; }
+.bottom-total span { font-weight: 700; color: #475569; }
+.bottom-total strong { font-size: 1.45rem; font-variant-numeric: tabular-nums; }
+.added-total strong { color: #166534; }
+.removed-total strong { color: #b42318; }
+.net-total strong { color: #0b5ed7; }
+.repeated-items-heading { margin-top: 8px; }
+.repeat-item-count { display: flex; align-items: baseline; gap: 8px; }
+.repeat-item-count strong { font-size: 1.45rem; color: #92400e; }
+.repeat-item-count span { color: #64748b; }
+.repeated-items-wrap { max-height: 360px; overflow: auto; }
 @media (max-width: 900px) {
   .analytics-stats { grid-template-columns: repeat(2, minmax(125px, 1fr)); }
   .analytics-filters { grid-template-columns: 1fr 1fr; }
+  .bottom-total-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
   .analytics-filters { grid-template-columns: 1fr; }
