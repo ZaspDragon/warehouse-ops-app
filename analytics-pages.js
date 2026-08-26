@@ -167,6 +167,9 @@
     const rows = adjustmentRows();
     const added = rows.filter((row) => row.qty > 0).reduce((sum, row) => sum + row.qty, 0);
     const removed = Math.abs(rows.filter((row) => row.qty < 0).reduce((sum, row) => sum + row.qty, 0));
+    const gains = rows.filter((row) => row.gainLoss > 0).reduce((sum, row) => sum + row.gainLoss, 0);
+    const losses = Math.abs(rows.filter((row) => row.gainLoss < 0).reduce((sum, row) => sum + row.gainLoss, 0));
+    const currency = (value) => value.toLocaleString(undefined, { style: "currency", currency: "USD" });
     $("adjustmentCount").textContent = rows.length.toLocaleString();
     $("addedQty").textContent = added.toLocaleString();
     $("removedQty").textContent = removed.toLocaleString();
@@ -176,6 +179,9 @@
     $("bottomAddedQty").textContent = added.toLocaleString();
     $("bottomRemovedQty").textContent = removed.toLocaleString();
     $("bottomNetQty").textContent = (added - removed).toLocaleString();
+    $("bottomGainValue").textContent = currency(gains);
+    $("bottomLossValue").textContent = currency(losses);
+    $("bottomNetValue").textContent = currency(gains - losses);
 
     const repeatedItems = [...rows.reduce((groups, row) => {
       const group = groups.get(row.item) || {
