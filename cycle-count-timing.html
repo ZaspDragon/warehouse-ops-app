@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cycle Count Timing · WarehouseOS</title>
+  <link rel="stylesheet" href="styles.css?v=20260826-1" />
+  <link rel="stylesheet" href="analytics-pages.css?v=20260826-1" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body data-analytics-page="cycleTiming">
+  <header class="topbar">
+    <div><h1>Cycle Count Timing</h1><p>WarehouseOS · Measure time between count starts</p></div>
+    <a class="header-link" href="index.html">Back to WarehouseOS</a>
+  </header>
+  <main class="analytics-main">
+    <section class="card upload-card">
+      <div><h2>Upload Cycle Count Report</h2><p class="hint">Use the Cycle Count Start Date and Time Excel file. Posted and unposted counts are tracked separately.</p></div>
+      <label class="file-picker">Choose Excel File<input id="analyticsFile" type="file" accept=".xlsx,.xls,.csv" /></label>
+      <button id="clearAnalyticsData" class="danger" type="button">Clear Saved Uploads</button>
+      <p id="analyticsMessage" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="stats analytics-stats">
+      <div><strong id="countTotal">0</strong><span>Counts Started</span></div>
+      <div><strong id="postedTotal">0</strong><span>Posted</span></div>
+      <div><strong id="unpostedTotal">0</strong><span>Unposted</span></div>
+      <div><strong id="averageGap">-</strong><span>Average Gap</span></div>
+      <div><strong id="longestGap">-</strong><span>Longest Gap</span></div>
+      <div><strong id="overThreshold">0</strong><span>Over Threshold</span></div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div><h2>Count Start Timeline</h2><p class="hint">Elapsed time compares each start with the previous count start on the same date.</p></div>
+        <button id="exportAnalytics" class="primary" type="button">Export CSV</button>
+      </div>
+      <div class="analytics-filters">
+        <label>Start Date<input id="filterStart" type="date" /></label>
+        <label>End Date<input id="filterEnd" type="date" /></label>
+        <label>Status<select id="filterStatus"><option value="">All</option><option value="POSTED">Posted</option><option value="UNPOSTED">Unposted</option></select></label>
+        <label>Long-gap threshold (minutes)<input id="gapThreshold" type="number" min="1" value="30" /></label>
+        <label>Search<input id="filterSearch" placeholder="Count ID" /></label>
+      </div>
+      <div class="table-wrap analytics-table-wrap"><table>
+        <thead><tr><th>Date</th><th>Start Time</th><th>Count ID</th><th>Status</th><th>Previous Count</th><th>Time Since Previous</th><th>Flag</th></tr></thead>
+        <tbody id="analyticsBody"><tr><td colspan="7">Upload a cycle count report to begin.</td></tr></tbody>
+      </table></div>
+    </section>
+  </main>
+  <script src="analytics-pages.js?v=20260826-1"></script>
+</body>
+</html>
