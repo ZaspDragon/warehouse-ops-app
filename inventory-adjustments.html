@@ -48,6 +48,27 @@
         <thead><tr><th>Date</th><th>Item #</th><th>Description</th><th>Qty</th><th>Direction</th><th>Reason</th><th>User</th><th>Document #</th><th>Gain / Loss</th><th>Repeat?</th></tr></thead>
         <tbody id="analyticsBody"><tr><td colspan="10">Upload a transaction report to begin.</td></tr></tbody>
       </table></div>
+
+      <section class="adjustment-bottom-summary" aria-labelledby="adjustmentTotalsTitle">
+        <h3 id="adjustmentTotalsTitle">Filtered Adjustment Totals</h3>
+        <div class="bottom-total-grid">
+          <div class="bottom-total added-total"><span>Total Added</span><strong id="bottomAddedQty">0</strong></div>
+          <div class="bottom-total removed-total"><span>Total Subtracted</span><strong id="bottomRemovedQty">0</strong></div>
+          <div class="bottom-total net-total"><span>Net Adjustment</span><strong id="bottomNetQty">0</strong></div>
+        </div>
+
+        <div class="section-heading repeated-items-heading">
+          <div>
+            <h3>Same Item Numbers Adjusted More Than Once</h3>
+            <p class="hint">Tracks repeated item numbers within the currently filtered results.</p>
+          </div>
+          <div class="repeat-item-count"><strong id="bottomRepeatItemCount">0</strong><span>Repeated Items</span></div>
+        </div>
+        <div class="table-wrap repeated-items-wrap"><table>
+          <thead><tr><th>Item #</th><th>Description</th><th>Times Adjusted</th><th>Total Added</th><th>Total Subtracted</th><th>Net Qty</th><th>Users</th><th>Dates</th></tr></thead>
+          <tbody id="repeatedItemsBody"><tr><td colspan="8">No repeated item numbers in the current results.</td></tr></tbody>
+        </table></div>
+      </section>
     </section>
   </main>
   <script src="analytics-pages.js?v=20260826-1"></script>
