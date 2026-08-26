@@ -173,6 +173,35 @@
     $("netQty").textContent = (added - removed).toLocaleString();
     $("duplicateCount").textContent = duplicateUploadRows.toLocaleString();
     $("repeatCount").textContent = new Set(rows.filter((row) => row.repeat).map((row) => row.item)).size.toLocaleString();
+    $("bottomAddedQty").textContent = added.toLocaleString();
+    $("bottomRemovedQty").textContent = removed.toLocaleString();
+    $("bottomNetQty").textContent = (added - removed).toLocaleString();
+
+    const repeatedItems = [...rows.reduce((groups, row) => {
+      const group = groups.get(row.item) || {
+        item: row.item,
+        description: row.description,
+        count: 0,
+        added: 0,
+        removed: 0,
+        users: new Set(),
+        dates: new Set()
+      };
+      group.count += 1;
+      if (row.qty >= 0) group.added += row.qty;
+      else group.removed += Math.abs(row.qty);
+      if (row.user) group.users.add(row.user);
+      if (row.date) group.dates.add(row.date);
+      groups.set(row.item, group);
+      return groups;
+    }, new Map()).values()]
+      .filter((group) => group.count > 1)
+      .sort((a, b) => b.count - a.count || a.item.localeCompare(b.item));
+
+    $("bottomRepeatItemCount").textContent = repeatedItems.length.toLocaleString();
+    $("repeatedItemsBody").innerHTML = repeatedItems.length
+      ? repeatedItems.map((group) => `<tr><td>${esc(group.item)}</td><td>${esc(group.description)}</td><td class="numeric">${group.count.toLocaleString()}</td><td class="numeric">${group.added.toLocaleString()}</td><td class="numeric">${group.removed.toLocaleString()}</td><td class="numeric">${(group.added - group.removed).toLocaleString()}</td><td>${esc([...group.users].join(", "))}</td><td>${esc([...group.dates].sort().join(", "))}</td></tr>`).join("")
+      : '<tr><td colspan="8">No repeated item numbers in the current results.</td></tr>';
     $("analyticsBody").innerHTML = rows.length ? rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.item)}</td><td>${esc(row.description)}</td><td class="numeric">${row.qty.toLocaleString()}</td><td><span class="badge badge-${row.direction.toLowerCase()}">${row.direction}</span></td><td>${esc(row.reason)}</td><td>${esc(row.user)}</td><td>${esc(row.doc)}</td><td class="numeric">${row.gainLoss.toLocaleString(undefined, { style: "currency", currency: "USD" })}</td><td>${row.repeat ? '<span class="badge badge-repeat">Yes</span>' : "No"}</td></tr>`).join("") : '<tr><td colspan="10">No adjustments match these filters.</td></tr>';
     return rows;
   }
