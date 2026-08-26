@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventory Adjustment Tracker · WarehouseOS</title>
+  <link rel="stylesheet" href="styles.css?v=20260826-1" />
+  <link rel="stylesheet" href="analytics-pages.css?v=20260826-1" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body data-analytics-page="adjustments">
+  <header class="topbar">
+    <div><h1>Inventory Adjustment Tracker</h1><p>WarehouseOS · Upload and audit daily inventory changes</p></div>
+    <a class="header-link" href="index.html">Back to WarehouseOS</a>
+  </header>
+  <main class="analytics-main">
+    <section class="card upload-card">
+      <div>
+        <h2>Upload Transaction Report</h2>
+        <p class="hint">Use the Warehouse Inventory Transaction Report - By Date Excel file. Re-uploading the same rows will not double-count them.</p>
+      </div>
+      <label class="file-picker">Choose Excel File<input id="analyticsFile" type="file" accept=".xlsx,.xls,.csv" /></label>
+      <button id="clearAnalyticsData" class="danger" type="button">Clear Saved Uploads</button>
+      <p id="analyticsMessage" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="stats analytics-stats">
+      <div><strong id="adjustmentCount">0</strong><span>Adjustments</span></div>
+      <div><strong id="addedQty">0</strong><span>Units Added</span></div>
+      <div><strong id="removedQty">0</strong><span>Units Removed</span></div>
+      <div><strong id="netQty">0</strong><span>Net Units</span></div>
+      <div><strong id="duplicateCount">0</strong><span>Duplicate Upload Rows</span></div>
+      <div><strong id="repeatCount">0</strong><span>Items Adjusted Again</span></div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div><h2>Adjustment Details</h2><p class="hint">“Adjusted again” means the same item appears on more than one document or date in the saved uploads.</p></div>
+        <button id="exportAnalytics" class="primary" type="button">Export CSV</button>
+      </div>
+      <div class="analytics-filters">
+        <label>Start Date<input id="filterStart" type="date" /></label>
+        <label>End Date<input id="filterEnd" type="date" /></label>
+        <label>Direction<select id="filterDirection"><option value="">All</option><option value="Added">Added</option><option value="Removed">Removed</option></select></label>
+        <label>Search<input id="filterSearch" placeholder="Item, user, reason, document" /></label>
+      </div>
+      <div class="table-wrap analytics-table-wrap"><table>
+        <thead><tr><th>Date</th><th>Item #</th><th>Description</th><th>Qty</th><th>Direction</th><th>Reason</th><th>User</th><th>Document #</th><th>Gain / Loss</th><th>Repeat?</th></tr></thead>
+        <tbody id="analyticsBody"><tr><td colspan="10">Upload a transaction report to begin.</td></tr></tbody>
+      </table></div>
+    </section>
+  </main>
+  <script src="analytics-pages.js?v=20260826-1"></script>
+</body>
+</html>
