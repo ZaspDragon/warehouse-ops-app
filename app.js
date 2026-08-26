@@ -2516,7 +2516,6 @@ function confirmClearPutawayForm() {
 }
 
 function resetPutawayLineAfterSubmit() {
-  const worker = $("putWorker")?.value || "";
   const workDate = $("putDate")?.value || todayValue();
 
   putawayDraftRows().forEach((row) => {
@@ -2526,13 +2525,13 @@ function resetPutawayLineAfterSubmit() {
     });
   });
 
-  if ($("putWorker")) $("putWorker").value = worker;
+  if ($("putWorker")) $("putWorker").value = "";
   if ($("putDate")) $("putDate").value = workDate;
   if ($("putSheetNumber")) $("putSheetNumber").value = "";
   if ($("putStatus")) $("putStatus").value = "Completed";
   updatePutawayStats();
   savePutawayDraft({ force: true, statusMessage: "All changes saved" });
-  document.querySelector("#putawayBody .put-item")?.focus();
+  $("putWorker")?.focus();
 }
 
 async function savePutaway() {
