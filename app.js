@@ -2837,6 +2837,56 @@ function getRecordsByDateRange(records, startDate, endDate, options = {}) {
   });
 }
 
+function getPutawayLineDate(line, record) {
+  return (
+    normalizeLeaderboardDate(line?.workDate) ||
+    normalizeLeaderboardDate(line?.submittedDate) ||
+    normalizeLeaderboardDate(line?.completedDate) ||
+    normalizeLeaderboardDate(line?.date) ||
+    normalizeLeaderboardDate(line?.submittedAt) ||
+    normalizeLeaderboardDate(line?.createdAt) ||
+    getRecordDate(record)
+  );
+}
+
+function getPutawayRecordsByDateRange(records, startDate, endDate, options = {}) {
+  const start = normalizeLeaderboardDate(startDate);
+  const end = normalizeLeaderboardDate(endDate);
+  const includeUndated = Boolean(options.includeUndated || (!start && !end));
+
+  return (records || []).flatMap((record) => {
+    const sourceLines = Array.isArray(record?.lines) ? record.lines : [];
+
+    // Older single-line records do not always have a lines array. Keep using
+    // their record date so historical data remains visible and filterable.
+    if (!sourceLines.length) {
+      return getRecordsByDateRange([record], start, end, { includeUndated });
+    }
+
+    const matchingLines = sourceLines.filter((line) => {
+      if (line?.active === false) return false;
+      const lineDate = getPutawayLineDate(line, record);
+      if (!lineDate) return includeUndated;
+      if (start && lineDate < start) return false;
+      if (end && lineDate > end) return false;
+      return true;
+    });
+
+    if (!matchingLines.length) return [];
+
+    return [{
+      ...record,
+      lines: matchingLines,
+      totalLines: matchingLines.length,
+      lineCount: matchingLines.length,
+      totalQty: matchingLines.reduce(
+        (sum, line) => sum + numericValue(line?.quantity ?? line?.qty),
+        0
+      )
+    }];
+  });
+}
+
 function normalizeEmployeeName(value) {
   const name = String(value || "").trim();
   return name || "Unknown";
@@ -3056,7 +3106,7 @@ function switchLeaderboardView(view) {
 
 function getLeaderboardSourceRecords(range) {
   return {
-    putaway: getRecordsByDateRange(state.putawayLogs, range.start, range.end, { includeUndated: range.includeUndated }),
+    putaway: getPutawayRecordsByDateRange(state.putawayLogs, range.start, range.end, { includeUndated: range.includeUndated }),
     cycle: getRecordsByDateRange(state.cycleSessions, range.start, range.end, { includeUndated: range.includeUndated }),
     transfer: getRecordsByDateRange(state.pickingSessions, range.start, range.end, { includeUndated: range.includeUndated })
   };
