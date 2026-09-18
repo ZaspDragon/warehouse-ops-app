@@ -227,6 +227,51 @@
   }
 
   function csvCell(value) { return `"${text(value).replace(/"/g, '""')}"`; }
+  function exportRepeatedItemsCsv() {
+    if (page !== "adjustments") return;
+    const rows = adjustmentRows();
+    const repeatedItems = [...rows.reduce((groups, row) => {
+      const group = groups.get(row.item) || {
+        item: row.item,
+        description: row.description,
+        count: 0,
+        added: 0,
+        removed: 0,
+        users: new Set(),
+        dates: new Set()
+      };
+      group.count += 1;
+      if (row.qty >= 0) group.added += row.qty;
+      else group.removed += Math.abs(row.qty);
+      if (row.user) group.users.add(row.user);
+      if (row.date) group.dates.add(row.date);
+      groups.set(row.item, group);
+      return groups;
+    }, new Map()).values()]
+      .filter((group) => group.count > 1)
+      .sort((a, b) => b.count - a.count || a.item.localeCompare(b.item));
+
+    if (!repeatedItems.length) return setMessage("There are no repeated item numbers in the current filtered results.", true);
+
+    const headers = ["Item #", "Description", "Times Adjusted", "Total Added", "Total Subtracted", "Net Qty", "Users", "Dates"];
+    const values = repeatedItems.map((group) => [
+      group.item,
+      group.description,
+      group.count,
+      group.added,
+      group.removed,
+      group.added - group.removed,
+      [...group.users].join(", "),
+      [...group.dates].sort().join(", ")
+    ]);
+    const blob = new Blob([[headers, ...values].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `repeated-inventory-adjustments-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    setMessage(`${repeatedItems.length} repeated item${repeatedItems.length === 1 ? "" : "s"} exported.`);
+  }
   function exportCsv() {
     const rows = page === "adjustments" ? adjustmentRows() : timedCycleRows();
     if (!rows.length) return setMessage("There is no filtered data to export.", true);
@@ -243,6 +288,7 @@
   function render() { return page === "adjustments" ? renderAdjustments() : renderCycleTiming(); }
   $("analyticsFile").addEventListener("change", importFile);
   $("exportAnalytics").addEventListener("click", exportCsv);
+  $("exportRepeatedItems")?.addEventListener("click", exportRepeatedItemsCsv);
   $("clearAnalyticsData").addEventListener("click", () => {
     if (!confirm("Clear all saved uploads from this browser?")) return;
     records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); render(); setMessage("Saved uploads cleared.");
