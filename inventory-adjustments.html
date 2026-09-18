@@ -69,7 +69,10 @@
             <h3>Same Item Numbers Adjusted More Than Once</h3>
             <p class="hint">Tracks repeated item numbers within the currently filtered results.</p>
           </div>
-          <div class="repeat-item-count"><strong id="bottomRepeatItemCount">0</strong><span>Repeated Items</span></div>
+          <div class="repeat-item-actions">
+            <button id="exportRepeatedItems" class="primary" type="button">Download Repeated Items CSV</button>
+            <div class="repeat-item-count"><strong id="bottomRepeatItemCount">0</strong><span>Repeated Items</span></div>
+          </div>
         </div>
         <div class="table-wrap repeated-items-wrap"><table>
           <thead><tr><th>Item #</th><th>Description</th><th>Times Adjusted</th><th>Total Added</th><th>Total Subtracted</th><th>Net Qty</th><th>Users</th><th>Dates</th></tr></thead>
