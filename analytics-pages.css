@@ -37,3 +37,19 @@
   .upload-card { align-items: stretch; }
   .file-picker, .upload-card button { justify-content: center; width: 100%; }
 }
+
+
+.repeated-items-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 10px 0 12px;
+}
+
+.repeated-items-download {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 245px;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
