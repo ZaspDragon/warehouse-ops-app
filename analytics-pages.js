@@ -227,8 +227,9 @@
   }
 
   function csvCell(value) { return `"${text(value).replace(/"/g, '""')}"`; }
-  function exportRepeatedItemsCsv() {
+  function printRepeatedItemsReport() {
     if (page !== "adjustments") return;
+
     const rows = adjustmentRows();
     const repeatedItems = [...rows.reduce((groups, row) => {
       const group = groups.get(row.item) || {
@@ -251,27 +252,237 @@
       .filter((group) => group.count > 1)
       .sort((a, b) => b.count - a.count || a.item.localeCompare(b.item));
 
-    if (!repeatedItems.length) return setMessage("There are no repeated item numbers in the current filtered results.", true);
+    if (!repeatedItems.length) {
+      return setMessage("There are no repeated item numbers in the current filtered results.", true);
+    }
 
-    const headers = ["Item #", "Description", "Times Adjusted", "Total Added", "Total Subtracted", "Net Qty", "Users", "Dates"];
-    const values = repeatedItems.map((group) => [
-      group.item,
-      group.description,
-      group.count,
-      group.added,
-      group.removed,
-      group.added - group.removed,
-      [...group.users].join(", "),
-      [...group.dates].sort().join(", ")
-    ]);
-    const blob = new Blob([[headers, ...values].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `repeated-inventory-adjustments-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    setMessage(`${repeatedItems.length} repeated item${repeatedItems.length === 1 ? "" : "s"} exported.`);
+    const startDate = $("filterStart")?.value || "";
+    const endDate = $("filterEnd")?.value || "";
+    const direction = $("filterDirection")?.value || "All";
+    const search = $("filterSearch")?.value.trim() || "";
+    const filterParts = [];
+    if (startDate) filterParts.push(`From ${startDate}`);
+    if (endDate) filterParts.push(`Through ${endDate}`);
+    if (direction !== "All") filterParts.push(`Direction: ${direction}`);
+    if (search) filterParts.push(`Search: ${search}`);
+    const filterLabel = filterParts.length ? filterParts.join(" · ") : "All current adjustment data";
+    const generatedAt = new Date().toLocaleString();
+
+    const reportRows = repeatedItems.map((group) => `
+      <tr>
+        <td class="item">${esc(group.item)}</td>
+        <td class="description">${esc(group.description)}</td>
+        <td class="num strong">${group.count.toLocaleString()}</td>
+        <td class="num added">${group.added.toLocaleString()}</td>
+        <td class="num removed">${group.removed.toLocaleString()}</td>
+        <td class="num net">${(group.added - group.removed).toLocaleString()}</td>
+        <td>${esc([...group.users].join(", "))}</td>
+        <td class="dates">${esc([...group.dates].sort().join(", "))}</td>
+      </tr>
+    `).join("");
+
+    const reportHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Repeated Inventory Adjustments</title>
+  <style>
+    * { box-sizing: border-box; }
+    @page { size: landscape; margin: 0.38in; }
+    body {
+      margin: 0;
+      background: #eef2f7;
+      color: #0f172a;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      padding: 12px;
+      background: #0b1b3a;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+    }
+    .toolbar button {
+      border: 0;
+      border-radius: 9px;
+      padding: 11px 18px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .report {
+      width: min(1500px, calc(100% - 32px));
+      margin: 18px auto 30px;
+      background: #fff;
+      border: 1px solid #d8e0eb;
+      border-radius: 18px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.10);
+      overflow: hidden;
+    }
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: flex-start;
+      padding: 24px 26px 18px;
+      border-bottom: 1px solid #d8e0eb;
+    }
+    .report-header h1 {
+      margin: 0 0 8px;
+      color: #0b1b3a;
+      font-size: 25px;
+      line-height: 1.2;
+    }
+    .subtitle {
+      margin: 0;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .count-card {
+      min-width: 150px;
+      padding: 12px 16px;
+      border: 1px solid #e3e8ef;
+      border-radius: 12px;
+      background: #f8fafc;
+      text-align: right;
+    }
+    .count-card strong {
+      display: block;
+      color: #92400e;
+      font-size: 28px;
+      line-height: 1;
+    }
+    .count-card span {
+      color: #64748b;
+      font-size: 12px;
+    }
+    .table-wrap { padding: 18px 22px 24px; }
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: fixed;
+      font-size: 12px;
+    }
+    th {
+      padding: 10px 9px;
+      background: #f1f5f9;
+      color: #334155;
+      border-top: 1px solid #cbd5e1;
+      border-bottom: 1px solid #cbd5e1;
+      text-align: left;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.3px;
+      line-height: 1.15;
+    }
+    th:first-child { border-left: 1px solid #cbd5e1; border-top-left-radius: 10px; }
+    th:last-child { border-right: 1px solid #cbd5e1; border-top-right-radius: 10px; }
+    td {
+      padding: 10px 9px;
+      border-bottom: 1px solid #dbe3ed;
+      vertical-align: top;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+      background: #fff;
+    }
+    tbody tr:nth-child(even) td { background: #f8fafc; }
+    td:first-child { border-left: 1px solid #dbe3ed; }
+    td:last-child { border-right: 1px solid #dbe3ed; }
+    .num { text-align: right; white-space: nowrap; }
+    .strong { font-weight: 800; }
+    .added { color: #166534; }
+    .removed { color: #991b1b; }
+    .net { font-weight: 800; }
+    .item { width: 8%; font-weight: 700; }
+    .description { width: 29%; }
+    .dates { width: 15%; }
+    th:nth-child(1) { width: 8%; }
+    th:nth-child(2) { width: 29%; }
+    th:nth-child(3) { width: 8%; }
+    th:nth-child(4) { width: 8%; }
+    th:nth-child(5) { width: 9%; }
+    th:nth-child(6) { width: 7%; }
+    th:nth-child(7) { width: 16%; }
+    th:nth-child(8) { width: 15%; }
+
+    @media print {
+      body { background: #fff; }
+      .toolbar { display: none !important; }
+      .report {
+        width: 100%;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+      .report-header { padding: 0 0 12px; }
+      .table-wrap { padding: 12px 0 0; }
+      thead { display: table-header-group; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      td, th { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <main class="report">
+    <header class="report-header">
+      <div>
+        <h1>Same Item Numbers Adjusted More Than Once</h1>
+        <p class="subtitle">WarehouseOS · Inventory Adjustment Tracker</p>
+        <p class="subtitle">${esc(filterLabel)}</p>
+        <p class="subtitle">Generated ${esc(generatedAt)}</p>
+      </div>
+      <div class="count-card">
+        <strong>${repeatedItems.length.toLocaleString()}</strong>
+        <span>Repeated Items</span>
+      </div>
+    </header>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Item #</th>
+            <th>Description</th>
+            <th>Times Adjusted</th>
+            <th>Total Added</th>
+            <th>Total Subtracted</th>
+            <th>Net Qty</th>
+            <th>Users</th>
+            <th>Dates</th>
+          </tr>
+        </thead>
+        <tbody>${reportRows}</tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>`;
+
+    const reportWindow = window.open("", "_blank");
+    if (!reportWindow) {
+      return setMessage("Your browser blocked the printable report. Allow popups for this page and try again.", true);
+    }
+
+    reportWindow.document.open();
+    reportWindow.document.write(reportHtml);
+    reportWindow.document.close();
+    setMessage(`Printable report opened for ${repeatedItems.length} repeated item${repeatedItems.length === 1 ? "" : "s"}.`);
   }
+
   function exportCsv() {
     const rows = page === "adjustments" ? adjustmentRows() : timedCycleRows();
     if (!rows.length) return setMessage("There is no filtered data to export.", true);
@@ -288,7 +499,7 @@
   function render() { return page === "adjustments" ? renderAdjustments() : renderCycleTiming(); }
   $("analyticsFile").addEventListener("change", importFile);
   $("exportAnalytics").addEventListener("click", exportCsv);
-  $("exportRepeatedItems")?.addEventListener("click", exportRepeatedItemsCsv);
+  $("exportRepeatedItems")?.addEventListener("click", printRepeatedItemsReport);
   $("clearAnalyticsData").addEventListener("click", () => {
     if (!confirm("Clear all saved uploads from this browser?")) return;
     records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); render(); setMessage("Saved uploads cleared.");
