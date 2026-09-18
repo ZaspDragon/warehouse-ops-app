@@ -181,8 +181,7 @@ function hasPutawayDraftData(draft = collectPutawayDraft()) {
     (draft.worker || "").trim() ||
       (draft.putawayNumber || "").trim() ||
       hasLines ||
-      (draft.status && draft.status !== "Completed") ||
-      ((draft.date || "").trim() && draft.date !== todayValue())
+      (draft.status && draft.status !== "Completed")
   );
 }
 
@@ -2516,8 +2515,6 @@ function confirmClearPutawayForm() {
 }
 
 function resetPutawayLineAfterSubmit() {
-  const workDate = $("putDate")?.value || todayValue();
-
   putawayDraftRows().forEach((row) => {
     [".put-item", ".put-qty", ".put-location", ".put-notes"].forEach((selector) => {
       const input = row.querySelector(selector);
@@ -2526,11 +2523,11 @@ function resetPutawayLineAfterSubmit() {
   });
 
   if ($("putWorker")) $("putWorker").value = "";
-  if ($("putDate")) $("putDate").value = workDate;
+  if ($("putDate")) $("putDate").value = todayValue();
   if ($("putSheetNumber")) $("putSheetNumber").value = "";
   if ($("putStatus")) $("putStatus").value = "Completed";
   updatePutawayStats();
-  savePutawayDraft({ force: true, statusMessage: "All changes saved" });
+  clearPutawayDraft();
   $("putWorker")?.focus();
 }
 
