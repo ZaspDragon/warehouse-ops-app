@@ -474,12 +474,10 @@
     const rows = active.lines.map((line, index) =>
       "<tr>" +
         "<td>" + (index + 1) + "</td>" +
+        "<td>" + safe(active.sourceDate || line.latestDate || "") + "</td>" +
         "<td><strong>" + safe(line.location) + "</strong></td>" +
-        "<td>" + safe(line.latestItem || "") + "</td>" +
         "<td>" + safe(line.latestQty ?? "") + "</td>" +
-        '<td class="write-box"></td>' +
-        '<td class="check-box">□ Good&nbsp;&nbsp; □ Issue</td>' +
-        '<td class="notes-box"></td>' +
+        '<td class="check-box">□</td>' +
       "</tr>"
     ).join("");
 
@@ -494,12 +492,11 @@
       '<style>' +
       '@page{size:landscape;margin:.35in} body{font-family:Arial,sans-serif;color:#111;margin:0} ' +
       'h1{font-size:22px;margin:0 0 4px} .meta{display:flex;gap:28px;font-size:13px;margin:0 0 10px} ' +
-      'table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px} th,td{border:1px solid #000;padding:5px;vertical-align:middle} ' +
-      'th{background:#eee;font-weight:700} tr{height:28px} ' +
-      'th:nth-child(1),td:nth-child(1){width:4%} th:nth-child(2),td:nth-child(2){width:13%} ' +
-      'th:nth-child(3),td:nth-child(3){width:13%} th:nth-child(4),td:nth-child(4){width:9%} ' +
-      'th:nth-child(5),td:nth-child(5){width:10%} th:nth-child(6),td:nth-child(6){width:17%} ' +
-      'th:nth-child(7),td:nth-child(7){width:34%} .write-box,.notes-box{height:24px} ' +
+      'table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px} th,td{border:1px solid #000;padding:7px;vertical-align:middle} ' +
+      'th{background:#eee;font-weight:700} tr{height:34px} ' +
+      'th:nth-child(1),td:nth-child(1){width:5%} th:nth-child(2),td:nth-child(2){width:20%} ' +
+      'th:nth-child(3),td:nth-child(3){width:40%} th:nth-child(4),td:nth-child(4){width:20%} ' +
+      'th:nth-child(5),td:nth-child(5){width:15%;text-align:center;font-size:22px} ' +
       '.footer{margin-top:9px;font-size:11px;display:flex;justify-content:space-between} ' +
       '@media print{button{display:none}}' +
       '</style></head><body>' +
@@ -507,9 +504,9 @@
       '<div class="meta"><strong>Putaway Date: ' + safe(active.sourceDate || "") + '</strong>' +
       '<span>Auditor: ' + safe(active.auditor || currentAuditor()) + '</span>' +
       '<span>Batch: ' + safe(active.id || "") + '</span></div>' +
-      '<table><thead><tr><th>#</th><th>Location</th><th>Item #</th><th>Putaway Qty</th><th>Correct Qty</th><th>Result</th><th>Notes / What was wrong?</th></tr></thead>' +
+      '<table><thead><tr><th>#</th><th>Date</th><th>Location</th><th>Quantity</th><th>Check</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table>' +
-      '<div class="footer"><span>Completed by: ______________________________</span><span>Date checked: __________________</span></div>' +
+      '<div class="footer"><span>Completed by: ______________________________</span><span>Audit Date: __________________</span></div>' +
       '<script>window.onload=function(){window.print();}<\/script>' +
       '</body></html>'
     );
