@@ -250,8 +250,11 @@
         '</div>' +
       '</div>' +
       '<div class="card">' +
-        '<div class="section-heading"><div><h3>Putaway Audit History</h3><p class="hint">Completed audit batches can be reviewed from this same tab.</p></div>' +
-        '<button id="refreshPutawayAuditHistoryBtn" type="button">Refresh Audit History</button></div>' +
+        '<div class="section-heading"><div><h3>All Putaway Audit History</h3><p class="hint">Every submitted putaway audit is saved here for later review.</p></div>' +
+        '<div class="actions"><button id="clearPutawayAuditHistoryFiltersBtn" type="button">Clear Filters</button><button id="refreshPutawayAuditHistoryBtn" type="button">Refresh Audit History</button></div></div>' +
+        '<div class="stats">' +
+          '<div><strong id="putawayAuditHistoryCount">0</strong><span>Submitted Audits</span></div>' +
+        '</div>' +
         '<div class="grid">' +
           '<label>Audit Date<input id="putawayAuditHistoryDate" type="date" /></label>' +
           '<label>Auditor<input id="putawayAuditHistoryAuditor" placeholder="Auditor name" /></label>' +
@@ -285,6 +288,12 @@
 
     byId("refreshPutawayAuditBtn")?.addEventListener("click", loadAuditData);
     byId("refreshPutawayAuditHistoryBtn")?.addEventListener("click", loadAuditData);
+    byId("clearPutawayAuditHistoryFiltersBtn")?.addEventListener("click", () => {
+      if (byId("putawayAuditHistoryDate")) byId("putawayAuditHistoryDate").value = "";
+      if (byId("putawayAuditHistoryAuditor")) byId("putawayAuditHistoryAuditor").value = "";
+      if (byId("putawayAuditHistoryAisle")) byId("putawayAuditHistoryAisle").value = "";
+      renderAuditHistory();
+    });
     byId("startPutawayAuditBtn")?.addEventListener("click", startAudit);
     byId("printPutawayAuditBtn")?.addEventListener("click", printAuditSheet);
     byId("putawayAuditDate")?.addEventListener("change", () => {
@@ -752,6 +761,7 @@
 
     const rows = auditState.active.lines.map((line) => ({
       type: "putawayAudit",
+      archiveType: "putawayAuditHistory",
       employee: auditor,
       auditorUid: currentUid() || auditState.active.auditorUid || "",
       date: dateKey(completedAt),
@@ -858,7 +868,10 @@
     const dateFilter = byId("putawayAuditHistoryDate")?.value || "";
     const auditorFilter = String(byId("putawayAuditHistoryAuditor")?.value || "").trim().toLowerCase();
     const aisleFilter = byId("putawayAuditHistoryAisle")?.value || "";
-    const groups = auditHistoryGroups().filter((group) => {
+    const allGroups = auditHistoryGroups();
+    if (byId("putawayAuditHistoryCount")) byId("putawayAuditHistoryCount").textContent = allGroups.length;
+
+    const groups = allGroups.filter((group) => {
       if (dateFilter && dateKey(group.completedAt) !== dateFilter) return false;
       if (auditorFilter && !String(group.auditor || "").toLowerCase().includes(auditorFilter)) return false;
       if (aisleFilter && group.sourceAisle !== aisleFilter) return false;
