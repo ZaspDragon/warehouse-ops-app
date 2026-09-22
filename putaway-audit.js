@@ -220,6 +220,7 @@
         '<div class="grid">' +
           '<label>Auditor<input id="putawayAuditAuditor" list="workerOptions" placeholder="Auditor name" /></label>' +
           '<label>Putaway History Date<select id="putawayAuditDate"><option value="">Load history to choose a date</option></select></label>' +
+          '<label>Aisle<select id="putawayAuditAisle"><option value="">All aisles</option></select></label>' +
           '<label>Find Location<input id="putawayAuditSearch" placeholder="A-01-1" /></label>' +
         '</div>' +
         '<div class="stats">' +
@@ -267,7 +268,11 @@
     byId("refreshPutawayAuditBtn")?.addEventListener("click", loadAuditData);
     byId("startPutawayAuditBtn")?.addEventListener("click", startAudit);
     byId("printPutawayAuditBtn")?.addEventListener("click", printAuditSheet);
-    byId("putawayAuditDate")?.addEventListener("change", applyAuditDateFilter);
+    byId("putawayAuditDate")?.addEventListener("change", () => {
+      applyAuditDateFilter();
+      populateAuditAisles();
+    });
+    byId("putawayAuditAisle")?.addEventListener("change", applyAuditAisleFilter);
     byId("savePutawayAuditProgressBtn")?.addEventListener("click", () => {
       captureActiveInputs();
       saveActive();
@@ -447,16 +452,69 @@
   }
 
 
+
+  function aisleFromLocation(location) {
+    const text = normalizeLocation(location);
+    if (!text) return "";
+    const match = text.match(/^([A-Z]+)(?=-|\d|$)/);
+    return match ? match[1] : text.split("-")[0];
+  }
+
+  function populateAuditAisles() {
+    const select = byId("putawayAuditAisle");
+    if (!select) return;
+
+    const previous = select.value || "";
+    const aisles = [...new Set(
+      (auditState.locations || [])
+        .map((row) => aisleFromLocation(row.location))
+        .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+
+    select.innerHTML = '<option value="">All aisles</option>';
+    aisles.forEach((aisle) => {
+      const option = document.createElement("option");
+      option.value = aisle;
+      option.textContent = "Aisle " + aisle;
+      select.appendChild(option);
+    });
+
+    if (previous && aisles.includes(previous)) select.value = previous;
+  }
+
+  function applyAuditAisleFilter(options = {}) {
+    const selectedDate = byId("putawayAuditDate")?.value || "";
+    const selectedAisle = byId("putawayAuditAisle")?.value || "";
+
+    const dateRows = extractLocationRows(auditState.allDocs || [], selectedDate);
+    auditState.locations = selectedAisle
+      ? dateRows.filter((row) => aisleFromLocation(row.location) === selectedAisle)
+      : dateRows;
+
+    renderSummary();
+    renderLocationHistory();
+
+    if (!options.silent) {
+      const aisleText = selectedAisle ? " in aisle " + selectedAisle : "";
+      setMessage(
+        auditState.locations.length
+          ? "Found " + auditState.locations.length + " putaway locations" + aisleText + " for " + selectedDate + "."
+          : "No putaway locations were found" + aisleText + " for " + (selectedDate || "that date") + "."
+      );
+    }
+  }
+
   function applyAuditDateFilter(options = {}) {
     const selectedDate = byId("putawayAuditDate")?.value || "";
     auditState.locations = extractLocationRows(auditState.allDocs || [], selectedDate);
-    renderSummary();
-    renderLocationHistory();
+    populateAuditAisles();
+    applyAuditAisleFilter({ silent: true });
     if (!options.silent) {
+      const selectedAisle = byId("putawayAuditAisle")?.value || "";
       setMessage(
         auditState.locations.length
-          ? "Found " + auditState.locations.length + " unique putaway locations for " + selectedDate + "."
-          : "No putaway locations were found in History for " + (selectedDate || "that date") + "."
+          ? "Found " + auditState.locations.length + " unique putaway locations" + (selectedAisle ? " in aisle " + selectedAisle : "") + " for " + selectedDate + "."
+          : "No putaway locations were found in History" + (selectedAisle ? " for aisle " + selectedAisle : "") + " on " + (selectedDate || "that date") + "."
       );
     }
   }
@@ -502,6 +560,7 @@
       '</style></head><body>' +
       '<h1>Putaway Audit Sheet</h1>' +
       '<div class="meta"><strong>Putaway Date: ' + safe(active.sourceDate || "") + '</strong>' +
+      '<span>Aisle: ' + safe(active.sourceAisle || "All") + '</span>' +
       '<span>Auditor: ' + safe(active.auditor || currentAuditor()) + '</span>' +
       '<span>Batch: ' + safe(active.id || "") + '</span></div>' +
       '<table><thead><tr><th>#</th><th>Date</th><th>Location</th><th>Quantity</th><th>Check</th></tr></thead>' +
@@ -549,6 +608,7 @@
       auditorUid: currentUid(),
       startedAt: new Date().toISOString(),
       sourceDate: selectedDate,
+      sourceAisle: byId("putawayAuditAisle")?.value || "",
       lines: selected.map((row, index) => ({
         line: index + 1,
         location: row.location,
@@ -565,7 +625,8 @@
 
     saveActive();
     renderActiveAudit();
-    setMessage("Started " + selected.length + "-location audit for putaways from " + selectedDate + ".");
+    const aisleLabel = auditState.active.sourceAisle ? " in aisle " + auditState.active.sourceAisle : "";
+    setMessage("Started " + selected.length + "-location audit" + aisleLabel + " for putaways from " + selectedDate + ".");
   }
 
   function resultOptions(selected) {
@@ -609,6 +670,10 @@
     if (byId("putawayAuditDate") && active.sourceDate) {
       const optionExists = [...byId("putawayAuditDate").options].some((opt) => opt.value === active.sourceDate);
       if (optionExists) byId("putawayAuditDate").value = active.sourceDate;
+    }
+    if (byId("putawayAuditAisle") && active.sourceAisle) {
+      const aisleExists = [...byId("putawayAuditAisle").options].some((opt) => opt.value === active.sourceAisle);
+      if (aisleExists) byId("putawayAuditAisle").value = active.sourceAisle;
     }
     renderProgress();
   }
