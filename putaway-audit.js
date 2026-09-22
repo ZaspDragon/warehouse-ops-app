@@ -219,7 +219,7 @@
         '<button id="refreshPutawayAuditBtn" type="button">Refresh Locations</button></div>' +
         '<div class="grid">' +
           '<label>Auditor<input id="putawayAuditAuditor" list="workerOptions" placeholder="Auditor name" /></label>' +
-          '<label>Putaway Date to Audit<input id="putawayAuditDate" type="date" /></label>' +
+          '<label>Putaway History Date<select id="putawayAuditDate"><option value="">Load history to choose a date</option></select></label>' +
           '<label>Find Location<input id="putawayAuditSearch" placeholder="A-01-1" /></label>' +
         '</div>' +
         '<div class="stats">' +
@@ -292,10 +292,6 @@
       }
     });
 
-    if (byId("putawayAuditDate") && !byId("putawayAuditDate").value) {
-      byId("putawayAuditDate").value = dateKey(new Date());
-    }
-
     try {
       byId("putawayAuditAuditor").value =
         state.settings?.operatorName || state.user?.email || window.auth?.currentUser?.email || "";
@@ -312,6 +308,89 @@
     if (el) el.textContent = message;
   }
 
+
+  function putawayHistoryDateSummary(docs) {
+    const summary = new Map();
+
+    (docs || []).forEach((doc) => {
+      const data = doc.data ? doc.data() : doc;
+      const sessionDate = String(
+        data.workDate || data.date || data.completedDate || dateKey(data.createdAt) || ""
+      ).slice(0, 10);
+      if (!sessionDate) return;
+
+      const lines = Array.isArray(data.lines) ? data.lines : [];
+      const withLocations = lines.filter((line) =>
+        String(line.location || line.binLocation || line.slot || line.toSlot || "").trim()
+      );
+
+      const current = summary.get(sessionDate) || {
+        date: sessionDate,
+        records: 0,
+        lines: 0,
+        locations: new Set()
+      };
+
+      current.records += 1;
+      current.lines += withLocations.length;
+      withLocations.forEach((line) => {
+        current.locations.add(
+          normalizeLocation(line.location || line.binLocation || line.slot || line.toSlot || "")
+        );
+      });
+      summary.set(sessionDate, current);
+    });
+
+    return [...summary.values()]
+      .map((row) => ({
+        date: row.date,
+        records: row.records,
+        lines: row.lines,
+        locations: row.locations.size
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  function formatHistoryDateLabel(row) {
+    const raw = row?.date || "";
+    let label = raw;
+    const parsed = new Date(raw + "T12:00:00");
+    if (!Number.isNaN(parsed.getTime())) {
+      label = parsed.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      });
+    }
+    return label + " — " + row.locations + " locations / " + row.lines + " putaway lines";
+  }
+
+  function populateAuditHistoryDates() {
+    const select = byId("putawayAuditDate");
+    if (!select) return;
+
+    const dates = putawayHistoryDateSummary(auditState.allDocs || []);
+    const activeDate = auditState.active?.sourceDate || "";
+    const previous = select.value || activeDate;
+
+    select.innerHTML = '<option value="">Choose a date from Putaway History</option>';
+
+    dates.forEach((row) => {
+      const option = document.createElement("option");
+      option.value = row.date;
+      option.textContent = formatHistoryDateLabel(row);
+      select.appendChild(option);
+    });
+
+    if (previous && dates.some((row) => row.date === previous)) {
+      select.value = previous;
+    } else if (dates.length) {
+      select.value = dates[0].date;
+    }
+
+    select.disabled = !dates.length;
+  }
+
   async function loadAuditData() {
     if (auditState.loading) return;
     auditState.loading = true;
@@ -321,15 +400,16 @@
       const [docs, results] = await Promise.all([fetchAllPutawayDocs(), fetchAuditResults()]);
       auditState.allDocs = docs;
       auditState.auditResults = results;
-      applyAuditDateFilter({ silent: true });
       auditState.active = readActive();
+      populateAuditHistoryDates();
+      applyAuditDateFilter({ silent: true });
       renderSummary();
       renderActiveAudit();
       renderLocationHistory();
       setMessage(
         auditState.locations.length
           ? "Loaded " + auditState.locations.length + " unique locations for " + (byId("putawayAuditDate")?.value || "all dates") + "."
-          : "No saved putaway locations found for the selected date."
+          : "No saved putaway locations were found for the selected history date."
       );
     } catch (err) {
       console.error("Putaway audit load failed:", err);
@@ -376,7 +456,7 @@
       setMessage(
         auditState.locations.length
           ? "Found " + auditState.locations.length + " unique putaway locations for " + selectedDate + "."
-          : "No putaway locations were found for " + (selectedDate || "that date") + "."
+          : "No putaway locations were found in History for " + (selectedDate || "that date") + "."
       );
     }
   }
@@ -448,7 +528,7 @@
 
     const selectedDate = byId("putawayAuditDate")?.value || "";
     if (!selectedDate) {
-      setMessage("Choose the putaway date you want to audit first.");
+      setMessage("Choose a date from Putaway History first.");
       byId("putawayAuditDate")?.focus();
       return;
     }
@@ -530,7 +610,8 @@
       byId("putawayAuditAuditor").value = active.auditor || "";
     }
     if (byId("putawayAuditDate") && active.sourceDate) {
-      byId("putawayAuditDate").value = active.sourceDate;
+      const optionExists = [...byId("putawayAuditDate").options].some((opt) => opt.value === active.sourceDate);
+      if (optionExists) byId("putawayAuditDate").value = active.sourceDate;
     }
     renderProgress();
   }
