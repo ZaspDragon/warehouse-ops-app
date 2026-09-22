@@ -7,6 +7,7 @@
   const MAX_HISTORY_ROWS = 5000;
 
   const auditState = {
+    allDocs: [],
     locations: [],
     auditResults: [],
     active: null,
@@ -75,13 +76,14 @@
     });
   }
 
-  function extractLocationRows(docs) {
+  function extractLocationRows(docs, selectedDate = "") {
     const map = new Map();
 
     docs.forEach((doc) => {
       const data = doc.data ? doc.data() : doc;
       const lines = Array.isArray(data.lines) ? data.lines : [];
       const sessionDate = data.workDate || data.date || data.completedDate || dateKey(data.createdAt);
+      if (selectedDate && String(sessionDate || "").slice(0, 10) !== selectedDate) return;
       const worker = data.employeeName || data.worker || data.counter || "";
       const submittedAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : String(data.createdAt || "");
       const putawayNumber = data.putawayNumber || data.sheetNumber || data.documentNumber || "";
@@ -217,6 +219,7 @@
         '<button id="refreshPutawayAuditBtn" type="button">Refresh Locations</button></div>' +
         '<div class="grid">' +
           '<label>Auditor<input id="putawayAuditAuditor" list="workerOptions" placeholder="Auditor name" /></label>' +
+          '<label>Putaway Date to Audit<input id="putawayAuditDate" type="date" /></label>' +
           '<label>Find Location<input id="putawayAuditSearch" placeholder="A-01-1" /></label>' +
         '</div>' +
         '<div class="stats">' +
@@ -227,6 +230,7 @@
         '</div>' +
         '<div class="actions">' +
           '<button id="startPutawayAuditBtn" class="primary" type="button">Start 25 Location Audit</button>' +
+          '<button id="printPutawayAuditBtn" type="button">Print Audit Sheet</button>' +
           '<button id="savePutawayAuditProgressBtn" type="button">Save Progress</button>' +
           '<button id="completePutawayAuditBtn" type="button">Complete Audit</button>' +
           '<button id="cancelPutawayAuditBtn" class="danger" type="button">Cancel Batch</button>' +
@@ -236,7 +240,7 @@
       '<div class="card" id="putawayAuditActiveCard">' +
         '<div class="section-heading"><div><h3>Active 25-Location Audit</h3><p class="hint" id="putawayAuditProgress">0 / 25 checked</p></div></div>' +
         '<div class="table-wrap"><table><thead><tr>' +
-          '<th>#</th><th>Location</th><th>Last Item</th><th>Last Putaway By</th><th>Last Putaway Date</th><th>Result</th><th>Notes</th>' +
+          '<th>#</th><th>Location</th><th>Last Item</th><th>Putaway Qty</th><th>Correct Qty</th><th>Last Putaway By</th><th>Last Putaway Date</th><th>Result</th><th>Notes</th>' +
         '</tr></thead><tbody id="putawayAuditActiveBody"></tbody></table></div>' +
       '</div>' +
       '<div class="card">' +
@@ -262,6 +266,8 @@
 
     byId("refreshPutawayAuditBtn")?.addEventListener("click", loadAuditData);
     byId("startPutawayAuditBtn")?.addEventListener("click", startAudit);
+    byId("printPutawayAuditBtn")?.addEventListener("click", printAuditSheet);
+    byId("putawayAuditDate")?.addEventListener("change", applyAuditDateFilter);
     byId("savePutawayAuditProgressBtn")?.addEventListener("click", () => {
       captureActiveInputs();
       saveActive();
@@ -280,11 +286,15 @@
       }
     });
     byId("putawayAuditActiveBody")?.addEventListener("input", (event) => {
-      if (event.target.matches(".putaway-audit-note")) {
+      if (event.target.matches(".putaway-audit-note, .putaway-audit-correct-qty")) {
         captureActiveInputs();
         saveActive();
       }
     });
+
+    if (byId("putawayAuditDate") && !byId("putawayAuditDate").value) {
+      byId("putawayAuditDate").value = dateKey(new Date());
+    }
 
     try {
       byId("putawayAuditAuditor").value =
@@ -309,16 +319,17 @@
 
     try {
       const [docs, results] = await Promise.all([fetchAllPutawayDocs(), fetchAuditResults()]);
-      auditState.locations = extractLocationRows(docs);
+      auditState.allDocs = docs;
       auditState.auditResults = results;
+      applyAuditDateFilter({ silent: true });
       auditState.active = readActive();
       renderSummary();
       renderActiveAudit();
       renderLocationHistory();
       setMessage(
         auditState.locations.length
-          ? "Loaded " + auditState.locations.length + " unique putaway history locations."
-          : "No saved putaway locations found yet."
+          ? "Loaded " + auditState.locations.length + " unique locations for " + (byId("putawayAuditDate")?.value || "all dates") + "."
+          : "No saved putaway locations found for the selected date."
       );
     } catch (err) {
       console.error("Putaway audit load failed:", err);
@@ -355,6 +366,76 @@
       .slice(0, BATCH_SIZE);
   }
 
+
+  function applyAuditDateFilter(options = {}) {
+    const selectedDate = byId("putawayAuditDate")?.value || "";
+    auditState.locations = extractLocationRows(auditState.allDocs || [], selectedDate);
+    renderSummary();
+    renderLocationHistory();
+    if (!options.silent) {
+      setMessage(
+        auditState.locations.length
+          ? "Found " + auditState.locations.length + " unique putaway locations for " + selectedDate + "."
+          : "No putaway locations were found for " + (selectedDate || "that date") + "."
+      );
+    }
+  }
+
+  function printAuditSheet() {
+    if (!auditState.active?.lines?.length) {
+      setMessage("Start a 25-location audit before printing the audit sheet.");
+      return;
+    }
+
+    captureActiveInputs();
+    saveActive();
+
+    const active = auditState.active;
+    const rows = active.lines.map((line, index) =>
+      "<tr>" +
+        "<td>" + (index + 1) + "</td>" +
+        "<td><strong>" + safe(line.location) + "</strong></td>" +
+        "<td>" + safe(line.latestItem || "") + "</td>" +
+        "<td>" + safe(line.latestQty ?? "") + "</td>" +
+        '<td class="write-box"></td>' +
+        '<td class="check-box">□ Good&nbsp;&nbsp; □ Issue</td>' +
+        '<td class="notes-box"></td>' +
+      "</tr>"
+    ).join("");
+
+    const printWindow = window.open("", "_blank", "width=1100,height=800");
+    if (!printWindow) {
+      setMessage("The browser blocked the print window. Allow pop-ups for this site, then try again.");
+      return;
+    }
+
+    printWindow.document.write(
+      '<!doctype html><html><head><meta charset="utf-8"><title>Putaway Audit - ' + safe(active.sourceDate || "") + '</title>' +
+      '<style>' +
+      '@page{size:landscape;margin:.35in} body{font-family:Arial,sans-serif;color:#111;margin:0} ' +
+      'h1{font-size:22px;margin:0 0 4px} .meta{display:flex;gap:28px;font-size:13px;margin:0 0 10px} ' +
+      'table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px} th,td{border:1px solid #000;padding:5px;vertical-align:middle} ' +
+      'th{background:#eee;font-weight:700} tr{height:28px} ' +
+      'th:nth-child(1),td:nth-child(1){width:4%} th:nth-child(2),td:nth-child(2){width:13%} ' +
+      'th:nth-child(3),td:nth-child(3){width:13%} th:nth-child(4),td:nth-child(4){width:9%} ' +
+      'th:nth-child(5),td:nth-child(5){width:10%} th:nth-child(6),td:nth-child(6){width:17%} ' +
+      'th:nth-child(7),td:nth-child(7){width:34%} .write-box,.notes-box{height:24px} ' +
+      '.footer{margin-top:9px;font-size:11px;display:flex;justify-content:space-between} ' +
+      '@media print{button{display:none}}' +
+      '</style></head><body>' +
+      '<h1>Putaway Audit Sheet</h1>' +
+      '<div class="meta"><strong>Putaway Date: ' + safe(active.sourceDate || "") + '</strong>' +
+      '<span>Auditor: ' + safe(active.auditor || currentAuditor()) + '</span>' +
+      '<span>Batch: ' + safe(active.id || "") + '</span></div>' +
+      '<table><thead><tr><th>#</th><th>Location</th><th>Item #</th><th>Putaway Qty</th><th>Correct Qty</th><th>Result</th><th>Notes / What was wrong?</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>' +
+      '<div class="footer"><span>Completed by: ______________________________</span><span>Date checked: __________________</span></div>' +
+      '<script>window.onload=function(){window.print();}<\/script>' +
+      '</body></html>'
+    );
+    printWindow.document.close();
+  }
+
   function startAudit() {
     if (auditState.active?.lines?.length) {
       setMessage("You already have an active putaway audit. Finish or cancel it before starting another.");
@@ -362,6 +443,13 @@
     }
     if (!auditState.locations.length) {
       setMessage("No putaway history locations are loaded yet.");
+      return;
+    }
+
+    const selectedDate = byId("putawayAuditDate")?.value || "";
+    if (!selectedDate) {
+      setMessage("Choose the putaway date you want to audit first.");
+      byId("putawayAuditDate")?.focus();
       return;
     }
 
@@ -383,10 +471,13 @@
       auditor,
       auditorUid: currentUid(),
       startedAt: new Date().toISOString(),
+      sourceDate: selectedDate,
       lines: selected.map((row, index) => ({
         line: index + 1,
         location: row.location,
         latestItem: row.latestItem,
+        latestQty: row.latestQty,
+        correctQty: "",
         latestWorker: row.latestWorker,
         latestDate: row.latestDate,
         putawayNumber: row.putawayNumber || "",
@@ -397,7 +488,7 @@
 
     saveActive();
     renderActiveAudit();
-    setMessage("Started " + selected.length + "-location putaway audit for " + auditor + ".");
+    setMessage("Started " + selected.length + "-location audit for putaways from " + selectedDate + ".");
   }
 
   function resultOptions(selected) {
@@ -414,7 +505,7 @@
 
     const active = auditState.active;
     if (!active?.lines?.length) {
-      body.innerHTML = '<tr><td colspan="7">No active audit. Click <strong>Start 25 Location Audit</strong> to load the next batch.</td></tr>';
+      body.innerHTML = '<tr><td colspan="9">No active audit. Choose a date, then click <strong>Start 25 Location Audit</strong>.</td></tr>';
       renderProgress();
       return;
     }
@@ -426,6 +517,8 @@
         "<td>" + (index + 1) + "</td>" +
         "<td><strong>" + safe(line.location) + "</strong></td>" +
         "<td>" + safe(line.latestItem || "") + "</td>" +
+        "<td>" + safe(line.latestQty ?? "") + "</td>" +
+        '<td><input class="putaway-audit-correct-qty" type="number" min="0" value="' + safe(line.correctQty ?? "") + '" placeholder="Qty" style="min-width:80px" /></td>' +
         "<td>" + safe(line.latestWorker || "") + "</td>" +
         "<td>" + safe(line.latestDate || "") + "</td>" +
         '<td><select class="putaway-audit-result">' + resultOptions(line.result || "Pending") + "</select></td>" +
@@ -435,6 +528,9 @@
 
     if (byId("putawayAuditAuditor") && !byId("putawayAuditAuditor").value.trim()) {
       byId("putawayAuditAuditor").value = active.auditor || "";
+    }
+    if (byId("putawayAuditDate") && active.sourceDate) {
+      byId("putawayAuditDate").value = active.sourceDate;
     }
     renderProgress();
   }
@@ -446,6 +542,7 @@
       const line = auditState.active.lines[index];
       if (!line) return;
       line.result = row.querySelector(".putaway-audit-result")?.value || "Pending";
+      line.correctQty = row.querySelector(".putaway-audit-correct-qty")?.value ?? "";
       line.notes = row.querySelector(".putaway-audit-note")?.value.trim() || "";
     });
   }
@@ -480,14 +577,15 @@
       auditorUid: currentUid() || auditState.active.auditorUid || "",
       date: dateKey(completedAt),
       item: line.latestItem || "",
-      qty: 0,
+      qty: Number(line.latestQty || 0),
+      correctQty: line.correctQty === "" ? null : Number(line.correctQty),
       location: line.location,
       documentNumber: line.putawayNumber || "",
       status: line.result,
       auditResult: line.result,
       notes: line.notes || "",
       sourceWorker: line.latestWorker || "",
-      sourceDate: line.latestDate || "",
+      sourceDate: auditState.active.sourceDate || line.latestDate || "",
       auditSessionId: sessionId,
       createdAt: completedAt,
       createdBy: currentUid(),
