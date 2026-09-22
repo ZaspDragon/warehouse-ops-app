@@ -457,7 +457,12 @@
     const text = normalizeLocation(location);
     if (!text) return "";
     const match = text.match(/^([A-Z]+)(?=-|\d|$)/);
-    return match ? match[1] : text.split("-")[0];
+    const aisle = match ? match[1] : text.split("-")[0];
+
+    // Group all R-series aisles (R, RA, RB, RC, RD, etc.) into one audit filter.
+    if (/^R[A-Z]*$/.test(aisle)) return "R";
+
+    return aisle;
   }
 
   function populateAuditAisles() {
