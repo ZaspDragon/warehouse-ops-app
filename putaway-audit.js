@@ -245,6 +245,7 @@
           '<th>#</th><th>Location</th><th>Last Item</th><th>Putaway Qty</th><th>Correct Qty</th><th>Last Putaway By</th><th>Last Putaway Date</th><th>Result</th><th>Notes</th>' +
         '</tr></thead><tbody id="putawayAuditActiveBody"></tbody></table></div>' +
         '<div class="actions putaway-audit-submit-row">' +
+          '<button id="savePutawayAuditBottomBtn" type="button">Save All Lines</button>' +
           '<button id="submitPutawayAuditBtn" class="primary putaway-audit-submit-btn" type="button">Submit Audit</button>' +
         '</div>' +
       '</div>' +
@@ -291,12 +292,14 @@
       populateAuditAisles();
     });
     byId("putawayAuditAisle")?.addEventListener("change", applyAuditAisleFilter);
-    byId("savePutawayAuditProgressBtn")?.addEventListener("click", () => {
+    const saveAuditProgress = () => {
       captureActiveInputs();
       saveActive();
       renderActiveAudit();
-      setMessage("Audit progress saved on this device.");
-    });
+      setMessage("All audit lines saved on this device.");
+    };
+    byId("savePutawayAuditProgressBtn")?.addEventListener("click", saveAuditProgress);
+    byId("savePutawayAuditBottomBtn")?.addEventListener("click", saveAuditProgress);
     byId("completePutawayAuditBtn")?.addEventListener("click", completeAudit);
     byId("submitPutawayAuditBtn")?.addEventListener("click", completeAudit);
     byId("cancelPutawayAuditBtn")?.addEventListener("click", cancelAudit);
