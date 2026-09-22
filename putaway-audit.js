@@ -11,6 +11,7 @@
     locations: [],
     auditResults: [],
     active: null,
+    historySessionId: "",
     loading: false
   };
 
@@ -243,6 +244,22 @@
         '<div class="table-wrap"><table><thead><tr>' +
           '<th>#</th><th>Location</th><th>Last Item</th><th>Putaway Qty</th><th>Correct Qty</th><th>Last Putaway By</th><th>Last Putaway Date</th><th>Result</th><th>Notes</th>' +
         '</tr></thead><tbody id="putawayAuditActiveBody"></tbody></table></div>' +
+        '<div class="actions putaway-audit-submit-row">' +
+          '<button id="submitPutawayAuditBtn" class="primary putaway-audit-submit-btn" type="button">Submit Audit</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="section-heading"><div><h3>Putaway Audit History</h3><p class="hint">Completed audit batches can be reviewed from this same tab.</p></div>' +
+        '<button id="refreshPutawayAuditHistoryBtn" type="button">Refresh Audit History</button></div>' +
+        '<div class="grid">' +
+          '<label>Audit Date<input id="putawayAuditHistoryDate" type="date" /></label>' +
+          '<label>Auditor<input id="putawayAuditHistoryAuditor" placeholder="Auditor name" /></label>' +
+          '<label>Aisle<select id="putawayAuditHistoryAisle"><option value="">All aisles</option></select></label>' +
+        '</div>' +
+        '<div class="table-wrap"><table class="putaway-audit-history-table"><thead><tr>' +
+          '<th>Completed</th><th>Putaway Date</th><th>Aisle</th><th>Auditor</th><th>Locations</th><th>Good</th><th>Issues</th><th>Action</th>' +
+        '</tr></thead><tbody id="putawayAuditHistoryBody"></tbody></table></div>' +
+        '<div id="putawayAuditHistoryDetail" class="putaway-audit-history-detail hidden"></div>' +
       '</div>' +
       '<div class="card">' +
         '<div class="section-heading"><div><h3>All Putaway History Locations</h3><p class="hint">One row per unique bin/location found in saved putaway history.</p></div></div>' +
@@ -266,6 +283,7 @@
     });
 
     byId("refreshPutawayAuditBtn")?.addEventListener("click", loadAuditData);
+    byId("refreshPutawayAuditHistoryBtn")?.addEventListener("click", loadAuditData);
     byId("startPutawayAuditBtn")?.addEventListener("click", startAudit);
     byId("printPutawayAuditBtn")?.addEventListener("click", printAuditSheet);
     byId("putawayAuditDate")?.addEventListener("change", () => {
@@ -280,8 +298,16 @@
       setMessage("Audit progress saved on this device.");
     });
     byId("completePutawayAuditBtn")?.addEventListener("click", completeAudit);
+    byId("submitPutawayAuditBtn")?.addEventListener("click", completeAudit);
     byId("cancelPutawayAuditBtn")?.addEventListener("click", cancelAudit);
     byId("putawayAuditSearch")?.addEventListener("input", renderLocationHistory);
+    byId("putawayAuditHistoryDate")?.addEventListener("change", renderAuditHistory);
+    byId("putawayAuditHistoryAuditor")?.addEventListener("input", renderAuditHistory);
+    byId("putawayAuditHistoryAisle")?.addEventListener("change", renderAuditHistory);
+    byId("putawayAuditHistoryBody")?.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-audit-session]");
+      if (btn) showAuditHistoryDetail(btn.dataset.auditSession);
+    });
 
     byId("putawayAuditActiveBody")?.addEventListener("change", (event) => {
       if (event.target.matches(".putaway-audit-result")) {
@@ -411,6 +437,8 @@
       renderSummary();
       renderActiveAudit();
       renderLocationHistory();
+      populateAuditHistoryAisles();
+      renderAuditHistory();
       setMessage(
         auditState.locations.length
           ? "Loaded " + auditState.locations.length + " unique locations for " + (byId("putawayAuditDate")?.value || "all dates") + "."
@@ -734,6 +762,7 @@
       notes: line.notes || "",
       sourceWorker: line.latestWorker || "",
       sourceDate: auditState.active.sourceDate || line.latestDate || "",
+      sourceAisle: auditState.active.sourceAisle || aisleFromLocation(line.location),
       auditSessionId: sessionId,
       createdAt: completedAt,
       createdBy: currentUid(),
@@ -760,7 +789,9 @@
       renderSummary();
       renderActiveAudit();
       renderLocationHistory();
-      setMessage("Audit completed. The next batch will load the next 25 locations.");
+      populateAuditHistoryAisles();
+      renderAuditHistory();
+      setMessage("Audit submitted successfully. It is now saved in Audit History.");
       notify("Putaway audit completed.");
     } catch (err) {
       console.error("Putaway audit save failed:", err);
@@ -780,6 +811,117 @@
     setMessage("Active audit batch canceled.");
   }
 
+  function auditHistoryGroups() {
+    const groups = new Map();
+    (auditState.auditResults || []).forEach((row, index) => {
+      const sessionId = row.auditSessionId || ("legacy-" + index + "-" + String(row.createdAt || row.date || ""));
+      const aisle = row.sourceAisle || aisleFromLocation(row.location);
+      const group = groups.get(sessionId) || {
+        sessionId: sessionId,
+        completedAt: row.createdAt || row.date || "",
+        sourceDate: row.sourceDate || "",
+        sourceAisle: aisle || "",
+        auditor: row.employee || "",
+        rows: []
+      };
+      group.rows.push(row);
+      if (!group.sourceDate && row.sourceDate) group.sourceDate = row.sourceDate;
+      if (!group.sourceAisle && aisle) group.sourceAisle = aisle;
+      if (!group.auditor && row.employee) group.auditor = row.employee;
+      groups.set(sessionId, group);
+    });
+    return [...groups.values()].sort((a,b) => String(b.completedAt || "").localeCompare(String(a.completedAt || "")));
+  }
+
+  function populateAuditHistoryAisles() {
+    const select = byId("putawayAuditHistoryAisle");
+    if (!select) return;
+    const previous = select.value || "";
+    const aisles = [...new Set(auditHistoryGroups().map((g) => g.sourceAisle).filter(Boolean))]
+      .sort((a,b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:"base" }));
+    select.innerHTML = '<option value="">All aisles</option>';
+    aisles.forEach((aisle) => {
+      const option = document.createElement("option");
+      option.value = aisle;
+      option.textContent = "Aisle " + aisle;
+      select.appendChild(option);
+    });
+    if (previous && aisles.includes(previous)) select.value = previous;
+  }
+
+  function renderAuditHistory() {
+    const body = byId("putawayAuditHistoryBody");
+    if (!body) return;
+    const dateFilter = byId("putawayAuditHistoryDate")?.value || "";
+    const auditorFilter = String(byId("putawayAuditHistoryAuditor")?.value || "").trim().toLowerCase();
+    const aisleFilter = byId("putawayAuditHistoryAisle")?.value || "";
+    const groups = auditHistoryGroups().filter((group) => {
+      if (dateFilter && dateKey(group.completedAt) !== dateFilter) return false;
+      if (auditorFilter && !String(group.auditor || "").toLowerCase().includes(auditorFilter)) return false;
+      if (aisleFilter && group.sourceAisle !== aisleFilter) return false;
+      return true;
+    });
+    body.innerHTML = "";
+    if (!groups.length) {
+      body.innerHTML = '<tr><td colspan="8">No completed putaway audits match these filters.</td></tr>';
+      return;
+    }
+    groups.forEach((group) => {
+      const good = group.rows.filter((row) => String(row.auditResult || row.status || "").toLowerCase() === "good").length;
+      const issues = group.rows.length - good;
+      body.insertAdjacentHTML("beforeend",
+        "<tr>" +
+        "<td>" + safe(dateKey(group.completedAt)) + "</td>" +
+        "<td>" + safe(group.sourceDate || "") + "</td>" +
+        "<td>" + safe(group.sourceAisle ? "Aisle " + group.sourceAisle : "All") + "</td>" +
+        "<td>" + safe(group.auditor || "") + "</td>" +
+        "<td>" + safe(group.rows.length) + "</td>" +
+        "<td>" + safe(good) + "</td>" +
+        "<td>" + safe(issues) + "</td>" +
+        '<td><button type="button" class="primary" data-audit-session="' + safe(group.sessionId) + '">View</button></td>' +
+        "</tr>"
+      );
+    });
+  }
+
+  function showAuditHistoryDetail(sessionId) {
+    const detail = byId("putawayAuditHistoryDetail");
+    if (!detail) return;
+    const group = auditHistoryGroups().find((g) => g.sessionId === sessionId);
+    if (!group) return;
+    const rows = [...group.rows].sort((a,b) => naturalLocationCompare({location:a.location},{location:b.location})).map((row,index) =>
+      "<tr>" +
+      "<td>" + (index + 1) + "</td>" +
+      "<td><strong>" + safe(row.location || "") + "</strong></td>" +
+      "<td>" + safe(row.qty ?? "") + "</td>" +
+      "<td>" + safe(row.correctQty ?? "") + "</td>" +
+      "<td>" + safe(row.auditResult || row.status || "") + "</td>" +
+      "<td>" + safe(row.notes || "") + "</td>" +
+      "</tr>"
+    ).join("");
+    detail.innerHTML =
+      '<div class="section-heading"><div><h3>Audit Details</h3><p class="hint">' +
+      safe(group.sourceDate || "") + " · " + safe(group.sourceAisle ? "Aisle " + group.sourceAisle : "All aisles") + " · " + safe(group.auditor || "") +
+      '</p></div><button type="button" id="closePutawayAuditHistoryDetailBtn">Close</button></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>#</th><th>Location</th><th>Putaway Qty</th><th>Correct Qty</th><th>Result</th><th>Notes</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    detail.classList.remove("hidden");
+    byId("closePutawayAuditHistoryDetailBtn")?.addEventListener("click", () => { detail.classList.add("hidden"); detail.innerHTML = ""; });
+  }
+
+  function injectTabletAuditStyles() {
+    if (byId("putawayAuditTabletStyles")) return;
+    const style = document.createElement("style");
+    style.id = "putawayAuditTabletStyles";
+    style.textContent = [
+      "#putawayAuditTab button,#putawayAuditTab input,#putawayAuditTab select{min-height:44px}",
+      "#putawayAuditTab .putaway-audit-submit-row{margin-top:16px;justify-content:flex-end}",
+      "#putawayAuditTab .putaway-audit-submit-btn{font-size:18px;padding:14px 28px;min-width:220px}",
+      "#putawayAuditTab .putaway-audit-history-detail{margin-top:18px;padding-top:14px;border-top:2px solid rgba(128,128,128,.25)}",
+      "@media(max-width:1024px){#putawayAuditTab .grid{grid-template-columns:repeat(2,minmax(0,1fr))}#putawayAuditTab .actions{gap:10px;flex-wrap:wrap}#putawayAuditTab .actions button{flex:1 1 180px;font-size:16px;padding:12px 14px}#putawayAuditActiveCard .table-wrap,#putawayAuditTab .putaway-audit-history-detail .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}#putawayAuditActiveCard table{min-width:1050px}#putawayAuditTab .putaway-audit-history-table{min-width:850px}#putawayAuditActiveBody td{padding:10px 8px}#putawayAuditActiveBody input,#putawayAuditActiveBody select{min-width:120px;font-size:16px}#putawayAuditActiveBody .putaway-audit-note{min-width:220px}}",
+      "@media(max-width:700px){#putawayAuditTab .grid{grid-template-columns:1fr}} "
+    ].join("");
+    document.head.appendChild(style);
+  }
   function renderLocationHistory() {
     const body = byId("putawayAuditLocationsBody");
     if (!body) return;
@@ -813,6 +955,7 @@
 
   function init() {
     injectUi();
+    injectTabletAuditStyles();
   }
 
   if (document.readyState === "loading") {
