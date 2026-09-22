@@ -151,16 +151,40 @@
     return records.filter(inRange).map((record) => ({ ...record, repeat: (occurrences.get(record.item)?.size || 0) > 1 })).sort((a, b) => `${b.date}|${b.doc}`.localeCompare(`${a.date}|${a.doc}`));
   }
 
+  function cycleAisle(countId) {
+    const match = text(countId).toUpperCase().match(/^([A-Z]+)(?:-|$)/);
+    return match ? match[1] : text(countId).toUpperCase();
+  }
+
   function timedCycleRows() {
-    const filtered = records.filter(inRange).sort((a, b) => `${a.date}|${String(a.seconds).padStart(5, "0")}`.localeCompare(`${b.date}|${String(b.seconds).padStart(5, "0")}`));
-    let previous = null;
-    return filtered.map((record) => {
-      const sameDay = previous?.date === record.date;
-      const gapMinutes = sameDay ? (record.seconds - previous.seconds) / 60 : null;
-      const row = { ...record, previousCount: sameDay ? previous.countId : "First count", gapMinutes };
-      previous = record;
+    // Calculate the previous count from ALL saved counts first, so filters do not
+    // change the sequence. A count is only compared with the previous count
+    // from the same date and the same aisle prefix (C, G, RA, etc.).
+    const ordered = [...records].sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare) return dateCompare;
+      const timeCompare = a.seconds - b.seconds;
+      if (timeCompare) return timeCompare;
+      return a.countId.localeCompare(b.countId);
+    });
+
+    const previousByAisle = new Map();
+    const timed = ordered.map((record) => {
+      const aisle = cycleAisle(record.countId);
+      const groupKey = `${record.date}|${aisle}`;
+      const previous = previousByAisle.get(groupKey) || null;
+      const gapMinutes = previous ? (record.seconds - previous.seconds) / 60 : null;
+      const row = {
+        ...record,
+        aisle,
+        previousCount: previous ? previous.countId : "First count",
+        gapMinutes
+      };
+      previousByAisle.set(groupKey, record);
       return row;
     });
+
+    return timed.filter(inRange);
   }
 
   function renderAdjustments() {
