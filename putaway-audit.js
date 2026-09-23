@@ -473,16 +473,41 @@
     if (byId("putawayAuditRemainingCount")) byId("putawayAuditRemainingCount").textContent = Math.max(0, total - audited);
   }
 
+  function previousCalendarDateKey() {
+    const today = dateKey(new Date());
+    const d = new Date(today + "T12:00:00");
+    d.setDate(d.getDate() - 1);
+    return dateKey(d);
+  }
+
+  function auditedLocationKeysForDate(targetDate) {
+    const keys = new Set();
+    (auditState.auditResults || []).forEach((row) => {
+      const auditDate = String(row.date || dateKey(row.createdAt) || "").slice(0, 10);
+      if (auditDate !== targetDate) return;
+      const key = normalizeLocation(row.location);
+      if (key) keys.add(key);
+    });
+    return keys;
+  }
+
   function nextLocationsForAudit() {
     const latest = latestAuditByLocation();
+    const yesterday = previousCalendarDateKey();
+    const auditedYesterday = auditedLocationKeysForDate(yesterday);
 
-    const neverAudited = auditState.locations
+    // Hard rule: never assign a location that was audited yesterday.
+    // If fewer than 25 eligible locations remain, return the smaller batch
+    // rather than recycling yesterday's locations.
+    const eligible = auditState.locations.filter((row) => !auditedYesterday.has(row.key));
+
+    const neverAudited = eligible
       .filter((row) => !latest.has(row.key))
       .sort(naturalLocationCompare);
 
     if (neverAudited.length) return neverAudited.slice(0, BATCH_SIZE);
 
-    return auditState.locations
+    return eligible
       .map((row) => ({
         ...row,
         lastAuditAt: latest.get(row.key)?.createdAt || latest.get(row.key)?.date || ""
@@ -643,7 +668,7 @@
 
     const selected = nextLocationsForAudit();
     if (!selected.length) {
-      setMessage("No locations are available to audit.");
+      setMessage("No eligible locations are available. Locations audited yesterday are intentionally excluded.");
       return;
     }
 
