@@ -493,13 +493,17 @@
 
   function nextLocationsForAudit() {
     const latest = latestAuditByLocation();
+    const today = dateKey(new Date());
     const yesterday = previousCalendarDateKey();
+    const auditedToday = auditedLocationKeysForDate(today);
     const auditedYesterday = auditedLocationKeysForDate(yesterday);
 
-    // Hard rule: never assign a location that was audited yesterday.
+    // Hard rule: never assign a location already audited today or yesterday.
     // If fewer than 25 eligible locations remain, return the smaller batch
-    // rather than recycling yesterday's locations.
-    const eligible = auditState.locations.filter((row) => !auditedYesterday.has(row.key));
+    // rather than recycling a recently audited location.
+    const eligible = auditState.locations.filter(
+      (row) => !auditedToday.has(row.key) && !auditedYesterday.has(row.key)
+    );
 
     const neverAudited = eligible
       .filter((row) => !latest.has(row.key))
@@ -668,7 +672,7 @@
 
     const selected = nextLocationsForAudit();
     if (!selected.length) {
-      setMessage("No eligible locations are available. Locations audited yesterday are intentionally excluded.");
+      setMessage("No eligible locations are available. Locations audited today or yesterday are intentionally excluded.");
       return;
     }
 
