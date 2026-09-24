@@ -607,6 +607,7 @@
       "<tr>" +
         "<td>" + (index + 1) + "</td>" +
         "<td>" + safe(active.sourceDate || line.latestDate || "") + "</td>" +
+        "<td><strong>" + safe(line.latestItem || "") + "</strong></td>" +
         "<td><strong>" + safe(line.location) + "</strong></td>" +
         "<td>" + safe(line.latestQty ?? "") + "</td>" +
         '<td class="check-box">□</td>' +
@@ -626,9 +627,9 @@
       'h1{font-size:22px;margin:0 0 4px} .meta{display:flex;gap:28px;font-size:13px;margin:0 0 10px} ' +
       'table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px} th,td{border:1px solid #000;padding:7px;vertical-align:middle} ' +
       'th{background:#eee;font-weight:700} tr{height:34px} ' +
-      'th:nth-child(1),td:nth-child(1){width:5%} th:nth-child(2),td:nth-child(2){width:20%} ' +
-      'th:nth-child(3),td:nth-child(3){width:40%} th:nth-child(4),td:nth-child(4){width:20%} ' +
-      'th:nth-child(5),td:nth-child(5){width:15%;text-align:center;font-size:22px} ' +
+      'th:nth-child(1),td:nth-child(1){width:5%} th:nth-child(2),td:nth-child(2){width:15%} ' +
+      'th:nth-child(3),td:nth-child(3){width:22%} th:nth-child(4),td:nth-child(4){width:28%} ' +
+      'th:nth-child(5),td:nth-child(5){width:15%} th:nth-child(6),td:nth-child(6){width:15%;text-align:center;font-size:22px} ' +
       '.footer{margin-top:9px;font-size:11px;display:flex;justify-content:space-between} ' +
       '@media print{button{display:none}}' +
       '</style></head><body>' +
@@ -637,7 +638,7 @@
       '<span>Aisle: ' + safe(active.sourceAisle || "All") + '</span>' +
       '<span>Auditor: ' + safe(active.auditor || currentAuditor()) + '</span>' +
       '<span>Batch: ' + safe(active.id || "") + '</span></div>' +
-      '<table><thead><tr><th>#</th><th>Date</th><th>Location</th><th>Quantity</th><th>Check</th></tr></thead>' +
+      '<table><thead><tr><th>#</th><th>Date</th><th>Item Number</th><th>Location</th><th>Quantity</th><th>Check</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table>' +
       '<div class="footer"><span>Completed by: ______________________________</span><span>Audit Date: __________________</span></div>' +
       '<script>window.onload=function(){window.print();}<\/script>' +
