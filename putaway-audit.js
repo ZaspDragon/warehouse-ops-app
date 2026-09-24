@@ -168,6 +168,110 @@
     return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   }
 
+  function buildPutawayItemLookup(docs) {
+    const lookup = new Map();
+
+    (docs || []).forEach((doc) => {
+      const data = doc.data ? doc.data() : doc;
+      const lines = Array.isArray(data.lines) ? data.lines : [];
+      const sessionDate = String(
+        data.workDate || data.date || data.completedDate || dateKey(data.createdAt) || ""
+      ).slice(0, 10);
+      const submittedAt = data.createdAt?.toDate
+        ? data.createdAt.toDate().toISOString()
+        : String(data.createdAt || sessionDate || "");
+      const documentNumber = String(
+        data.putawayNumber || data.sheetNumber || data.documentNumber || ""
+      ).trim();
+
+      lines.forEach((line) => {
+        const location = normalizeLocation(
+          line.location || line.binLocation || line.slot || line.toSlot || ""
+        );
+        const item = String(line.item || line.itemNumber || line.sku || "").trim();
+        if (!location || !item) return;
+
+        const candidate = {
+          item,
+          date: sessionDate,
+          location,
+          documentNumber,
+          submittedAt
+        };
+
+        const keys = [
+          sessionDate + "|" + location,
+          documentNumber ? sessionDate + "|" + location + "|" + documentNumber : "",
+          "ANY|" + location
+        ].filter(Boolean);
+
+        keys.forEach((key) => {
+          const existing = lookup.get(key);
+          if (!existing || String(candidate.submittedAt) >= String(existing.submittedAt)) {
+            lookup.set(key, candidate);
+          }
+        });
+      });
+    });
+
+    return lookup;
+  }
+
+  function recoverAuditItem(row, lookup) {
+    if (String(row.item || row.itemNumber || "").trim()) {
+      return String(row.item || row.itemNumber).trim();
+    }
+
+    const sourceDate = String(row.sourceDate || "").slice(0, 10);
+    const location = normalizeLocation(row.location);
+    const documentNumber = String(row.documentNumber || "").trim();
+    if (!location) return "";
+
+    const exactDocument = documentNumber
+      ? lookup.get(sourceDate + "|" + location + "|" + documentNumber)
+      : null;
+    const exactDate = lookup.get(sourceDate + "|" + location);
+    const anyDate = lookup.get("ANY|" + location);
+
+    return exactDocument?.item || exactDate?.item || anyDate?.item || "";
+  }
+
+  async function backfillLegacyAuditItems(results, docs) {
+    const lookup = buildPutawayItemLookup(docs);
+    const recovered = [];
+
+    (results || []).forEach((row) => {
+      if (String(row.item || row.itemNumber || "").trim()) return;
+      const item = recoverAuditItem(row, lookup);
+      if (!item) return;
+      row.item = item;
+      recovered.push(row);
+    });
+
+    if (!recovered.length) return 0;
+
+    if (isDemo()) {
+      localStorage.setItem(DEMO_RESULTS_KEY, JSON.stringify(results));
+      return recovered.length;
+    }
+
+    if (!window.db) return 0;
+
+    const writable = recovered.filter((row) => row.id);
+    for (let i = 0; i < writable.length; i += 400) {
+      const batch = db.batch();
+      writable.slice(i, i + 400).forEach((row) => {
+        batch.update(db.collection("activityLogs").doc(row.id), {
+          item: row.item,
+          itemBackfilledAt: new Date().toISOString()
+        });
+      });
+      await batch.commit();
+    }
+
+    return writable.length;
+  }
+
   function latestAuditByLocation() {
     const map = new Map();
     auditState.auditResults.forEach((row) => {
@@ -442,6 +546,7 @@
     try {
       const [docs, results] = await Promise.all([fetchAllPutawayDocs(), fetchAuditResults()]);
       auditState.allDocs = docs;
+      await backfillLegacyAuditItems(results, docs);
       auditState.auditResults = results;
       auditState.active = readActive();
       populateAuditHistoryDates();
@@ -938,6 +1043,7 @@
     const rows = [...group.rows].sort((a,b) => naturalLocationCompare({location:a.location},{location:b.location})).map((row,index) =>
       "<tr>" +
       "<td>" + (index + 1) + "</td>" +
+      "<td><strong>" + safe(row.item || row.itemNumber || "Unknown") + "</strong></td>" +
       "<td><strong>" + safe(row.location || "") + "</strong></td>" +
       "<td>" + safe(row.qty ?? "") + "</td>" +
       "<td>" + safe(row.correctQty ?? "") + "</td>" +
@@ -949,7 +1055,7 @@
       '<div class="section-heading"><div><h3>Audit Details</h3><p class="hint">' +
       safe(group.sourceDate || "") + " · " + safe(group.sourceAisle ? "Aisle " + group.sourceAisle : "All aisles") + " · " + safe(group.auditor || "") +
       '</p></div><button type="button" id="closePutawayAuditHistoryDetailBtn">Close</button></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>#</th><th>Location</th><th>Putaway Qty</th><th>Correct Qty</th><th>Result</th><th>Notes</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item Number</th><th>Location</th><th>Putaway Qty</th><th>Correct Qty</th><th>Result</th><th>Notes</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     detail.classList.remove("hidden");
     byId("closePutawayAuditHistoryDetailBtn")?.addEventListener("click", () => { detail.classList.add("hidden"); detail.innerHTML = ""; });
   }
