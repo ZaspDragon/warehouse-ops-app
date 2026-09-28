@@ -455,6 +455,172 @@
     if (el) el.textContent = message;
   }
 
+  function injectHistoryAuditTab() {
+    const historyRoot = byId("historyTab");
+    const nav = historyRoot?.querySelector(".history-tabs");
+    const putawayPanel = byId("putawayHistoryPanel");
+    if (!historyRoot || !nav || !putawayPanel || byId("putawayAuditHistoryPanel")) return;
+
+    const auditButton = document.createElement("button");
+    auditButton.className = "history-tab";
+    auditButton.type = "button";
+    auditButton.dataset.historyTab = "putawayAudit";
+    auditButton.textContent = "Putaway Audit";
+    nav.appendChild(auditButton);
+
+    const panel = document.createElement("section");
+    panel.id = "putawayAuditHistoryPanel";
+    panel.className = "history-panel";
+    panel.innerHTML =
+      '<div class="history-toolbar">' +
+        '<label>Audit Date<input id="historyPutawayAuditDate" type="date" /></label>' +
+        '<label>Auditor<input id="historyPutawayAuditAuditor" placeholder="Auditor name" /></label>' +
+        '<label>Aisle<select id="historyPutawayAuditAisle"><option value="">All aisles</option></select></label>' +
+        '<div class="actions">' +
+          '<button id="historyPutawayAuditSearchBtn" class="primary" type="button">Search / Filter</button>' +
+          '<button id="historyPutawayAuditClearBtn" type="button">Clear Filter</button>' +
+          '<button id="historyPutawayAuditRefreshBtn" type="button">Refresh Audit History</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="stats"><div><strong id="historyPutawayAuditCount">0</strong><span>Submitted Audits</span></div></div>' +
+      '<div class="table-wrap small history-table-wrap"><table class="putaway-audit-history-table"><thead><tr>' +
+        '<th>Completed</th><th>Putaway Date</th><th>Aisle</th><th>Auditor</th><th>Locations</th><th>Good</th><th>Issues</th><th>Action</th>' +
+      '</tr></thead><tbody id="historyPutawayAuditBody"></tbody></table></div>' +
+      '<div id="historyPutawayAuditDetail" class="putaway-audit-history-detail hidden"></div>';
+
+    putawayPanel.insertAdjacentElement("afterend", panel);
+
+    const buttons = [...nav.querySelectorAll(".history-tab")];
+    const panels = [...historyRoot.querySelectorAll(".history-panel")];
+
+    function switchHistoryView(name) {
+      buttons.forEach((btn) => btn.classList.toggle("active", btn.dataset.historyTab === name));
+      panels.forEach((p) => p.classList.toggle("active",
+        (name === "putaway" && p.id === "putawayHistoryPanel") ||
+        (name === "putawayAudit" && p.id === "putawayAuditHistoryPanel")
+      ));
+      if (name === "putawayAudit") {
+        loadAuditData();
+      }
+    }
+
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => switchHistoryView(btn.dataset.historyTab || "putaway"));
+    });
+
+    byId("historyPutawayAuditSearchBtn")?.addEventListener("click", renderHistoryAuditTab);
+    byId("historyPutawayAuditRefreshBtn")?.addEventListener("click", loadAuditData);
+    byId("historyPutawayAuditDate")?.addEventListener("change", renderHistoryAuditTab);
+    byId("historyPutawayAuditAuditor")?.addEventListener("input", renderHistoryAuditTab);
+    byId("historyPutawayAuditAisle")?.addEventListener("change", renderHistoryAuditTab);
+    byId("historyPutawayAuditClearBtn")?.addEventListener("click", () => {
+      if (byId("historyPutawayAuditDate")) byId("historyPutawayAuditDate").value = "";
+      if (byId("historyPutawayAuditAuditor")) byId("historyPutawayAuditAuditor").value = "";
+      if (byId("historyPutawayAuditAisle")) byId("historyPutawayAuditAisle").value = "";
+      renderHistoryAuditTab();
+    });
+    byId("historyPutawayAuditBody")?.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-history-audit-session]");
+      if (btn) showHistoryAuditDetail(btn.dataset.historyAuditSession);
+    });
+  }
+
+  function populateHistoryAuditAisles() {
+    const select = byId("historyPutawayAuditAisle");
+    if (!select) return;
+    const previous = select.value || "";
+    const aisles = [...new Set(auditHistoryGroups().map((g) => g.sourceAisle).filter(Boolean))]
+      .sort((a,b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:"base" }));
+    select.innerHTML = '<option value="">All aisles</option>';
+    aisles.forEach((aisle) => {
+      const option = document.createElement("option");
+      option.value = aisle;
+      option.textContent = "Aisle " + aisle;
+      select.appendChild(option);
+    });
+    if (previous && aisles.includes(previous)) select.value = previous;
+  }
+
+  function renderHistoryAuditTab() {
+    const body = byId("historyPutawayAuditBody");
+    if (!body) return;
+
+    const dateFilter = byId("historyPutawayAuditDate")?.value || "";
+    const auditorFilter = String(byId("historyPutawayAuditAuditor")?.value || "").trim().toLowerCase();
+    const aisleFilter = byId("historyPutawayAuditAisle")?.value || "";
+    const allGroups = auditHistoryGroups();
+
+    if (byId("historyPutawayAuditCount")) byId("historyPutawayAuditCount").textContent = allGroups.length;
+
+    const groups = allGroups.filter((group) => {
+      if (dateFilter && dateKey(group.completedAt) !== dateFilter) return false;
+      if (auditorFilter && !String(group.auditor || "").toLowerCase().includes(auditorFilter)) return false;
+      if (aisleFilter && group.sourceAisle !== aisleFilter) return false;
+      return true;
+    });
+
+    body.innerHTML = "";
+    if (!groups.length) {
+      body.innerHTML = '<tr><td colspan="8">No completed putaway audits match these filters.</td></tr>';
+      return;
+    }
+
+    groups.forEach((group) => {
+      const good = group.rows.filter((row) => String(row.auditResult || row.status || "").toLowerCase() === "good").length;
+      const issues = group.rows.length - good;
+      body.insertAdjacentHTML("beforeend",
+        "<tr>" +
+        "<td>" + safe(dateKey(group.completedAt)) + "</td>" +
+        "<td>" + safe(group.sourceDate || "") + "</td>" +
+        "<td>" + safe(group.sourceAisle ? "Aisle " + group.sourceAisle : "All") + "</td>" +
+        "<td>" + safe(group.auditor || "") + "</td>" +
+        "<td>" + safe(group.rows.length) + "</td>" +
+        "<td>" + safe(good) + "</td>" +
+        "<td>" + safe(issues) + "</td>" +
+        '<td><button type="button" class="primary" data-history-audit-session="' + safe(group.sessionId) + '">View</button></td>' +
+        "</tr>"
+      );
+    });
+  }
+
+  function showHistoryAuditDetail(sessionId) {
+    const detail = byId("historyPutawayAuditDetail");
+    if (!detail) return;
+
+    const group = auditHistoryGroups().find((g) => g.sessionId === sessionId);
+    if (!group) return;
+
+    const rows = [...group.rows]
+      .sort((a,b) => naturalLocationCompare({location:a.location},{location:b.location}))
+      .map((row,index) =>
+        "<tr>" +
+        "<td>" + (index + 1) + "</td>" +
+        "<td><strong>" + safe(row.item || row.itemNumber || "Unknown") + "</strong></td>" +
+        "<td><strong>" + safe(row.location || "") + "</strong></td>" +
+        "<td>" + safe(row.qty ?? "") + "</td>" +
+        "<td>" + safe(row.correctQty ?? "") + "</td>" +
+        "<td>" + safe(row.auditResult || row.status || "") + "</td>" +
+        "<td>" + safe(row.notes || "") + "</td>" +
+        "</tr>"
+      ).join("");
+
+    detail.innerHTML =
+      '<div class="section-heading"><div><h3>Audit Details</h3><p class="hint">' +
+      safe(group.sourceDate || "") + " · " +
+      safe(group.sourceAisle ? "Aisle " + group.sourceAisle : "All aisles") + " · " +
+      safe(group.auditor || "") +
+      '</p></div><button type="button" id="closeHistoryPutawayAuditDetailBtn">Close</button></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item Number</th><th>Location</th><th>Putaway Qty</th><th>Correct Qty</th><th>Result</th><th>Notes</th></tr></thead><tbody>' +
+      rows +
+      '</tbody></table></div>';
+
+    detail.classList.remove("hidden");
+    byId("closeHistoryPutawayAuditDetailBtn")?.addEventListener("click", () => {
+      detail.classList.add("hidden");
+      detail.innerHTML = "";
+    });
+  }
+
 
   function putawayHistoryDateSummary(docs) {
     const summary = new Map();
@@ -556,6 +722,8 @@
       renderLocationHistory();
       populateAuditHistoryAisles();
       renderAuditHistory();
+      populateHistoryAuditAisles();
+      renderHistoryAuditTab();
       setMessage(
         auditState.locations.length
           ? "Loaded " + auditState.locations.length + " unique locations for " + (byId("putawayAuditDate")?.value || "all dates") + "."
@@ -939,6 +1107,8 @@
       renderLocationHistory();
       populateAuditHistoryAisles();
       renderAuditHistory();
+      populateHistoryAuditAisles();
+      renderHistoryAuditTab();
       setMessage("Audit submitted successfully. It is now saved in Audit History.");
       notify("Putaway audit completed.");
     } catch (err) {
@@ -1068,7 +1238,8 @@
       "#putawayAuditTab button,#putawayAuditTab input,#putawayAuditTab select{min-height:44px}",
       "#putawayAuditTab .putaway-audit-submit-row{margin-top:16px;justify-content:flex-end}",
       "#putawayAuditTab .putaway-audit-submit-btn{font-size:18px;padding:14px 28px;min-width:220px}",
-      "#putawayAuditTab .putaway-audit-history-detail{margin-top:18px;padding-top:14px;border-top:2px solid rgba(128,128,128,.25)}",
+      "#putawayAuditTab .putaway-audit-history-detail,#putawayAuditHistoryPanel .putaway-audit-history-detail{margin-top:18px;padding-top:14px;border-top:2px solid rgba(128,128,128,.25)}",
+      "#putawayAuditHistoryPanel button,#putawayAuditHistoryPanel input,#putawayAuditHistoryPanel select{min-height:40px}",
       "@media(max-width:1024px){#putawayAuditTab .grid{grid-template-columns:repeat(2,minmax(0,1fr))}#putawayAuditTab .actions{gap:10px;flex-wrap:wrap}#putawayAuditTab .actions button{flex:1 1 180px;font-size:16px;padding:12px 14px}#putawayAuditActiveCard .table-wrap,#putawayAuditTab .putaway-audit-history-detail .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}#putawayAuditActiveCard table{min-width:1050px}#putawayAuditTab .putaway-audit-history-table{min-width:850px}#putawayAuditActiveBody td{padding:10px 8px}#putawayAuditActiveBody input,#putawayAuditActiveBody select{min-width:120px;font-size:16px}#putawayAuditActiveBody .putaway-audit-note{min-width:220px}}",
       "@media(max-width:700px){#putawayAuditTab .grid{grid-template-columns:1fr}} "
     ].join("");
@@ -1107,6 +1278,7 @@
 
   function init() {
     injectUi();
+    injectHistoryAuditTab();
     injectTabletAuditStyles();
   }
 
