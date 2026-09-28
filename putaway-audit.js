@@ -360,7 +360,7 @@
           '<div><strong id="putawayAuditHistoryCount">0</strong><span>Submitted Audits</span></div>' +
         '</div>' +
         '<div class="grid">' +
-          '<label>Audit Date<input id="putawayAuditHistoryDate" type="date" /></label>' +
+          '<label>Start Date<input id="putawayAuditHistoryStartDate" type="date" /></label><label>End Date<input id="putawayAuditHistoryEndDate" type="date" /></label>' +
           '<label>Auditor<input id="putawayAuditHistoryAuditor" placeholder="Auditor name" /></label>' +
           '<label>Aisle<select id="putawayAuditHistoryAisle"><option value="">All aisles</option></select></label>' +
         '</div>' +
@@ -393,7 +393,8 @@
     byId("refreshPutawayAuditBtn")?.addEventListener("click", loadAuditData);
     byId("refreshPutawayAuditHistoryBtn")?.addEventListener("click", loadAuditData);
     byId("clearPutawayAuditHistoryFiltersBtn")?.addEventListener("click", () => {
-      if (byId("putawayAuditHistoryDate")) byId("putawayAuditHistoryDate").value = "";
+      if (byId("putawayAuditHistoryStartDate")) byId("putawayAuditHistoryStartDate").value = "";
+      if (byId("putawayAuditHistoryEndDate")) byId("putawayAuditHistoryEndDate").value = "";
       if (byId("putawayAuditHistoryAuditor")) byId("putawayAuditHistoryAuditor").value = "";
       if (byId("putawayAuditHistoryAisle")) byId("putawayAuditHistoryAisle").value = "";
       renderAuditHistory();
@@ -417,7 +418,8 @@
     byId("submitPutawayAuditBtn")?.addEventListener("click", completeAudit);
     byId("cancelPutawayAuditBtn")?.addEventListener("click", cancelAudit);
     byId("putawayAuditSearch")?.addEventListener("input", renderLocationHistory);
-    byId("putawayAuditHistoryDate")?.addEventListener("change", renderAuditHistory);
+    byId("putawayAuditHistoryStartDate")?.addEventListener("change", renderAuditHistory);
+    byId("putawayAuditHistoryEndDate")?.addEventListener("change", renderAuditHistory);
     byId("putawayAuditHistoryAuditor")?.addEventListener("input", renderAuditHistory);
     byId("putawayAuditHistoryAisle")?.addEventListener("change", renderAuditHistory);
     byId("putawayAuditHistoryBody")?.addEventListener("click", (event) => {
@@ -473,7 +475,7 @@
     panel.className = "history-panel";
     panel.innerHTML =
       '<div class="history-toolbar">' +
-        '<label>Audit Date<input id="historyPutawayAuditDate" type="date" /></label>' +
+        '<label>Start Date<input id="historyPutawayAuditStartDate" type="date" /></label><label>End Date<input id="historyPutawayAuditEndDate" type="date" /></label>' +
         '<label>Auditor<input id="historyPutawayAuditAuditor" placeholder="Auditor name" /></label>' +
         '<label>Aisle<select id="historyPutawayAuditAisle"><option value="">All aisles</option></select></label>' +
         '<div class="actions">' +
@@ -510,11 +512,13 @@
 
     byId("historyPutawayAuditSearchBtn")?.addEventListener("click", renderHistoryAuditTab);
     byId("historyPutawayAuditRefreshBtn")?.addEventListener("click", loadAuditData);
-    byId("historyPutawayAuditDate")?.addEventListener("change", renderHistoryAuditTab);
+    byId("historyPutawayAuditStartDate")?.addEventListener("change", renderHistoryAuditTab);
+    byId("historyPutawayAuditEndDate")?.addEventListener("change", renderHistoryAuditTab);
     byId("historyPutawayAuditAuditor")?.addEventListener("input", renderHistoryAuditTab);
     byId("historyPutawayAuditAisle")?.addEventListener("change", renderHistoryAuditTab);
     byId("historyPutawayAuditClearBtn")?.addEventListener("click", () => {
-      if (byId("historyPutawayAuditDate")) byId("historyPutawayAuditDate").value = "";
+      if (byId("historyPutawayAuditStartDate")) byId("historyPutawayAuditStartDate").value = "";
+      if (byId("historyPutawayAuditEndDate")) byId("historyPutawayAuditEndDate").value = "";
       if (byId("historyPutawayAuditAuditor")) byId("historyPutawayAuditAuditor").value = "";
       if (byId("historyPutawayAuditAisle")) byId("historyPutawayAuditAisle").value = "";
       renderHistoryAuditTab();
@@ -545,7 +549,8 @@
     const body = byId("historyPutawayAuditBody");
     if (!body) return;
 
-    const dateFilter = byId("historyPutawayAuditDate")?.value || "";
+    const startDateFilter = byId("historyPutawayAuditStartDate")?.value || "";
+    const endDateFilter = byId("historyPutawayAuditEndDate")?.value || "";
     const auditorFilter = String(byId("historyPutawayAuditAuditor")?.value || "").trim().toLowerCase();
     const aisleFilter = byId("historyPutawayAuditAisle")?.value || "";
     const allGroups = auditHistoryGroups();
@@ -553,7 +558,9 @@
     if (byId("historyPutawayAuditCount")) byId("historyPutawayAuditCount").textContent = allGroups.length;
 
     const groups = allGroups.filter((group) => {
-      if (dateFilter && dateKey(group.completedAt) !== dateFilter) return false;
+      const completedDate = dateKey(group.completedAt);
+      if (startDateFilter && (!completedDate || completedDate < startDateFilter)) return false;
+      if (endDateFilter && (!completedDate || completedDate > endDateFilter)) return false;
       if (auditorFilter && !String(group.auditor || "").toLowerCase().includes(auditorFilter)) return false;
       if (aisleFilter && group.sourceAisle !== aisleFilter) return false;
       return true;
@@ -1170,14 +1177,17 @@
   function renderAuditHistory() {
     const body = byId("putawayAuditHistoryBody");
     if (!body) return;
-    const dateFilter = byId("putawayAuditHistoryDate")?.value || "";
+    const startDateFilter = byId("putawayAuditHistoryStartDate")?.value || "";
+    const endDateFilter = byId("putawayAuditHistoryEndDate")?.value || "";
     const auditorFilter = String(byId("putawayAuditHistoryAuditor")?.value || "").trim().toLowerCase();
     const aisleFilter = byId("putawayAuditHistoryAisle")?.value || "";
     const allGroups = auditHistoryGroups();
     if (byId("putawayAuditHistoryCount")) byId("putawayAuditHistoryCount").textContent = allGroups.length;
 
     const groups = allGroups.filter((group) => {
-      if (dateFilter && dateKey(group.completedAt) !== dateFilter) return false;
+      const completedDate = dateKey(group.completedAt);
+      if (startDateFilter && (!completedDate || completedDate < startDateFilter)) return false;
+      if (endDateFilter && (!completedDate || completedDate > endDateFilter)) return false;
       if (auditorFilter && !String(group.auditor || "").toLowerCase().includes(auditorFilter)) return false;
       if (aisleFilter && group.sourceAisle !== aisleFilter) return false;
       return true;
