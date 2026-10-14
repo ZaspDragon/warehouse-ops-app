@@ -11,9 +11,9 @@
   function parseLabel(text) {
     const lines = text.toUpperCase().split(/\n+/).map(s=>s.trim()).filter(Boolean);
     const normalized = lines.map(s=>s.replace(/\s/g, "").replace(/[.·]/g,"-"));
-    const itemLine = normalized.find(s=>/\b\d{6}\b/.test(s)) || "";
+    const itemLine = normalized.find(s=>/\d{6}/.test(s)) || "";
     const item = (itemLine.match(/\d{6}/) || [""])[0];
-    const locLine = normalized.find(s=>/^[A-Z]{1,2}-?\d{2}(?:-?\d{1,2})?$/.test(s)) || "";
+    const locLine = normalized.find(s=>/^[A-Z]{1,2}-?\d{2}(?:-?\d{1,2})?$/.test(s)) || normalized.find(s=>/[A-Z]{1,2}-\d{2}-\d{1,2}/.test(s)) || "";
     const locMatch = locLine.match(/([A-Z]{1,2})[-]?(\d{2})(?:[-]?(\d{1,2}))?/);
     const location = locMatch ? locMatch.slice(1).filter(Boolean).join("-") : "";
     const afterLoc = normalized.indexOf(locLine);
@@ -50,6 +50,31 @@
     byId("cameraBatchCount").textContent=batch.length+" / "+MAX+" labels";
     byId("cameraBatchSubmit").disabled= !batch.length || batch.some(r=>!ready(r));
   }
+  function addManualLabel(){
+    if(batch.length>=MAX)return info("Batch is full. Review and submit before adding more.");
+    rackTarget=null;
+    batch.push({item:"",location:"",qty:"",po:"",reviewed:false,rackVerified:false,rackRead:"",raw:"Manual correction",id:crypto.randomUUID?.()||String(Date.now()+Math.random())});
+    redraw();
+    info("Blank label added. Enter the four values, scan the actual rack magnet, and verify before submitting.");
+    byId("cameraBatchRows")?.lastElementChild?.querySelector('input[data-key="item"]')?.focus();
+  }
+  function enhancedFrame(video){
+    // Enlarge the center area where employees aim the handwritten sticker.
+    const w=video.videoWidth,h=video.videoHeight;
+    const canvas=document.createElement("canvas");
+    const cropW=Math.round(w*.78),cropH=Math.round(h*.78);
+    canvas.width=Math.min(2200,cropW*2);canvas.height=Math.min(2200,cropH*2);
+    const ctx=canvas.getContext("2d",{willReadFrequently:true});
+    ctx.drawImage(video,(w-cropW)/2,(h-cropH)/2,cropW,cropH,0,0,canvas.width,canvas.height);
+    const image=ctx.getImageData(0,0,canvas.width,canvas.height);
+    for(let i=0;i<image.data.length;i+=4){
+      const gray=.299*image.data[i]+.587*image.data[i+1]+.114*image.data[i+2];
+      const value=gray<145?0:255;
+      image.data[i]=image.data[i+1]=image.data[i+2]=value;
+    }
+    ctx.putImageData(image,0,0);
+    return canvas;
+  }
   async function capture() {
     if(scanning || !stream || batch.length>=MAX)return;
     scanning=true;
@@ -59,7 +84,20 @@
       canvas.width=video.videoWidth;canvas.height=video.videoHeight;
       canvas.getContext("2d").drawImage(video,0,0);
       if(!worker)worker=await Tesseract.createWorker("eng");
-      const result=await worker.recognize(canvas);
+      let result=await worker.recognize(canvas);
+      // Handwriting is difficult for standard OCR; try a contrast-enhanced crop
+      // before declaring the label unreadable.
+      if(rackTarget===null){
+        const first=parseLabel(result.data.text || "");
+        if(!first.item || !first.location || !first.qty){
+          const second=await worker.recognize(enhancedFrame(video));
+          const alt=parseLabel(second.data.text || "");
+          if([alt.item,alt.location,alt.qty,alt.po].filter(Boolean).length >
+             [first.item,first.location,first.qty,first.po].filter(Boolean).length){
+            result=second;
+          }
+        }
+      }
       if(rackTarget!==null){
         const target=rackTarget, record=batch[target];
         if(!record){rackTarget=null;info("That label is no longer in the batch.");return;}
@@ -82,7 +120,7 @@
       }
       const row=parseLabel(result.data.text);
       if(!row.item && !row.location && !row.qty && !row.po) {
-        info("Could not read this label. Adjust lighting and try again.");return;
+        info("Handwriting not recognized. Tap Add label manually to enter it, or move closer and tap Scan now.");return;
       }
       const fingerprint=[row.item,row.location,row.qty,row.po].join("|");
       if(batch.some(r=>[r.item,r.location,r.qty,r.po].join("|")===fingerprint)){
@@ -149,7 +187,7 @@
     section.hidden=true;section.style.display="none";
     section.style.marginTop="16px";
     section.innerHTML='<h3>Camera Batch Scanner</h3><p class="hint">Scan up to 25 receiving labels continuously. Scan each actual rack magnet and review every handwritten field before submitting through the existing Put Away Log. Photos stay on this device and are not uploaded.</p>'+
-      '<div class="actions"><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button></div>'+
+      '<div class="actions"><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button><button type="button" id="cameraBatchManual">+ Add label manually</button></div>'+
       '<video id="cameraBatchVideo" playsinline muted style="width:100%;max-height:330px;background:#111;border-radius:8px;object-fit:contain"></video>'+
       '<p class="hint" id="cameraBatchStatus" role="status">Camera is stopped.</p><strong id="cameraBatchCount">0 / 25 labels</strong>'+
       '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item #</th><th>Location</th><th>Qty</th><th>Purchase order</th><th>Rack magnet</th><th>Review</th><th></th></tr></thead><tbody id="cameraBatchRows"></tbody></table></div>'+
@@ -167,6 +205,7 @@
     });
     byId("cameraBatchStart").addEventListener("click",start);
     byId("cameraBatchCapture").addEventListener("click",capture);
+    byId("cameraBatchManual").addEventListener("click",addManualLabel);
     byId("cameraBatchClear").addEventListener("click",()=>{if(batch.length&&!confirm("Discard all scanned labels?"))return;batch.length=0;rackTarget=null;redraw();info("Batch cleared.");});
     byId("cameraBatchSubmit").addEventListener("click",submit);
     byId("cameraBatchRows").addEventListener("change",(e)=>{
