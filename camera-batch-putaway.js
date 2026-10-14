@@ -9,17 +9,31 @@
   const escapeHTML = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const info = (s) => { byId("cameraBatchStatus").textContent = s; };
   function parseLabel(text) {
-    const lines = text.toUpperCase().split(/\n+/).map(s=>s.trim()).filter(Boolean);
-    const normalized = lines.map(s=>s.replace(/\s/g, "").replace(/[.·]/g,"-"));
-    const itemLine = normalized.find(s=>/\d{6}/.test(s)) || "";
-    const item = (itemLine.match(/\d{6}/) || [""])[0];
-    const locLine = normalized.find(s=>/^[A-Z]{1,2}-?\d{2}(?:-?\d{1,2})?$/.test(s)) || normalized.find(s=>/[A-Z]{1,2}-\d{2}-\d{1,2}/.test(s)) || "";
-    const locMatch = locLine.match(/([A-Z]{1,2})[-]?(\d{2})(?:[-]?(\d{1,2}))?/);
-    const location = locMatch ? locMatch.slice(1).filter(Boolean).join("-") : "";
-    const afterLoc = normalized.indexOf(locLine);
-    const qtyLine = normalized.slice(afterLoc + 1).find(s=>/^\d{1,4}$/.test(s)) || "";
-    const poLine = normalized.find(s=>/^(SP|PO|SPO|EDI|XFR)[A-Z0-9-]{4,}$/.test(s)) || "";
-    return {item, location, qty:qtyLine, po:poLine, reviewed:false, itemConfirmed:false, rackVerified:false, rackRead:"", raw:text, id:crypto.randomUUID?.() || String(Date.now()+Math.random())};
+    // Receiving sticker layout: first line item, second location, third quantity.
+    // A fourth line may contain the purchase order. Keep uncertain values blank.
+    const lines=String(text||"").toUpperCase().split(/\n+/)
+      .map(x=>x.trim().replace(/[.·]/g,"-")).filter(Boolean);
+    const itemFrom=line=>{
+      const condensed=line.replace(/\s/g,"");
+      return /^\d{6}$/.test(condensed)?condensed:"";
+    };
+    const locationFrom=line=>{
+      const value=line.replace(/\s/g,"").replace(/[—–]/g,"-");
+      const match=value.match(/^([A-Z]{1,2})-?(\d{2})(?:-?(\d{1,2}))?$/);
+      return match?match.slice(1).filter(Boolean).join("-"):"";
+    };
+    const qtyFrom=line=>{
+      const value=line.replace(/\s/g,"");
+      return /^\d{1,4}$/.test(value)&&Number(value)>0?value:"";
+    };
+    // Locate the sticker's distinctive location row to avoid reading package
+    // descriptions, carton counts and large pink stickers as quantity.
+    const locIndex=lines.findIndex(locationFrom);
+    const location=locIndex>=0?locationFrom(lines[locIndex]):"";
+    const item=locIndex>0?itemFrom(lines[locIndex-1]):(locIndex<0?itemFrom(lines[0]||""):"");
+    const qty=locIndex>=0?qtyFrom(lines[locIndex+1]||""):"";
+    const po=locIndex>=0?lines.slice(locIndex+2).map(x=>x.replace(/\s/g,"")).find(x=>/^(?:SP|SPO|PO|XFR|EDI)[A-Z0-9-]{4,}$/.test(x))||"":"";
+    return {item,location,qty,po,reviewed:false,itemConfirmed:false,rackVerified:false,rackRead:"",raw:text,id:crypto.randomUUID?.()||String(Date.now()+Math.random())};
   }
   function normalLocation(value) {
     const clean=field(value).replace(/[\s_]/g,"").replace(/[—–]/g,"-").replace(/[.]/g,"-");
@@ -32,7 +46,7 @@
       .map(normalLocation).filter(Boolean);
     return [...new Set(candidates)];
   }
-  function valid(row) {return /^\d{6}$/.test(row.item) && Boolean(normalLocation(row.location)) && /^\d+$/.test(row.qty) && Number(row.qty) > 0 && Boolean(row.po);}
+  function valid(row) {return /^\d{6}$/.test(row.item) && Boolean(normalLocation(row.location)) && /^\d+$/.test(row.qty) && Number(row.qty) > 0;}
   function ready(row) {return valid(row) && row.reviewed && row.itemConfirmed === true && row.rackVerified && row.rackRead===normalLocation(row.location);}
   function redraw() {
     const body=byId("cameraBatchRows");
