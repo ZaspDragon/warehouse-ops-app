@@ -120,6 +120,16 @@
         return;
       }
       const row=parseLabel(result.data.text);
+      // Do not silently accept disagreeing OCR readings of the same label.
+      // The employee must correct and confirm an uncertain item number.
+      if(row.item){
+        const crosscheck=await worker.recognize(enhancedFrame(video));
+        const secondItem=parseLabel(crosscheck.data.text || "").item;
+        if(secondItem && secondItem!==row.item){
+          row.raw+=" | Alternate item reading: "+secondItem;
+          row.item="";
+        }
+      }
       if(!row.item && !row.location && !row.qty && !row.po) {
         info("Handwriting not recognized. Tap Add label manually to enter it, or move closer and tap Scan now.");return;
       }
