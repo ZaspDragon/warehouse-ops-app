@@ -13,7 +13,7 @@
     const normalized = lines.map(s=>s.replace(/\s/g, "").replace(/[.·]/g,"-"));
     const itemLine = normalized.find(s=>/\b\d{6}\b/.test(s)) || "";
     const item = (itemLine.match(/\d{6}/) || [""])[0];
-    const locLine = normalized.find(s=>/[A-Z][-]?\d{2}[-]?\d{1,2}/.test(s)) || "";
+    const locLine = normalized.find(s=>/^[A-Z]{1,2}-?\d{2}(?:-?\d{1,2})?$/.test(s)) || "";
     const locMatch = locLine.match(/([A-Z]{1,2})[-]?(\d{2})(?:[-]?(\d{1,2}))?/);
     const location = locMatch ? locMatch.slice(1).filter(Boolean).join("-") : "";
     const afterLoc = normalized.indexOf(locLine);
@@ -44,7 +44,7 @@
         '<td><button type="button" data-rack="'+i+'">Scan magnet</button><small style="display:block">'+escapeHTML(r.rackVerified ? "✓ " + r.rackRead : (r.rackRead ? "Mismatch: " + r.rackRead : "Not scanned"))+'</small></td>' +
         '<td><label><input type="checkbox" data-review="'+i+'" '+(r.reviewed?'checked':'')+' /> Verified</label></td>' +
         '<td><button type="button" data-remove="'+i+'">Remove</button></td>';
-      if(!valid(r)) tr.style.background="rgba(245,158,11,.13)";
+      if(!valid(r) || !r.rackVerified) tr.style.background="rgba(245,158,11,.13)";
       body.appendChild(tr);
     });
     byId("cameraBatchCount").textContent=batch.length+" / "+MAX+" labels";
@@ -108,7 +108,7 @@
       const v=byId("cameraBatchVideo");v.srcObject=stream;await v.play();
       active=true;byId("cameraBatchStart").textContent="Pause camera";
       info("Camera ready. Hold each label steady, then move to the next.");
-      timer=setInterval(()=>{if(active&&!scanning&&batch.length<MAX)capture();},3500);
+      timer=setInterval(()=>{if(active && rackTarget===null && !scanning && batch.length<MAX)capture();},3500);
     }catch(e){info("Camera unavailable: "+e.message);stop();}
   }
   async function submit(){
@@ -170,6 +170,7 @@
     });
     byId("cameraBatchRows").addEventListener("click",(e)=>{
       if(e.target.dataset.rack!==undefined){
+        if(rackTarget===Number(e.target.dataset.rack)){rackTarget=null;info("Rack scan cancelled. Receiving scan resumed.");return;}
         rackTarget=Number(e.target.dataset.rack);
         if(!batch[rackTarget]){rackTarget=null;return;}
         info("Rack verification for label #"+(rackTarget+1)+": aim at its physical location magnet, then tap Scan now. Receiving capture is paused until the magnet matches.");
