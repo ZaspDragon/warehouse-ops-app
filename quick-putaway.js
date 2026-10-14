@@ -5,12 +5,12 @@ const key="warehouseOps_quickPutaway_reference_OH01_v1";
 let catalog={};let stream=null,detector=null;
 function msg(t){$("quickStatus").textContent=t;}
 function normalize(x){return String(x||"").trim().toUpperCase().replace(/\s/g,"");}
-function location(x){const v=normalize(x);return /^[A-Z]{1,2}-\d{2}(?:-\d{1,2})?$/.test(v)?v:"";}
+function location(x){const v=String(x||"").trim().toUpperCase().replace(/\s+/g," ");return /^[A-Z0-9][A-Z0-9 -]{0,23}$/.test(v)?v:"";}
 function load(){try{catalog=JSON.parse(localStorage.getItem(key)||"{}");}catch{catalog={};}msg(Object.keys(catalog).length+" reference items on this device. No live BinMgr connection.");}
 function lookup(){
  const item=normalize($("quickItem").value),bin=catalog[item]||"";
  $("quickBin").value=bin;
- $("quickAdd").disabled=!(/^\d{6}$/.test(item)&&bin);
+ $("quickAdd").disabled=!(/^\d{6,12}$/.test(item)&&bin);
  msg(bin?"Primary bin found in imported reference. Confirm item and quantity before adding.":"No primary bin found. Import an authorized item/bin export to use Quick Putaway.");
 }
 async function importFile(file){
@@ -18,18 +18,18 @@ async function importFile(file){
  const text=await file.text();const rows=text.replace(/^\uFEFF/,"").split(/\r?\n/).filter(x=>x.trim());
  const split=line=>line.split(/,|\t/).map(x=>x.trim().replace(/^"|"$/g,""));
  const headers=split(rows.shift()).map(x=>x.toLowerCase().replace(/[^a-z0-9]/g,""));
- const ix=headers.findIndex(x=>["item","itemnumber","itemno","sku","chadwellitem"].includes(x));
+ const ix=headers.findIndex(x=>["item","itemnumber","itemnmbr","itemno","sku","chadwellitem"].includes(x));
  const bx=headers.findIndex(x=>["primarybin","primarylocation","bin","binlocation","location"].includes(x));
  if(ix<0||bx<0){msg("Import requires Item Number and Primary Bin columns.");return;}
- const next={};let conflicts=0;
- rows.forEach(line=>{const cols=split(line),item=normalize(cols[ix]),bin=location(cols[bx]);if(!/^\d{6}$/.test(item)||!bin)return;if(next[item]&&next[item]!==bin){delete next[item];conflicts++;return;}next[item]=bin;});
+ const next={};const ambiguous=new Set();let conflicts=0;
+ rows.forEach(line=>{const cols=split(line),item=normalize(cols[ix]),bin=location(cols[bx]);if(!/^\d{6,12}$/.test(item)||!bin||ambiguous.has(item))return;if(next[item]&&next[item]!==bin){delete next[item];ambiguous.add(item);conflicts++;return;}next[item]=bin;});
  if(!Object.keys(next).length){msg("No valid item-to-primary-bin rows found.");return;}
  if(!confirm("Replace this device's local reference list with "+Object.keys(next).length+" items? Existing putaway history is not affected."))return;
- catalog=next;localStorage.setItem(key,JSON.stringify(catalog));msg("Imported "+Object.keys(catalog).length+" items. "+conflicts+" conflicting rows excluded.");lookup();
+ catalog=next;localStorage.setItem(key,JSON.stringify(catalog));msg("Imported "+Object.keys(catalog).length+" items. "+conflicts+" items with conflicting primaries excluded.");lookup();
 }
 function add(){
  const item=normalize($("quickItem").value),bin=location($("quickBin").value),qty=Number($("quickQty").value);
- if(!/^\d{6}$/.test(item)||!bin||catalog[item]!==bin||!Number.isInteger(qty)||qty<=0)return msg("Enter a valid item, imported primary bin and positive whole-number quantity.");
+ if(!/^\d{6,12}$/.test(item)||!bin||catalog[item]!==bin||!Number.isInteger(qty)||qty<=0)return msg("Enter a valid item, imported primary bin and positive whole-number quantity.");
  if(!$("quickConfirm").checked)return msg("Visually confirm the item number printed on the box.");
  const rows=[...document.querySelectorAll("#putawayBody tr")];
  const empty=rows.find(row=>![".put-item",".put-qty",".put-location",".put-notes"].some(sel=>row.querySelector(sel)?.value.trim()));
@@ -61,9 +61,9 @@ function setup(){
  const button=document.createElement("button");button.type="button";button.className="primary";button.textContent="Quick Putaway · Item #";button.id="openQuickPutaway";button.style.marginLeft="8px";
  target.insertAdjacentElement("afterend",button);
  const panel=document.createElement("section");panel.className="card";panel.id="quickPutaway";panel.hidden=true;panel.style.display="none";
- panel.innerHTML='<h3>Quick Putaway · Item Number</h3><p class="hint">Read-only reference mode: import an approved CSV/TSV with Item Number and Primary Bin columns. No live BinMgr sync or inventory changes.</p>'+
+ panel.innerHTML='<h3>Quick Putaway · Item Number</h3><p class="hint">Read-only reference mode: import an approved CSV/TSV with Item Number and Primary Bin columns. No live BinMgr sync or inventory changes. This report includes primary-bin assignments, not manufacturer UPC mappings.</p>'+
  '<label>Load item/primary-bin reference (local to this device)<input id="quickFile" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values"></label>'+
- '<div class="grid"><label>Chadwell item number<input id="quickItem" inputmode="numeric" maxlength="6" placeholder="Six-digit item number"></label><label>Primary bin (reference)<input id="quickBin" readonly placeholder="Import and enter item number"></label><label>Quantity (manual)<input id="quickQty" type="number" min="1" step="1" placeholder="Quantity"></label></div>'+
+ '<div class="grid"><label>Chadwell item number<input id="quickItem" inputmode="numeric" maxlength="12" placeholder="Chadwell item number"></label><label>Primary bin (reference)<input id="quickBin" readonly placeholder="Import and enter item number"></label><label>Quantity (manual)<input id="quickQty" type="number" min="1" step="1" placeholder="Quantity"></label></div>'+
  '<div class="actions"><button type="button" id="quickCamera">Start item barcode camera</button><label><input id="quickConfirm" type="checkbox"> I verified the item number on the box</label><button type="button" class="primary" id="quickAdd" disabled>Add to existing putaway sheet</button></div>'+
  '<video id="quickVideo" playsinline muted style="width:100%;max-height:240px;background:#111;border-radius:8px"></video><p id="quickStatus" role="status" class="message"></p>';
  const card=$("putawayTab").querySelector(".card");card.parentNode.insertBefore(panel,card.nextSibling);
