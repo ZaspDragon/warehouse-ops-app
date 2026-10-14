@@ -19,7 +19,7 @@
     const afterLoc = normalized.indexOf(locLine);
     const qtyLine = normalized.slice(afterLoc + 1).find(s=>/^\d{1,4}$/.test(s)) || "";
     const poLine = normalized.find(s=>/^(SP|PO|SPO|EDI|XFR)[A-Z0-9-]{4,}$/.test(s)) || "";
-    return {item, location, qty:qtyLine, po:poLine, reviewed:false, rackVerified:false, rackRead:"", raw:text, id:crypto.randomUUID?.() || String(Date.now()+Math.random())};
+    return {item, location, qty:qtyLine, po:poLine, reviewed:false, itemConfirmed:false, rackVerified:false, rackRead:"", raw:text, id:crypto.randomUUID?.() || String(Date.now()+Math.random())};
   }
   function normalLocation(value) {
     const clean=field(value).replace(/[\s_]/g,"").replace(/[—–]/g,"-").replace(/[.]/g,"-");
@@ -33,7 +33,7 @@
     return [...new Set(candidates)];
   }
   function valid(row) {return /^\d{6}$/.test(row.item) && Boolean(normalLocation(row.location)) && /^\d+$/.test(row.qty) && Number(row.qty) > 0 && Boolean(row.po);}
-  function ready(row) {return valid(row) && row.reviewed && row.rackVerified && row.rackRead===normalLocation(row.location);}
+  function ready(row) {return valid(row) && row.reviewed && row.itemConfirmed === true && row.rackVerified && row.rackRead===normalLocation(row.location);}
   function redraw() {
     const body=byId("cameraBatchRows");
     body.innerHTML="";
@@ -53,7 +53,7 @@
   function addManualLabel(){
     if(batch.length>=MAX)return info("Batch is full. Review and submit before adding more.");
     rackTarget=null;
-    batch.push({item:"",location:"",qty:"",po:"",reviewed:false,rackVerified:false,rackRead:"",raw:"Manual correction",id:crypto.randomUUID?.()||String(Date.now()+Math.random())});
+    batch.push({item:"",location:"",qty:"",po:"",reviewed:false,itemConfirmed:false,rackVerified:false,rackRead:"",raw:"Manual correction",id:crypto.randomUUID?.()||String(Date.now()+Math.random())});
     redraw();
     info("Blank label added. Enter the four values, scan the actual rack magnet, and verify before submitting.");
     byId("cameraBatchRows")?.lastElementChild?.querySelector('input[data-key="item"]')?.focus();
