@@ -124,7 +124,7 @@
     byId("cameraBatchCapture").addEventListener("click",capture);
     byId("cameraBatchClear").addEventListener("click",()=>{if(batch.length&&!confirm("Discard all scanned labels?"))return;batch.length=0;redraw();info("Batch cleared.");});
     byId("cameraBatchSubmit").addEventListener("click",submit);
-    byId("cameraBatchRows").addEventListener("input",(e)=>{
+    byId("cameraBatchRows").addEventListener("change",(e)=>{
       const i=Number(e.target.dataset.index),k=e.target.dataset.key;
       if(!Number.isInteger(i)||!batch[i]||!["item","location","qty","po"].includes(k))return;
       batch[i][k]=field(e.target.value);batch[i].reviewed=false;redraw();
