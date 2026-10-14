@@ -42,6 +42,7 @@
       tr.innerHTML='<td>'+ (i+1) +'</td>' +
         ["item","location","qty","po"].map(k=>'<td><input data-index="'+i+'" data-key="'+k+'" aria-label="'+k+' line '+(i+1)+'" value="'+escapeHTML(r[k])+'" style="min-width:85px;max-width:145px" /></td>').join("") +
         '<td><button type="button" data-rack="'+i+'">Scan magnet</button><small style="display:block">'+escapeHTML(r.rackVerified ? "✓ " + r.rackRead : (r.rackRead ? "Mismatch: " + r.rackRead : "Not scanned"))+'</small></td>' +
+        '<td><label><input type="checkbox" data-confirm-item="'+i+'" '+(r.itemConfirmed?'checked':'')+' /> Item # checked</label></td>' +
         '<td><label><input type="checkbox" data-review="'+i+'" '+(r.reviewed?'checked':'')+' /> Verified</label></td>' +
         '<td><button type="button" data-remove="'+i+'">Remove</button></td>';
       if(!valid(r) || !r.rackVerified) tr.style.background="rgba(245,158,11,.13)";
@@ -190,7 +191,7 @@
       '<div class="actions"><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button><button type="button" id="cameraBatchManual">+ Add label manually</button></div>'+
       '<video id="cameraBatchVideo" playsinline muted style="width:100%;max-height:330px;background:#111;border-radius:8px;object-fit:contain"></video>'+
       '<p class="hint" id="cameraBatchStatus" role="status">Camera is stopped.</p><strong id="cameraBatchCount">0 / 25 labels</strong>'+
-      '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item #</th><th>Location</th><th>Qty</th><th>Purchase order</th><th>Rack magnet</th><th>Review</th><th></th></tr></thead><tbody id="cameraBatchRows"></tbody></table></div>'+
+      '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item #</th><th>Location</th><th>Qty</th><th>Purchase order</th><th>Rack magnet</th><th>Item # check</th><th>Review</th><th></th></tr></thead><tbody id="cameraBatchRows"></tbody></table></div>'+
       '<div class="actions"><button class="primary" type="button" id="cameraBatchSubmit" disabled>Submit verified batch</button></div>';
     panel.parentNode.insertBefore(section,panel.nextSibling);
     const toggle=byId("openCameraBatchBtn");
@@ -211,12 +212,20 @@
     byId("cameraBatchRows").addEventListener("change",(e)=>{
       const i=Number(e.target.dataset.index),k=e.target.dataset.key;
       if(!Number.isInteger(i)||!batch[i]||!["item","location","qty","po"].includes(k))return;
-      batch[i][k]=field(e.target.value);batch[i].reviewed=false;if(k==="location"){batch[i].rackVerified=false;batch[i].rackRead="";}redraw();
+      batch[i][k]=field(e.target.value);batch[i].reviewed=false;if(k==="item")batch[i].itemConfirmed=false;if(k==="location"){batch[i].rackVerified=false;batch[i].rackRead="";}redraw();
     });
     byId("cameraBatchRows").addEventListener("change",(e)=>{
       if(e.target.dataset.review===undefined)return;
       const i=Number(e.target.dataset.review);
       if(batch[i]){batch[i].reviewed=e.target.checked && valid(batch[i]) && batch[i].rackVerified && batch[i].rackRead===normalLocation(batch[i].location);redraw();}
+    });
+    byId("cameraBatchRows").addEventListener("change",(e)=>{
+      if(e.target.dataset.confirmItem===undefined)return;
+      const i=Number(e.target.dataset.confirmItem);
+      if(!batch[i])return;
+      batch[i].itemConfirmed=e.target.checked && /^\d{6}$/.test(batch[i].item);
+      batch[i].reviewed=false;
+      redraw();
     });
     byId("cameraBatchRows").addEventListener("click",(e)=>{
       if(e.target.dataset.rack!==undefined){
