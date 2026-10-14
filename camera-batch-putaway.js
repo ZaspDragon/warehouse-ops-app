@@ -146,6 +146,7 @@
     const panel=byId("putawayTab")?.querySelector(".card");if(!panel)return;
     const section=document.createElement("div");
     section.id="cameraBatch";section.className="card";
+    section.hidden=true;section.style.display="none";
     section.style.marginTop="16px";
     section.innerHTML='<h3>Camera Batch Scanner</h3><p class="hint">Scan up to 25 receiving labels continuously. Scan each actual rack magnet and review every handwritten field before submitting through the existing Put Away Log. Photos stay on this device and are not uploaded.</p>'+
       '<div class="actions"><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button></div>'+
@@ -154,6 +155,16 @@
       '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item #</th><th>Location</th><th>Qty</th><th>Purchase order</th><th>Rack magnet</th><th>Review</th><th></th></tr></thead><tbody id="cameraBatchRows"></tbody></table></div>'+
       '<div class="actions"><button class="primary" type="button" id="cameraBatchSubmit" disabled>Submit verified batch</button></div>';
     panel.parentNode.insertBefore(section,panel.nextSibling);
+    const toggle=byId("openCameraBatchBtn");
+    if(toggle)toggle.addEventListener("click",()=>{
+      const opening=section.hidden;
+      section.hidden=!opening;
+      section.style.display=opening?"block":"none";
+      toggle.setAttribute("aria-expanded",String(opening));
+      toggle.textContent=opening?"✕ Close Camera OCR":"📷 Camera OCR · Batch Scan";
+      if(opening){section.scrollIntoView({behavior:"smooth",block:"start"});}
+      else{stop();}
+    });
     byId("cameraBatchStart").addEventListener("click",start);
     byId("cameraBatchCapture").addEventListener("click",capture);
     byId("cameraBatchClear").addEventListener("click",()=>{if(batch.length&&!confirm("Discard all scanned labels?"))return;batch.length=0;rackTarget=null;redraw();info("Batch cleared.");});
