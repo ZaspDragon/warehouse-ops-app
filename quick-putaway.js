@@ -6,12 +6,12 @@ let catalog={};let stream=null,detector=null;
 function msg(t){$("quickStatus").textContent=t;}
 function normalize(x){return String(x||"").trim().toUpperCase().replace(/\s/g,"");}
 function location(x){const v=String(x||"").trim().toUpperCase().replace(/\s+/g," ");return /^[A-Z0-9][A-Z0-9 -]{0,23}$/.test(v)?v:"";}
-function load(){try{catalog=JSON.parse(localStorage.getItem(key)||"{}");}catch{catalog={};}msg(Object.keys(catalog).length+" reference items on this device. No live BinMgr connection.");}
+function load(){try{catalog=JSON.parse(localStorage.getItem(key)||"{}");}catch{catalog={};}msg(Object.keys(catalog).length ? Object.keys(catalog).length+" primary-bin mappings loaded automatically from this device." : "Primary-bin reference has not been set up on this device. Ask a supervisor to load the report once in Settings.");}
 function lookup(){
  const item=normalize($("quickItem").value),bin=catalog[item]||"";
  $("quickBin").value=bin;
  $("quickAdd").disabled=!(/^\d{6,12}$/.test(item)&&bin);
- msg(bin?"Primary bin found in imported reference. Confirm item and quantity before adding.":"No primary bin found. Import an authorized item/bin export to use Quick Putaway.");
+ msg(bin?"Primary bin found in imported reference. Confirm item and quantity before adding.":"No primary bin found in the saved reference. Confirm the item number or ask a supervisor to refresh the report in Settings.");
 }
 async function importFile(file){
  if(!file)return;
@@ -61,17 +61,24 @@ function setup(){
  const button=document.createElement("button");button.type="button";button.className="primary";button.textContent="Quick Putaway · Item #";button.id="openQuickPutaway";button.style.marginLeft="8px";
  target.insertAdjacentElement("afterend",button);
  const panel=document.createElement("section");panel.className="card";panel.id="quickPutaway";panel.hidden=true;panel.style.display="none";
- panel.innerHTML='<h3>Quick Putaway · Item Number</h3><p class="hint">Read-only reference mode: import an approved CSV/TSV with Item Number and Primary Bin columns. No live BinMgr sync or inventory changes. This report includes primary-bin assignments, not manufacturer UPC mappings.</p>'+
- '<label>Load item/primary-bin reference (local to this device)<input id="quickFile" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values"></label>'+
+ panel.innerHTML='<h3>Quick Putaway · Item Number</h3><p class="hint">Enter or scan the Chadwell item number to automatically look up its saved primary bin. Enter quantity manually. The reference is local to this device, not a live BinMgr connection.</p>'+
+
  '<div class="grid"><label>Chadwell item number<input id="quickItem" inputmode="numeric" maxlength="12" placeholder="Chadwell item number"></label><label>Primary bin (reference)<input id="quickBin" readonly placeholder="Import and enter item number"></label><label>Quantity (manual)<input id="quickQty" type="number" min="1" step="1" placeholder="Quantity"></label></div>'+
  '<div class="actions"><button type="button" id="quickCamera">Start item barcode camera</button><label><input id="quickConfirm" type="checkbox"> I verified the item number on the box</label><button type="button" class="primary" id="quickAdd" disabled>Add to existing putaway sheet</button></div>'+
  '<video id="quickVideo" playsinline muted style="width:100%;max-height:240px;background:#111;border-radius:8px"></video><p id="quickStatus" role="status" class="message"></p>';
  const card=$("putawayTab").querySelector(".card");card.parentNode.insertBefore(panel,card.nextSibling);
  button.addEventListener("click",()=>{panel.hidden=!panel.hidden;panel.style.display=panel.hidden?"none":"block";if(!panel.hidden)panel.scrollIntoView({behavior:"smooth",block:"start"});if(panel.hidden&&stream)camera();});
  $("quickItem").addEventListener("input",()=>{ $("quickConfirm").checked=false;lookup();});
- $("quickFile").addEventListener("change",e=>importFile(e.target.files[0]).catch(err=>msg("Import failed: "+err.message)));
+
  $("quickAdd").addEventListener("click",add);$("quickCamera").addEventListener("click",camera);
  document.addEventListener("visibilitychange",()=>{if(document.hidden&&stream)camera();});
+ const settings=$("settingsTab")?.querySelector(".card");
+ if(settings){
+   const holder=document.createElement("div");holder.className="card";holder.style.marginTop="16px";
+   holder.innerHTML='<h3>Quick Putaway Reference Setup</h3><p class="hint">Supervisor setup: import an authorized Primary Bin Report once per device. The daily scanner then loads this reference automatically on future visits. No report is published to GitHub.</p><label>Primary Bin Report CSV<input id="quickFile" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values"></label><p class="hint" id="quickReferenceStatus"></p>';
+   settings.appendChild(holder);
+   $("quickFile").addEventListener("change",e=>importFile(e.target.files[0]).then(()=>$("quickReferenceStatus").textContent=Object.keys(catalog).length+" saved item locations on this device.").catch(err=>msg("Import failed: "+err.message)));
+ }
  load();
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",setup);else setup();
