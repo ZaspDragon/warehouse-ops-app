@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hold Batch Priorities | WarehouseOS</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+main{max-width:1400px} .hold-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.hold-tools{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.hold-tools label{min-width:185px}
+.hold-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}
+.hold-kpis .card{margin:0}.hold-kpis strong{display:block;font-size:28px}.hold-kpis span{color:#667085}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}td,th{padding:12px;border-bottom:1px solid #d8dee9;text-align:left}
+th{white-space:nowrap;background:#eef3fc}tbody tr:hover{background:#f8fbff}.number{text-align:right;font-variant-numeric:tabular-nums}
+.hold-details{background:#f4f7fb;padding:12px;margin:10px 0;border-radius:12px}
+.hold-details summary{cursor:pointer;font-weight:700}.muted{color:#667085}.priority{font-weight:800;color:#1457d9}
+.pill{background:#e8eefc;border-radius:10px;padding:3px 9px;font-weight:700}.danger-text{color:#b42318}
+</style></head>
+<body><header class="topbar"><div><h1>WarehouseOS</h1><p>Inventory · Hold Batch Priorities</p></div>
+<a href="index.html" style="color:white">← Back to Warehouse Ops</a></header>
+<main>
+<section class="card">
+<div class="hold-top"><div><h2>Hold Batch Priority Analyzer</h2><p class="muted">Upload the Great Plains Open Inventory Batches Excel or CSV report. Ranking is calculated in your browser only.</p></div></div>
+<div class="hold-tools">
+<label>Upload open inventory batches<input id="holdFile" type="file" accept=".xlsx,.xls,.csv"></label>
+<label>Search batch, document, item, user<input id="holdSearch" placeholder="Search batches"></label>
+<label>Rank batches by<select id="holdSort"><option value="gross">Total affected units (absolute)</option><option value="removals">Total negative units / removals</option><option value="lines">Number of inventory lines</option><option value="net">Net quantity magnitude</option></select></label>
+<button id="holdExport" class="primary" disabled>Export Ranked CSV</button>
+<button id="holdClear" class="danger">Clear Uploaded Report</button>
+</div><p class="muted" id="holdStatus" role="status">No report loaded yet. Choose an Excel file to begin.</p>
+<p class="muted">Each batch is identified by Batch Number + Document Number. Negative quantities are shown as removals; positive quantities as additions. These are reported quantities, not inventory dollar values. This screen does not clear or post a batch in Great Plains.</p>
+</section>
+<div class="hold-kpis">
+<div class="card"><strong id="holdBatchCount">0</strong><span>Open batches</span></div>
+<div class="card"><strong id="holdLineCount">0</strong><span>Inventory lines</span></div>
+<div class="card"><strong id="holdAffected">0</strong><span>Total affected units</span></div>
+<div class="card"><strong id="holdRemoved">0</strong><span>Negative units</span></div>
+</div>
+<section class="card"><h2>Batch Rankings</h2><div class="table-wrap"><table><thead><tr>
+<th>Priority</th><th>Batch Number</th><th>Document Number</th><th>Date</th><th>User</th><th class="number">Lines</th><th class="number">Negative units</th><th class="number">Positive units</th><th class="number">Net qty</th><th class="number">Total affected units</th><th>Inspect</th>
+</tr></thead><tbody id="holdRows"><tr><td colspan="11" class="muted">Upload a report to view ranked batches.</td></tr></tbody></table></div></section>
+</main>
+<script>
+(()=>{
+"use strict";
+const $=id=>document.getElementById(id), fmt=n=>Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2});
+let batches=[];
+const escape=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const clean=s=>String(s??"").trim();
+const key=s=>clean(s).toLowerCase().replace(/[^a-z0-9]/g,"");
+function detectHeader(rows){return rows.findIndex(row=>row.some(c=>key(c)==="batchnumber")&&row.some(c=>key(c)==="transactionquantity"));}
+function parseSheet(rows){
+ const start=detectHeader(rows);if(start<0)throw Error("Could not find Batch Number and Transaction Quantity columns. Use the Open Inventory Batches report.");
+ const head=rows[start].map(key);
+ const ix=names=>names.map(n=>head.indexOf(key(n))).find(i=>i>=0)??-1;
+ const cols={batch:ix(["Batch Number"]),doc:ix(["Document Number"]),date:ix(["Date"]),user:ix(["Modified User ID"]),loc:ix(["Transaction Location"]),item:ix(["Item Number"]),qty:ix(["Transaction Quantity"]),comment:ix(["BCHCOMNT"])};
+ if(cols.batch<0||cols.qty<0)throw Error("Required batch or quantity column missing.");
+ const groups=new Map();let invalid=0;
+ rows.slice(start+1).forEach((row,index)=>{
+ const get=name=>cols[name]>=0?row[cols[name]]:"";const batch=clean(get("batch")),doc=clean(get("doc"));
+ const raw=get("qty");const qty=Number(typeof raw==="string"?raw.replace(/,/g,""):raw);
+ if(!batch||raw==null||clean(raw)===""||!Number.isFinite(qty)){if(row.some(c=>clean(c)))invalid++;return;}
+ const id=JSON.stringify([batch,doc]);let b=groups.get(id);
+ if(!b){b={batch,doc,date:clean(get("date")),user:clean(get("user")),lines:[],pos:0,neg:0,net:0,gross:0};groups.set(id,b);}
+ const l={date:clean(get("date")),user:clean(get("user")),loc:clean(get("loc")),item:clean(get("item")),qty,comment:clean(get("comment")),row:start+index+2};
+ b.lines.push(l);b.net+=qty;b.gross+=Math.abs(qty);if(qty<0)b.neg+=Math.abs(qty);else b.pos+=qty;
+ });
+ return {groups:[...groups.values()],invalid};
+}
+function sortRows(list){let mode=$("holdSort").value;return [...list].sort((a,b)=>{
+ const val=x=>mode==="removals"?x.neg:mode==="lines"?x.lines.length:mode==="net"?Math.abs(x.net):x.gross;
+ return val(b)-val(a)||a.batch.localeCompare(b.batch)||a.doc.localeCompare(b.doc);
+});}
+function filtered(){const s=$("holdSearch").value.trim().toLowerCase();return sortRows(batches.filter(b=>!s||[b.batch,b.doc,b.user,...b.lines.flatMap(l=>[l.item,l.user,l.loc])].some(x=>String(x).toLowerCase().includes(s))));}
+function render(){
+ const visible=filtered();$("holdBatchCount").textContent=fmt(batches.length);
+ $("holdLineCount").textContent=fmt(batches.reduce((n,b)=>n+b.lines.length,0));
+ $("holdAffected").textContent=fmt(batches.reduce((n,b)=>n+b.gross,0));
+ $("holdRemoved").textContent=fmt(batches.reduce((n,b)=>n+b.neg,0));
+ $("holdExport").disabled=!batches.length;
+ $("holdRows").innerHTML=visible.map((b,i)=>`<tr><td class="priority">#${i+1}</td><td><strong>${escape(b.batch)}</strong></td><td>${escape(b.doc)}</td><td>${escape(b.date)}</td><td>${escape(b.user)}</td><td class="number">${fmt(b.lines.length)}</td><td class="number danger-text">${fmt(b.neg)}</td><td class="number">${fmt(b.pos)}</td><td class="number">${fmt(b.net)}</td><td class="number"><strong>${fmt(b.gross)}</strong></td><td><details class="hold-details"><summary>View lines</summary><div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Location</th><th>User</th><th>Date</th></tr></thead><tbody>${b.lines.map(l=>`<tr><td>${escape(l.item)}</td><td class="number">${fmt(l.qty)}</td><td>${escape(l.loc)}</td><td>${escape(l.user)}</td><td>${escape(l.date)}</td></tr>`).join("")}</tbody></table></div></details></td></tr>`).join("")||'<tr><td colspan="11">No matching batches.</td></tr>';
+}
+$("holdFile").addEventListener("change",async e=>{
+ const file=e.target.files?.[0];if(!file)return;
+ $("holdStatus").textContent="Reading "+file.name+"…";
+ try{
+ if(typeof XLSX==="undefined")throw Error("Excel reader unavailable. Check your connection and reload.");
+ const bytes=await file.arrayBuffer();const wb=XLSX.read(bytes,{type:"array",cellDates:false});
+ let parsed=null;for(const name of wb.SheetNames){const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:"",raw:false});if(detectHeader(rows)>=0){parsed=parseSheet(rows);break;}}
+ if(!parsed)throw Error("No sheet contains a recognized Open Inventory Batches report.");
+ batches=parsed.groups;render();$("holdStatus").textContent=`Loaded ${file.name}: ${batches.length} batches, ${batches.reduce((n,b)=>n+b.lines.length,0)} lines.`+(parsed.invalid?` Skipped ${parsed.invalid} incomplete rows.`:"");
+ }catch(err){$("holdStatus").textContent="Upload failed: "+err.message;}finally{e.target.value="";}
+});
+$("holdSearch").addEventListener("input",render);$("holdSort").addEventListener("change",render);
+$("holdClear").addEventListener("click",()=>{batches=[];$("holdSearch").value="";render();$("holdStatus").textContent="Uploaded report cleared from this page.";});
+$("holdExport").addEventListener("click",()=>{
+ const csvRows=[["Priority","Batch Number","Document Number","Date","Modified User ID","Lines","Negative Units","Positive Units","Net Quantity","Total Affected Units"]];
+ filtered().forEach((b,i)=>csvRows.push([i+1,b.batch,b.doc,b.date,b.user,b.lines.length,b.neg,b.pos,b.net,b.gross]));
+ const csv=csvRows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+ const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="Hold_Batch_Priorities.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+});
+render();
+})();
+</script></body></html>
