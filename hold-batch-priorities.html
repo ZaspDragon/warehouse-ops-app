@@ -22,8 +22,8 @@ th{white-space:nowrap;background:#eef3fc}tbody tr:hover{background:#f8fbff}.numb
 <div class="hold-tools">
 <label>Upload open inventory batches<input id="holdFile" type="file" accept=".xlsx,.xls,.csv"></label>
 <label>Search batch, document, item, user<input id="holdSearch" placeholder="Search batches"></label>
-<label>Rank batches by<select id="holdSort"><option value="gross">Total affected units (absolute)</option><option value="removals">Total negative units / removals</option><option value="lines">Number of inventory lines</option><option value="net">Net quantity magnitude</option></select></label>
-<button id="holdExport" class="primary" disabled>Export Ranked CSV</button>
+<label>Rank batches by<select id="holdSort"><option value="removals">Largest negative batch quantity</option><option value="gross">Total affected units (absolute)</option><option value="lines">Number of inventory lines</option><option value="net">Net quantity magnitude</option></select></label>
+<button id="holdExport" class="primary" disabled>Export Ranked CSV</button><button id="itemExport" class="primary" disabled>Export Item Research CSV</button>
 <button id="holdClear" class="danger">Clear Uploaded Report</button>
 </div><p class="muted" id="holdStatus" role="status">No report loaded yet. Choose an Excel file to begin.</p>
 <p class="muted">Each batch is identified by Batch Number + Document Number. Negative quantities are shown as removals; positive quantities as additions. These are reported quantities, not inventory dollar values. This screen does not clear or post a batch in Great Plains.</p>
@@ -34,7 +34,7 @@ th{white-space:nowrap;background:#eef3fc}tbody tr:hover{background:#f8fbff}.numb
 <div class="card"><strong id="holdAffected">0</strong><span>Total affected units</span></div>
 <div class="card"><strong id="holdRemoved">0</strong><span>Negative units</span></div>
 </div>
-<section class="card"><h2>Batch Rankings</h2><div class="table-wrap"><table><thead><tr>
+<section class="card"><h2>Negative Item Priority — Investigate These First</h2><p class="muted">Ranks item transactions by most negative quantity, with batch number and Modified User ID (last modifier, not necessarily creator). Notes and review statuses are saved in this browser.</p><div class="table-wrap"><table><thead><tr><th>Priority</th><th>Item #</th><th>Negative Qty</th><th>Batch #</th><th>Document #</th><th>Modified User</th><th>Location</th><th>Date</th><th>Review</th><th>Investigation Notes</th></tr></thead><tbody id="negativeItems"></tbody></table></div></section><section class="card"><h2>Batch Rankings</h2><div class="table-wrap"><table><thead><tr>
 <th>Priority</th><th>Batch Number</th><th>Document Number</th><th>Date</th><th>User</th><th class="number">Lines</th><th class="number">Negative units</th><th class="number">Positive units</th><th class="number">Net qty</th><th class="number">Total affected units</th><th>Inspect</th>
 </tr></thead><tbody id="holdRows"><tr><td colspan="11" class="muted">Upload a report to view ranked batches.</td></tr></tbody></table></div></section>
 </main>
@@ -42,7 +42,7 @@ th{white-space:nowrap;background:#eef3fc}tbody tr:hover{background:#f8fbff}.numb
 (()=>{
 "use strict";
 const $=id=>document.getElementById(id), fmt=n=>Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2});
-let batches=[];
+let batches=[];const reviewKey="warehouseos_negative_item_research_v1";let reviews={};try{reviews=JSON.parse(localStorage.getItem(reviewKey)||"{}")||{}}catch(e){}
 const escape=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clean=s=>String(s??"").trim();
 const key=s=>clean(s).toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -65,6 +65,7 @@ function parseSheet(rows){
  });
  return {groups:[...groups.values()],invalid};
 }
+function reviewId(l){return JSON.stringify([l.batch,l.doc,l.item,l.qty,l.loc,l.date,l.owner]);}
 function sortRows(list){let mode=$("holdSort").value;return [...list].sort((a,b)=>{
  const val=x=>mode==="removals"?x.neg:mode==="lines"?x.lines.length:mode==="net"?Math.abs(x.net):x.gross;
  return val(b)-val(a)||a.batch.localeCompare(b.batch)||a.doc.localeCompare(b.doc);
@@ -75,8 +76,16 @@ function render(){
  $("holdLineCount").textContent=fmt(batches.reduce((n,b)=>n+b.lines.length,0));
  $("holdAffected").textContent=fmt(batches.reduce((n,b)=>n+b.gross,0));
  $("holdRemoved").textContent=fmt(batches.reduce((n,b)=>n+b.neg,0));
- $("holdExport").disabled=!batches.length;
- $("holdRows").innerHTML=visible.map((b,i)=>`<tr><td class="priority">#${i+1}</td><td><strong>${escape(b.batch)}</strong></td><td>${escape(b.doc)}</td><td>${escape(b.date)}</td><td>${escape(b.user)}</td><td class="number">${fmt(b.lines.length)}</td><td class="number danger-text">${fmt(b.neg)}</td><td class="number">${fmt(b.pos)}</td><td class="number">${fmt(b.net)}</td><td class="number"><strong>${fmt(b.gross)}</strong></td><td><details class="hold-details"><summary>View lines</summary><div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Location</th><th>User</th><th>Date</th></tr></thead><tbody>${b.lines.map(l=>`<tr><td>${escape(l.item)}</td><td class="number">${fmt(l.qty)}</td><td>${escape(l.loc)}</td><td>${escape(l.user)}</td><td>${escape(l.date)}</td></tr>`).join("")}</tbody></table></div></details></td></tr>`).join("")||'<tr><td colspan="11">No matching batches.</td></tr>';
+ $("holdExport").disabled=!batches.length;$("itemExport").disabled=!batches.length;
+ const term=$("holdSearch").value.toLowerCase().trim();
+ const negative=batches.flatMap(b=>b.lines.filter(l=>l.qty<0).map(l=>({...l,batch:b.batch,doc:b.doc,owner:l.user||b.user})))
+ .filter(l=>!term||[l.item,l.batch,l.doc,l.owner,l.loc].some(x=>String(x).toLowerCase().includes(term)))
+ .sort((a,b)=>a.qty-b.qty||a.batch.localeCompare(b.batch));
+ $("negativeItems").innerHTML=negative.map((l,i)=>{
+ const id=reviewId(l),v=reviews[id]||{};
+ return `<tr><td class="priority">#${i+1}</td><td><strong>${escape(l.item)}</strong></td><td class="danger-text"><strong>${fmt(l.qty)}</strong></td><td>${escape(l.batch)}</td><td>${escape(l.doc)}</td><td>${escape(l.owner)}</td><td>${escape(l.loc)}</td><td>${escape(l.date)}</td><td><select data-id="${escape(id)}" data-field="status"><option ${!v.status||v.status==="Not reviewed"?"selected":""}>Not reviewed</option><option ${v.status==="Investigating"?"selected":""}>Investigating</option><option ${v.status==="Reviewed"?"selected":""}>Reviewed</option><option ${v.status==="Needs follow-up"?"selected":""}>Needs follow-up</option></select></td><td><input data-id="${escape(id)}" data-field="notes" value="${escape(v.notes||"")}" placeholder="Research notes"></td></tr>`;
+ }).join("")||'<tr><td colspan="10">No negative transactions match.</td></tr>';
+ $("holdRows").innerHTML=visible.map((b,i)=>`<tr><td class="priority">#${i+1}</td><td><strong>${escape(b.batch)}</strong></td><td>${escape(b.doc)}</td><td>${escape(b.date)}</td><td>${escape(b.user)}</td><td class="number">${fmt(b.lines.length)}</td><td class="number danger-text">${fmt(b.neg)}</td><td class="number">${fmt(b.pos)}</td><td class="number">${fmt(b.net)}</td><td class="number"><strong>${fmt(b.gross)}</strong></td><td><details class="hold-details"><summary>View lines</summary><div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Location</th><th>User</th><th>Date</th></tr></thead><tbody>${[...b.lines].sort((a,z)=>a.qty-z.qty).map(l=>`<tr><td>${escape(l.item)}</td><td class="number">${fmt(l.qty)}</td><td>${escape(l.loc)}</td><td>${escape(l.user)}</td><td>${escape(l.date)}</td></tr>`).join("")}</tbody></table></div></details></td></tr>`).join("")||'<tr><td colspan="11">No matching batches.</td></tr>';
 }
 $("holdFile").addEventListener("change",async e=>{
  const file=e.target.files?.[0];if(!file)return;
@@ -89,8 +98,16 @@ $("holdFile").addEventListener("change",async e=>{
  batches=parsed.groups;render();$("holdStatus").textContent=`Loaded ${file.name}: ${batches.length} batches, ${batches.reduce((n,b)=>n+b.lines.length,0)} lines.`+(parsed.invalid?` Skipped ${parsed.invalid} incomplete rows.`:"");
  }catch(err){$("holdStatus").textContent="Upload failed: "+err.message;}finally{e.target.value="";}
 });
+$("negativeItems").addEventListener("change",e=>{const el=e.target;if(!el.dataset.id)return;reviews[el.dataset.id]={...(reviews[el.dataset.id]||{}),[el.dataset.field]:el.value};try{localStorage.setItem(reviewKey,JSON.stringify(reviews))}catch(err){$("holdStatus").textContent="Browser storage failed; export your research."}});
 $("holdSearch").addEventListener("input",render);$("holdSort").addEventListener("change",render);
 $("holdClear").addEventListener("click",()=>{batches=[];$("holdSearch").value="";render();$("holdStatus").textContent="Uploaded report cleared from this page.";});
+$("itemExport").addEventListener("click",()=>{
+ const term=$("holdSearch").value.toLowerCase().trim();
+ const lines=batches.flatMap(b=>b.lines.filter(l=>l.qty<0).map(l=>({...l,batch:b.batch,doc:b.doc,owner:l.user||b.user}))).filter(l=>!term||[l.item,l.batch,l.doc,l.owner,l.loc].some(x=>String(x).toLowerCase().includes(term))).sort((a,b)=>a.qty-b.qty);
+ const rows=[["Rank","Item Number","Negative Quantity","Batch Number","Document Number","Modified User ID","Location","Date","Review Status","Notes"],...lines.map((l,i)=>{const v=reviews[reviewId(l)]||{};return[i+1,l.item,l.qty,l.batch,l.doc,l.owner,l.loc,l.date,v.status||"Not reviewed",v.notes||""]})];
+ const csv=rows.map(row=>row.map(x=>'"'+String(x??"").replace(/"/g,'""')+'"').join(",")).join("\r\n");
+ const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="Hold_Negative_Item_Research.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+});
 $("holdExport").addEventListener("click",()=>{
  const csvRows=[["Priority","Batch Number","Document Number","Date","Modified User ID","Lines","Negative Units","Positive Units","Net Quantity","Total Affected Units"]];
  filtered().forEach((b,i)=>csvRows.push([i+1,b.batch,b.doc,b.date,b.user,b.lines.length,b.neg,b.pos,b.net,b.gross]));
