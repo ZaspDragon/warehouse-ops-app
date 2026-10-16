@@ -13,17 +13,39 @@ th{white-space:nowrap;background:#eef3fc}tbody tr:hover{background:#f8fbff}.numb
 .hold-details{background:#f4f7fb;padding:12px;margin:10px 0;border-radius:12px}
 .hold-details summary{cursor:pointer;font-weight:700}.muted{color:#667085}.priority{font-weight:800;color:#1457d9}
 .pill{background:#e8eefc;border-radius:10px;padding:3px 9px;font-weight:700}.danger-text{color:#b42318}
+.print-only{display:none}
+@media print {
+ @page {size:landscape;margin:0.35in}
+ body{background:#fff;color:#111;font:10px Arial,sans-serif}
+ header.topbar,.hold-tools,#holdStatus,button,.hold-details,.card>p.muted{display:none!important}
+ main{max-width:none;padding:0}.print-only{display:block;margin-bottom:9px}.print-only h1{font-size:19px;margin:0 0 4px}.print-only p{margin:0;font-size:11px}
+ .card{box-shadow:none!important;border:none!important;border-radius:0;padding:0;margin:0 0 10px}
+ .card h2{font-size:15px;margin:10px 0 6px}
+ .hold-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:8px 0}
+ .hold-kpis .card{border:1px solid #aaa!important;padding:6px!important}.hold-kpis strong{font-size:16px}
+ .hold-kpis span{font-size:9px}
+ .table-wrap{overflow:visible!important}
+ table{width:100%;font-size:9px;table-layout:auto;border-collapse:collapse}
+ th,td{border:1px solid #aaa;padding:4px 5px;white-space:normal;overflow-wrap:anywhere}
+ thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}
+ th{background:#e7edf7!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ input,select{font:9px Arial!important;border:none!important;background:transparent!important;padding:0!important;width:100%;appearance:none}
+ .danger-text{color:#111}.priority{color:#111}
+ #negativeItems input{min-width:85px;min-height:20px;border-bottom:1px solid #888!important}
+ #negativeItems select{min-width:65px}
+ }
+
 </style></head>
 <body><header class="topbar"><div><h1>WarehouseOS</h1><p>Inventory · Hold Batch Priorities</p></div>
 <a href="index.html" style="color:white">← Back to Warehouse Ops</a></header>
-<main>
+<main><div id="printHeading" class="print-only"><h1>WarehouseOS — Hold Batch Investigation</h1><p id="printMeta"></p></div>
 <section class="card">
 <div class="hold-top"><div><h2>Hold Batch Priority Analyzer</h2><p class="muted">Upload the Great Plains Open Inventory Batches Excel or CSV report. Ranking is calculated in your browser only.</p></div></div>
 <div class="hold-tools">
 <label>Upload open inventory batches<input id="holdFile" type="file" accept=".xlsx,.xls,.csv"></label>
 <label>Search batch, document, item, user<input id="holdSearch" placeholder="Search batches"></label>
 <label>Rank batches by<select id="holdSort"><option value="removals">Largest negative batch quantity</option><option value="gross">Total affected units (absolute)</option><option value="lines">Number of inventory lines</option><option value="net">Net quantity magnitude</option></select></label>
-<label>Top negative item rows<select id="itemLimit"><option value="10">Top 10</option><option value="25" selected>Top 25</option><option value="50">Top 50</option><option value="100">Top 100</option><option value="all">All</option></select></label><label>Minimum negative units<input id="minNegative" type="number" min="1" value="1"></label><button id="holdExport" class="primary" disabled>Export Ranked CSV</button><button id="itemExport" class="primary" disabled>Export Item Research CSV</button>
+<label>Top negative item rows<select id="itemLimit"><option value="10">Top 10</option><option value="25" selected>Top 25</option><option value="50">Top 50</option><option value="100">Top 100</option><option value="all">All</option></select></label><label>Minimum negative units<input id="minNegative" type="number" min="1" value="1"></label><button id="holdExport" class="primary" disabled>Export Ranked CSV</button><button id="itemExport" class="primary" disabled>Export Item Research CSV</button><button id="holdPrint" class="primary" disabled type="button">🖨 Print Current View</button>
 <button id="holdClear" class="danger">Clear Uploaded Report</button>
 </div><p class="muted" id="holdStatus" role="status">No report loaded yet. Choose an Excel file to begin.</p>
 <p class="muted">Each batch is identified by Batch Number + Document Number. Negative quantities are shown as removals; positive quantities as additions. These are reported quantities, not inventory dollar values. This screen does not clear or post a batch in Great Plains.</p>
@@ -76,7 +98,7 @@ function render(){
  $("holdLineCount").textContent=fmt(batches.reduce((n,b)=>n+b.lines.length,0));
  $("holdAffected").textContent=fmt(batches.reduce((n,b)=>n+b.gross,0));
  $("holdRemoved").textContent=fmt(batches.reduce((n,b)=>n+b.neg,0));
- $("holdExport").disabled=!batches.length;$("itemExport").disabled=!batches.length;
+ $("holdExport").disabled=!batches.length;$("itemExport").disabled=!batches.length;$("holdPrint").disabled=!batches.length;
  const term=$("holdSearch").value.toLowerCase().trim();
  const allNegative=batches.flatMap(b=>b.lines.filter(l=>l.qty<0).map(l=>({...l,batch:b.batch,doc:b.doc,owner:l.user||b.user})))
  .filter(l=>!term||[l.item,l.batch,l.doc,l.owner,l.loc].some(x=>String(x).toLowerCase().includes(term)))
@@ -105,6 +127,16 @@ $("itemLimit").addEventListener("change",render);$("minNegative").addEventListen
 $("negativeItems").addEventListener("change",e=>{const el=e.target;if(!el.dataset.id)return;reviews[el.dataset.id]={...(reviews[el.dataset.id]||{}),[el.dataset.field]:el.value};try{localStorage.setItem(reviewKey,JSON.stringify(reviews))}catch(err){$("holdStatus").textContent="Browser storage failed; export your research."}});
 $("holdSearch").addEventListener("input",render);$("holdSort").addEventListener("change",render);
 $("holdClear").addEventListener("click",()=>{batches=[];$("holdSearch").value="";render();$("holdStatus").textContent="Uploaded report cleared from this page.";});
+$("holdPrint").addEventListener("click",()=>{
+ if(!batches.length)return;
+ const limit=$("itemLimit").selectedOptions[0]?.textContent||"All";
+ const minimum=$("minNegative").value||"1";
+ const count=$("negativeItems").querySelectorAll("tr").length;
+ $("printMeta").textContent="Printed "+new Date().toLocaleString()+" • "+limit+" • Minimum negative units: "+minimum+" • Search: "+($("holdSearch").value||"None")+" • "+count+" visible item rows";
+ document.querySelectorAll("#negativeItems input").forEach(el=>el.setAttribute("value",el.value));
+ document.querySelectorAll("#negativeItems select").forEach(el=>Array.from(el.options).forEach(option=>option.selected=option.value===el.value));
+ window.print();
+});
 $("itemExport").addEventListener("click",()=>{
  const term=$("holdSearch").value.toLowerCase().trim();
  const lines=batches.flatMap(b=>b.lines.filter(l=>l.qty<0).map(l=>({...l,batch:b.batch,doc:b.doc,owner:l.user||b.user}))).filter(l=>!term||[l.item,l.batch,l.doc,l.owner,l.loc].some(x=>String(x).toLowerCase().includes(term))).sort((a,b)=>a.qty-b.qty).filter(l=>Math.abs(l.qty)>=Math.max(1,Number($("minNegative").value)||1)).slice(0,$("itemLimit").value==="all"?Infinity:Number($("itemLimit").value));
