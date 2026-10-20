@@ -19,17 +19,22 @@
     const parsed = Number(String(value ?? "").replace(/[$,]/g, ""));
     return Number.isFinite(parsed) ? parsed : 0;
   }
+  function verifiedDate(y, m, d) {
+    const day = new Date(y, m - 1, d);
+    return day.getFullYear() === y && day.getMonth() === m - 1 && day.getDate() === d
+      ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` : "";
+  }
   function dateKey(value) {
     if (!value) return "";
     if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
     if (typeof value === "number" && value > 20000 && window.XLSX?.SSF?.parse_date_code) {
       const d = XLSX.SSF.parse_date_code(value);
-      return d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : "";
+      return d ? verifiedDate(d.y, d.m, d.d) : "";
     }
     const direct = text(value).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (direct) return `${direct[1]}-${direct[2].padStart(2, "0")}-${direct[3].padStart(2, "0")}`;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? "" : dateKey(parsed);
+    if (direct) return verifiedDate(Number(direct[1]), Number(direct[2]), Number(direct[3]));
+    const us = text(value).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|$)/);
+    return us ? verifiedDate(Number(us[3]), Number(us[1]), Number(us[2])) : "";
   }
   function timeParts(value) {
     if (value instanceof Date && !Number.isNaN(value.getTime())) return { seconds: value.getHours() * 3600 + value.getMinutes() * 60 + value.getSeconds(), label: value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) };
@@ -148,7 +153,10 @@
       if (!occurrences.has(record.item)) occurrences.set(record.item, new Set());
       occurrences.get(record.item).add(uniqueEvent);
     });
-    return records.filter(inRange).map((record) => ({ ...record, repeat: (occurrences.get(record.item)?.size || 0) > 1 })).sort((a, b) => `${b.date}|${b.doc}`.localeCompare(`${a.date}|${a.doc}`));
+    const sort = $("filterSort")?.value || "date";
+    const metric = { qty: r => Math.abs(r.qty), loss: r => Math.max(0, -r.gainLoss), cost: r => Math.abs(r.cost) }[sort];
+    return records.filter(inRange).map(record => ({ ...record, repeat: (occurrences.get(record.item)?.size || 0) > 1 }))
+      .sort((a, b) => (metric ? metric(b) - metric(a) : 0) || `${b.date}|${b.doc}`.localeCompare(`${a.date}|${a.doc}`));
   }
 
   function cycleAisle(countId) {
@@ -187,7 +195,40 @@
     return timed.filter(inRange);
   }
 
+
+  function rankedItems() {
+    const groups = new Map();
+    adjustmentRows().forEach(r => {
+      const g = groups.get(r.item) || { item:r.item, description:r.description, count:0, added:0, removed:0, loss:0, cost:0, dates:new Set() };
+      g.count++;
+      g.added += Math.max(0, r.qty);
+      g.removed += Math.max(0, -r.qty);
+      g.loss += Math.max(0, -r.gainLoss);
+      g.cost = Math.max(g.cost, Math.abs(r.cost));
+      g.dates.add(r.date);
+      groups.set(r.item, g);
+    });
+    const metric = { removed:g=>g.removed, loss:g=>g.loss, cost:g=>g.cost, added:g=>g.added, net:g=>g.removed-g.added }[$("rankingSort").value];
+    return [...groups.values()].sort((a,b)=>metric(b)-metric(a)||b.removed-a.removed||a.item.localeCompare(b.item));
+  }
+  function renderRankings() {
+    const money = n => n.toLocaleString(undefined,{style:"currency",currency:"USD"});
+    const items = rankedItems();
+    $("rankedItemsBody").innerHTML = items.length ? items.map((g,i)=>
+      `<tr><td>${i+1}</td><td>${esc(g.item)}</td><td>${esc(g.description)}</td><td>${g.count}</td><td>${g.added.toLocaleString()}</td><td>${g.removed.toLocaleString()}</td><td>${(g.added-g.removed).toLocaleString()}</td><td>${money(g.loss)}</td><td>${money(g.cost)}</td><td>${esc([...g.dates].sort().join(", "))}</td></tr>`).join("") : '<tr><td colspan="10">No matching items.</td></tr>';
+  }
+  function exportRankings() {
+    const items = rankedItems();
+    if (!items.length) return setMessage("No ranked items to export.",true);
+    const rows = [["Rank","Item #","Description","Transactions","Added","Removed","Net","Loss Value","Max Unit Cost","Transaction Dates"],
+      ...items.map((g,i)=>[i+1,g.item,g.description,g.count,g.added,g.removed,g.added-g.removed,g.loss,g.cost,[...g.dates].sort().join("; ")])];
+    const link=document.createElement("a");
+    link.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(csvCell).join(",")).join("\n")],{type:"text/csv;charset=utf-8"}));
+    link.download="inventory-adjustment-rankings.csv";link.click();URL.revokeObjectURL(link.href);
+  }
+
   function renderAdjustments() {
+    renderRankings();
     const rows = adjustmentRows();
     const added = rows.filter((row) => row.qty > 0).reduce((sum, row) => sum + row.qty, 0);
     const removed = Math.abs(rows.filter((row) => row.qty < 0).reduce((sum, row) => sum + row.qty, 0));
@@ -524,10 +565,11 @@
   $("analyticsFile").addEventListener("change", importFile);
   $("exportAnalytics").addEventListener("click", exportCsv);
   $("exportRepeatedItems")?.addEventListener("click", printRepeatedItemsReport);
+  $("exportRankings")?.addEventListener("click", exportRankings);
   $("clearAnalyticsData").addEventListener("click", () => {
     if (!confirm("Clear all saved uploads from this browser?")) return;
     records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); render(); setMessage("Saved uploads cleared.");
   });
-  ["filterStart", "filterEnd", "filterSearch", "filterDirection", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
+  ["filterStart", "filterEnd", "filterSearch", "filterDirection", "filterSort", "rankingSort", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
   render();
 })();

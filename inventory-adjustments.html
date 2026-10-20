@@ -42,6 +42,7 @@
         <label>Start Date<input id="filterStart" type="date" /></label>
         <label>End Date<input id="filterEnd" type="date" /></label>
         <label>Direction<select id="filterDirection"><option value="">All</option><option value="Added">Added</option><option value="Removed">Removed</option></select></label>
+        <label>Sort transactions<select id="filterSort"><option value="date">Newest date</option><option value="qty">Largest quantity</option><option value="loss">Largest loss value</option><option value="cost">Highest unit cost</option></select></label>
         <label>Search<input id="filterSearch" placeholder="Item, user, reason, document" /></label>
       </div>
       <div class="table-wrap analytics-table-wrap"><table>
@@ -49,6 +50,11 @@
         <tbody id="analyticsBody"><tr><td colspan="10">Upload a transaction report to begin.</td></tr></tbody>
       </table></div>
 
+      <section class="adjustment-bottom-summary">
+        <div class="section-heading"><div><h3>Top Adjusted Items</h3><p class="hint">Ranked by item number across filtered transactions. Dates are from Doc Date, never upload date. Loss amounts come from the report's Gain / Loss field.</p></div><button id="exportRankings" class="primary" type="button">Export Ranking CSV</button></div>
+        <div class="analytics-filters"><label>Rank by<select id="rankingSort"><option value="removed">Most units removed</option><option value="loss">Highest total dollar loss</option><option value="cost">Highest unit cost</option><option value="added">Most units added</option><option value="net">Largest net reduction</option></select></label></div>
+        <div class="table-wrap"><table><thead><tr><th>Rank</th><th>Item #</th><th>Description</th><th>Transactions</th><th>Added</th><th>Removed</th><th>Net</th><th>Loss Value</th><th>Max Unit Cost</th><th>Transaction Dates</th></tr></thead><tbody id="rankedItemsBody"></tbody></table></div>
+      </section>
       <section class="adjustment-bottom-summary" aria-labelledby="adjustmentTotalsTitle">
         <h3 id="adjustmentTotalsTitle">Filtered Adjustment Totals</h3>
         <div class="bottom-total-grid">
@@ -81,6 +87,6 @@
       </section>
     </section>
   </main>
-  <script src="analytics-pages.js?v=20260918-3"></script>
+  <script src="analytics-pages.js?v=20261020-1"></script>
 </body>
 </html>
