@@ -4050,25 +4050,51 @@ function isCycleProductionStorageKey(key) {
 
 function initializeDataProtection() {
   window.warehouseOpsRollbackLatestBackup = rollbackLatestWarehouseOpsBackup;
-  backupKnownStorageKeys("startup");
-  storageBackupCreatedThisSession = true;
+  // Do not duplicate every dataset on page load. A full localStorage quota
+  // previously threw here and prevented the login event handlers from loading.
+  storageBackupCreatedThisSession = false;
 }
 
 function backupKnownStorageKeys(reason = "manual") {
   const created = [];
   const timestamp = new Date().toISOString();
+  let metadata = readArrayJson(DATA_BACKUP_META_KEY);
 
   allWarehouseStorageKeys().forEach((key) => {
     const raw = window.localStorage.getItem(key);
     if (raw === null) return;
+
+    const prior = metadata.filter((entry) => entry.key === key && entry.backupKey
+      && window.localStorage.getItem(entry.backupKey) !== null);
+    const latest = prior[0];
+    // Avoid making another full copy when this dataset has not changed.
+    if (latest && window.localStorage.getItem(latest.backupKey) === raw) return;
+
     const backupKey = nextBackupKey(key);
-    window.localStorage.setItem(backupKey, raw);
-    created.push({ key, backupKey, timestamp, reason });
+    try {
+      window.localStorage.setItem(backupKey, raw);
+      created.push({ key, backupKey, timestamp, reason });
+
+      // Retain at most two valid rollback copies per dataset.
+      // Only prune older copies after the new copy was saved successfully.
+      prior.slice(1).forEach((entry) => window.localStorage.removeItem(entry.backupKey));
+      metadata = metadata.filter((entry) => !prior.slice(1).some((old) => old.backupKey === entry.backupKey));
+    } catch (err) {
+      if (err?.name === "QuotaExceededError") {
+        console.warn("WarehouseOS: browser storage full; skipping optional local backup for", key);
+      } else {
+        console.warn("WarehouseOS: could not create local backup for", key, err);
+      }
+    }
   });
 
   if (created.length) {
-    const metadata = readArrayJson(DATA_BACKUP_META_KEY);
-    window.localStorage.setItem(DATA_BACKUP_META_KEY, JSON.stringify([...created, ...metadata].slice(0, 250)));
+    metadata = [...created, ...metadata].slice(0, 100);
+    try {
+      window.localStorage.setItem(DATA_BACKUP_META_KEY, JSON.stringify(metadata));
+    } catch (err) {
+      console.warn("WarehouseOS: backup metadata could not be saved.", err);
+    }
   }
 
   return created;
