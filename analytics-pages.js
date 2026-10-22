@@ -122,6 +122,10 @@
       duplicateUploadRows = incoming.length - additions.length;
       records = [...records, ...additions];
       saveRecords();
+      if (page === "adjustments") {
+        const uploadedDates = [...new Set(incoming.map((row) => row.date))].sort();
+        refreshAdjustmentDateOptions(uploadedDates.length === 1 ? uploadedDates[0] : "latest");
+      }
       render();
       setMessage(`${additions.length} new row${additions.length === 1 ? "" : "s"} imported. ${duplicateUploadRows} duplicate upload row${duplicateUploadRows === 1 ? "" : "s"} skipped.`);
     } catch (error) {
@@ -130,7 +134,25 @@
     } finally { event.target.value = ""; }
   }
 
+  function refreshAdjustmentDateOptions(preferredDate) {
+    if (page !== "adjustments") return;
+    const select = $("filterReportDate");
+    if (!select) return;
+    const previous = preferredDate || select.value || "latest";
+    const dates = [...new Set(records.map((record) => record.date).filter(Boolean))].sort().reverse();
+    select.innerHTML = '<option value="latest">Latest Report Date</option><option value="all">All Saved Dates</option>' +
+      dates.map((date) => `<option value="${esc(date)}">${esc(date)}</option>`).join("");
+    select.value = previous === "all" || previous === "latest" || dates.includes(previous) ? previous : "latest";
+  }
+
   function inRange(record) {
+    if (page === "adjustments" && $("filterReportDate")) {
+      const reportDate = $("filterReportDate").value;
+      if (reportDate === "latest") {
+        const latestDate = records.reduce((latest, entry) => entry.date > latest ? entry.date : latest, "");
+        if (record.date !== latestDate) return false;
+      } else if (reportDate !== "all" && reportDate && record.date !== reportDate) return false;
+    }
     const start = $("filterStart").value;
     const end = $("filterEnd").value;
     const search = $("filterSearch").value.trim().toLowerCase();
@@ -148,7 +170,20 @@
       if (!occurrences.has(record.item)) occurrences.set(record.item, new Set());
       occurrences.get(record.item).add(uniqueEvent);
     });
-    return records.filter(inRange).map((record) => ({ ...record, repeat: (occurrences.get(record.item)?.size || 0) > 1 })).sort((a, b) => `${b.date}|${b.doc}`.localeCompare(`${a.date}|${a.doc}`));
+    const rows = records.filter(inRange).map((record) => ({
+      ...record,
+      repeat: (occurrences.get(record.item)?.size || 0) > 1,
+      adjustmentValue: Math.abs(record.qty * record.cost)
+    }));
+    const sort = $("filterCostSort")?.value || "";
+    rows.sort((a, b) => {
+      if (sort === "unit-desc") return b.cost - a.cost || a.item.localeCompare(b.item);
+      if (sort === "unit-asc") return a.cost - b.cost || a.item.localeCompare(b.item);
+      if (sort === "value-desc") return b.adjustmentValue - a.adjustmentValue || a.item.localeCompare(b.item);
+      if (sort === "value-asc") return a.adjustmentValue - b.adjustmentValue || a.item.localeCompare(b.item);
+      return `${b.date}|${b.doc}`.localeCompare(`${a.date}|${a.doc}`);
+    });
+    return rows;
   }
 
   function cycleAisle(countId) {
@@ -232,7 +267,7 @@
     $("repeatedItemsBody").innerHTML = repeatedItems.length
       ? repeatedItems.map((group) => `<tr><td>${esc(group.item)}</td><td>${esc(group.description)}</td><td class="numeric">${group.count.toLocaleString()}</td><td class="numeric">${group.added.toLocaleString()}</td><td class="numeric">${group.removed.toLocaleString()}</td><td class="numeric">${(group.added - group.removed).toLocaleString()}</td><td>${esc([...group.users].join(", "))}</td><td>${esc([...group.dates].sort().join(", "))}</td></tr>`).join("")
       : '<tr><td colspan="8">No repeated item numbers in the current results.</td></tr>';
-    $("analyticsBody").innerHTML = rows.length ? rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.item)}</td><td>${esc(row.description)}</td><td class="numeric">${row.qty.toLocaleString()}</td><td><span class="badge badge-${row.direction.toLowerCase()}">${row.direction}</span></td><td>${esc(row.reason)}</td><td>${esc(row.user)}</td><td>${esc(row.doc)}</td><td class="numeric">${row.gainLoss.toLocaleString(undefined, { style: "currency", currency: "USD" })}</td><td>${row.repeat ? '<span class="badge badge-repeat">Yes</span>' : "No"}</td></tr>`).join("") : '<tr><td colspan="10">No adjustments match these filters.</td></tr>';
+    $("analyticsBody").innerHTML = rows.length ? rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.item)}</td><td>${esc(row.description)}</td><td class="numeric">${row.qty.toLocaleString()}</td><td><span class="badge badge-${row.direction.toLowerCase()}">${row.direction}</span></td><td>${esc(row.reason)}</td><td>${esc(row.user)}</td><td>${esc(row.doc)}</td><td class="numeric">${currency(row.cost)}</td><td class="numeric">${currency(row.adjustmentValue)}</td><td class="numeric">${row.gainLoss.toLocaleString(undefined, { style: "currency", currency: "USD" })}</td><td>${row.repeat ? '<span class="badge badge-repeat">Yes</span>' : "No"}</td></tr>`).join("") : '<tr><td colspan="12">No adjustments match these filters.</td></tr>';
     return rows;
   }
 
@@ -510,8 +545,8 @@
   function exportCsv() {
     const rows = page === "adjustments" ? adjustmentRows() : timedCycleRows();
     if (!rows.length) return setMessage("There is no filtered data to export.", true);
-    const headers = page === "adjustments" ? ["Date", "Item #", "Description", "Qty", "Direction", "Reason", "User", "Document #", "Gain/Loss", "Adjusted Again"] : ["Date", "Start Time", "Count ID", "Status", "Previous Count", "Minutes Since Previous"];
-    const values = page === "adjustments" ? rows.map((row) => [row.date, row.item, row.description, row.qty, row.direction, row.reason, row.user, row.doc, row.gainLoss, row.repeat ? "Yes" : "No"]) : rows.map((row) => [row.date, row.startTime, row.countId, row.status, row.previousCount, Number.isFinite(row.gapMinutes) ? row.gapMinutes.toFixed(2) : ""]);
+    const headers = page === "adjustments" ? ["Date", "Item #", "Description", "Qty", "Direction", "Reason", "User", "Document #", "Unit Cost", "Adjustment Value", "Gain/Loss", "Adjusted Again"] : ["Date", "Start Time", "Count ID", "Status", "Previous Count", "Minutes Since Previous"];
+    const values = page === "adjustments" ? rows.map((row) => [row.date, row.item, row.description, row.qty, row.direction, row.reason, row.user, row.doc, row.cost, row.adjustmentValue, row.gainLoss, row.repeat ? "Yes" : "No"]) : rows.map((row) => [row.date, row.startTime, row.countId, row.status, row.previousCount, Number.isFinite(row.gapMinutes) ? row.gapMinutes.toFixed(2) : ""]);
     const blob = new Blob([[headers, ...values].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -521,6 +556,7 @@
   }
 
   function render() { return page === "adjustments" ? renderAdjustments() : renderCycleTiming(); }
+  refreshAdjustmentDateOptions();
   $("analyticsFile").addEventListener("change", importFile);
   $("exportAnalytics").addEventListener("click", exportCsv);
   $("exportRepeatedItems")?.addEventListener("click", printRepeatedItemsReport);
@@ -528,6 +564,6 @@
     if (!confirm("Clear all saved uploads from this browser?")) return;
     records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); render(); setMessage("Saved uploads cleared.");
   });
-  ["filterStart", "filterEnd", "filterSearch", "filterDirection", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
+  ["filterReportDate", "filterCostSort", "filterStart", "filterEnd", "filterSearch", "filterDirection", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
   render();
 })();
