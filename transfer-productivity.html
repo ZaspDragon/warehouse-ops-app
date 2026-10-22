@@ -12,8 +12,8 @@ main{max-width:1420px;margin:24px auto;padding:0 16px}.controls{display:flex;gap
 <main><section id="loginNotice" class="card hidden"><h2>Sign in required</h2><p>Log in through WarehouseOS to use this report.</p><a href="./">Open login</a></section>
 <div id="app" class="hidden">
 <section class="card"><h2>Upload Transfer Productivity Excel</h2><p class="hint">Accepts the OH01 “Transfer Productivity By Date” Excel report. Each upload is one weekly report; uploading the same date range replaces that week, not adds it twice. Reports are saved locally in this browser, under your signed-in account.</p>
-<div class="controls"><label>Excel report (.xlsx/.xls)<input id="file" type="file" accept=".xlsx,.xls"></label><div style="min-width:150px;padding:10px"><strong>5-day workweek</strong><div class="hint">Daily average = weekly total ÷ 5</div></div><button class="primary" id="upload">Import / Replace Week</button></div>
-<p id="status" aria-live="polite"></p></section>
+<div class="controls"><label>Excel report (.xlsx/.xls) — automatically imports when selected<input id="file" type="file" accept=".xlsx,.xls"></label><div style="min-width:150px;padding:10px"><strong>5-day workweek</strong><div class="hint">Daily average = weekly total ÷ 5</div></div><button class="primary" id="upload">Retry Import / Replace Week</button></div>
+<p id="status" aria-live="polite">Choose an Excel file to import it automatically.</p></section>
 <section class="card"><h2>Weekly Performance Filters</h2><div class="controls">
 <label>Weeks<select id="week"><option value="all">All uploaded weeks</option></select></label>
 <label>Employee<input id="employee" type="search" placeholder="Search a person's name"></label>
@@ -35,7 +35,7 @@ function fixed(x){return x.toLocaleString("en-US",{maximumFractionDigits:1})}
 function message(t,isError){el("status").textContent=t;el("status").className=isError?"error":"success"}
 function parseSheet(bytes){
 if(typeof XLSX==="undefined")throw Error("Excel reader unavailable. Check internet connection and retry.");
-var wb=XLSX.read(bytes,{type:"array"}),sheet=wb.Sheets[wb.SheetNames[0]],data=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
+var wb=XLSX.read(bytes,{type:"array",cellDates:false}),sheet=wb.Sheets[wb.SheetNames[0]],data=XLSX.utils.sheet_to_json(sheet,{header:1,defval:"",blankrows:false});
 var title=data.slice(0,6).flat().find(function(x){return typeof x==="string"&&/Transfer Productivity Analysis/i.test(x)});
 if(!title)throw Error("Report title not found in the first six rows. Expected: OH01 Transfer Productivity Analysis (MM/DD/YYYY - MM/DD/YYYY).");
 var match=String(title).match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
@@ -49,14 +49,14 @@ var idx={employee:col("employee"),pulled:col("pulled"),pullErrors:col("pull erro
 if(Object.values(idx).some(function(v){return v<0}))throw Error("The report is missing one or more expected productivity columns.");
 var rows=data.slice(headerIndex+1).map(function(r){
 var name=String(r[idx.employee]||"").trim();
-if(!name||/^(total|grand total|totals)$/i.test(name))return null;
+if(!name||/^(total|grand total|totals)$/i.test(name)||!String(r[idx.net]??"").trim())return null;
 return {name:name,pulled:number(r[idx.pulled]),checked:number(r[idx.checked]),errors:number(r[idx.errors]),net:number(r[idx.net]),total:number(r[idx.total]),pullErrors:number(r[idx.pullErrors]),checkErrors:number(r[idx.checkErrors]),netPull:number(r[idx.netPull]),netCheck:number(r[idx.netCheck])};
 }).filter(Boolean);
 if(!rows.length)throw Error("No employee rows were found.");
 var start=iso(match[1]),end=iso(match[2]);if(end<start)throw Error("Report date range is invalid.");
 return {start:start,end:end,rows:rows};
 }
-function save(){localStorage.setItem(key,JSON.stringify(reports))}
+function save(){try{localStorage.setItem(key,JSON.stringify(reports));return true}catch(e){throw Error("Browser storage failed: "+e.message)}}
 function populate(){var prev=el("week").value;el("week").innerHTML='<option value="all">All uploaded weeks</option>'+Object.keys(reports).sort().reverse().map(function(k){var r=reports[k];return '<option value="'+escapeHTML(k)+'">'+escapeHTML(r.start+" to "+r.end)+'</option>'}).join("");el("week").value=reports[prev]?prev:"all"}
 function calc(){
 var ids=el("week").value==="all"?Object.keys(reports):[el("week").value],people=new Map(),combined=0;
@@ -74,7 +74,9 @@ el("total").textContent=fixed(combined);
 el("avg").textContent=fixed(shown.length?shown.reduce(function(s,p){return s+p.weeklyNet},0)/shown.length:0);
 el("body").innerHTML=shown.length?shown.map(function(p){return "<tr><td>"+escapeHTML(p.name)+"</td><td>"+p.count+"</td><td>"+fixed(p.weeklyPulled)+"</td><td><strong>"+fixed(p.dailyPulled)+"</strong></td><td>"+fixed(p.weeklyChecked)+"</td><td><strong>"+fixed(p.dailyChecked)+"</strong></td><td>"+fixed(p.weeklyErrors)+"</td><td>"+fixed(p.weeklyNet)+"</td><td>"+fixed(p.dailyNet)+"</td><td>"+fixed(p.net)+"</td></tr>"}).join(""):'<tr><td colspan="10">No matching employee reports.</td></tr>';
 }
-el("upload").onclick=async function(){try{if(!user)throw Error("Please sign in first.");var f=el("file").files[0];if(!f)throw Error("Choose an Excel report.");var report=parseSheet(await f.arrayBuffer());report.workdays=5;reports[report.start+"|"+report.end]=report;save();populate();el("week").value=report.start+"|"+report.end;calc();message("SUCCESS: "+report.rows.length+" employee names and their pulled/checked totals imported for "+report.start+" to "+report.end+". Daily pulled, checked and net averages = weekly totals ÷ 5. Saved in this browser.")}catch(e){message(e.message,true)}};
+async function importExcel(){try{if(!user)throw Error("Please sign in first.");var f=el("file").files[0];if(!f)throw Error("Choose an Excel report.");var report=parseSheet(await f.arrayBuffer());report.workdays=5;reports[report.start+"|"+report.end]=report;save();populate();el("week").value=report.start+"|"+report.end;calc();message("SUCCESS: "+report.rows.length+" employee names and their pulled/checked totals imported for "+report.start+" to "+report.end+". Daily pulled, checked and net averages = weekly totals ÷ 5. Saved in this browser.")}catch(e){message("Import failed: "+e.message,true);console.error("Transfer productivity import error",e)}}
+el("upload").onclick=importExcel;
+el("file").addEventListener("change",function(){if(this.files.length){message("Reading "+this.files[0].name+"…");importExcel()}});
 ["week","sort","employee"].forEach(function(id){el(id).addEventListener(id==="employee"?"input":"change",calc)});
 el("clearWeek").onclick=function(){var id=el("week").value;if(id==="all"){message("Select one week before removing it.",true);return}if(!confirm("Remove the selected locally stored weekly report?"))return;delete reports[id];save();populate();calc();message("Selected week removed.")};
 el("export").onclick=function(){if(!shown.length){message("Nothing to export.",true);return}var data=[["Employee","Weeks","Pulled Per Week","Pulled Per Day","Checked Per Week","Checked Per Day","Errors Per Week","Net Per Week","Net Per Day","Total Net"]].concat(shown.map(function(p){return [p.name,p.count,p.weeklyPulled,p.dailyPulled,p.weeklyChecked,p.dailyChecked,p.weeklyErrors,p.weeklyNet,p.dailyNet,p.net]}));var csv=data.map(function(row){return row.map(function(v){var t=String(v);if(/^[=+@\-]/.test(t)&&typeof v==="string")t="'"+t;return '"'+t.replace(/"/g,'""')+'"'}).join(",")}).join("\r\n");var url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");a.href=url;a.download="transfer-productivity-"+(el("week").value==="all"?"all-weeks":"selected-week")+".csv";a.click();setTimeout(function(){URL.revokeObjectURL(url)},1000)};
