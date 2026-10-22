@@ -12,17 +12,17 @@ main{max-width:1420px;margin:24px auto;padding:0 16px}.controls{display:flex;gap
 <main><section id="loginNotice" class="card hidden"><h2>Sign in required</h2><p>Log in through WarehouseOS to use this report.</p><a href="./">Open login</a></section>
 <div id="app" class="hidden">
 <section class="card"><h2>Upload Transfer Productivity Excel</h2><p class="hint">Accepts the OH01 “Transfer Productivity By Date” Excel report. Each upload is one weekly report; uploading the same date range replaces that week, not adds it twice. Reports are saved locally in this browser, under your signed-in account.</p>
-<div class="controls"><label>Excel report (.xlsx/.xls)<input id="file" type="file" accept=".xlsx,.xls"></label><label>Workdays in week<input id="workdays" type="number" min="1" max="7" step="1" value="5"></label><button class="primary" id="upload">Import / Replace Week</button></div>
+<div class="controls"><label>Excel report (.xlsx/.xls)<input id="file" type="file" accept=".xlsx,.xls"></label><div style="min-width:150px;padding:10px"><strong>5-day workweek</strong><div class="hint">Daily average = weekly total ÷ 5</div></div><button class="primary" id="upload">Import / Replace Week</button></div>
 <p id="status" aria-live="polite"></p></section>
 <section class="card"><h2>Weekly Performance Filters</h2><div class="controls">
 <label>Weeks<select id="week"><option value="all">All uploaded weeks</option></select></label>
 <label>Employee<input id="employee" type="search" placeholder="Search a person's name"></label>
-<label>Ranking<select id="sort"><option value="weeklyNet">Average net / week</option><option value="dailyNet">Average net / day</option><option value="weeklyPulled">Average pulled / week</option><option value="weeklyChecked">Average checked / week</option><option value="weeklyErrors">Average errors / week</option><option value="name">Employee name</option></select></label>
+<label>Ranking<select id="sort"><option value="dailyNet">Net production / day (÷ 5)</option><option value="weeklyNet">Net production / week</option><option value="weeklyPulled">Average pulled / week</option><option value="weeklyChecked">Average checked / week</option><option value="weeklyErrors">Average errors / week</option><option value="name">Employee name</option></select></label>
 <button id="export" class="primary">Export CSV</button><button id="clearWeek">Remove Selected Week</button>
 </div></section>
 <div class="metric-grid"><div class="metric"><strong id="weeks">0</strong><span>Weeks selected</span></div><div class="metric"><strong id="people">0</strong><span>People shown</span></div><div class="metric"><strong id="total">0</strong><span>Combined net lines</span></div><div class="metric"><strong id="avg">0</strong><span>Avg net lines / person / week</span></div></div>
-<section class="card"><h2>Average Productivity Per Person</h2><p class="hint">Average/week = total across selected reports ÷ number of weeks where that employee appears. Average/day = total net lines ÷ reported workdays for those weeks. A standard 5-day workweek is assumed until edited at upload. Net figures are taken directly from the Excel report, including any penalties or adjustments.</p>
-<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Weeks</th><th>Avg Pulled / Week</th><th>Avg Checked / Week</th><th>Avg Errors / Week</th><th>Avg Net / Week</th><th>Avg Net / Day</th><th>Total Net</th></tr></thead><tbody id="body"><tr><td colspan="8">Upload a weekly report to begin.</td></tr></tbody></table></div></section>
+<section class="card"><h2>Average Productivity Per Person</h2><p class="hint">Average/week = total across selected reports ÷ number of weeks where that employee appears. Average/day = total net lines ÷ (5 × number of weeks the employee appears). Every report represents one 5-day workweek. Net figures are taken directly from the Excel report, including any penalties or adjustments.</p>
+<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Weeks</th><th>Avg Pulled / Week</th><th>Avg Checked / Week</th><th>Avg Errors / Week</th><th>Weekly Net Lines</th><th>Daily Net Lines (÷ 5)</th><th>Total Net</th></tr></thead><tbody id="body"><tr><td colspan="8">Upload a weekly report to begin.</td></tr></tbody></table></div></section>
 </div></main>
 <script>
 (function(){
@@ -37,11 +37,11 @@ function parseSheet(bytes){
 if(typeof XLSX==="undefined")throw Error("Excel reader unavailable. Check internet connection and retry.");
 var wb=XLSX.read(bytes,{type:"array"}),sheet=wb.Sheets[wb.SheetNames[0]],data=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
 var title=data.slice(0,6).flat().find(function(x){return typeof x==="string"&&/Transfer Productivity Analysis/i.test(x)});
-if(!title)throw Error("This does not look like a Transfer Productivity Analysis report.");
+if(!title)throw Error("Report title not found in the first six rows. Expected: OH01 Transfer Productivity Analysis (MM/DD/YYYY - MM/DD/YYYY).");
 var match=String(title).match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
 if(!match)throw Error("Could not identify the report's start/end dates. Expected e.g. (10/12/2026 - 10/16/2026).");
 function iso(s){var p=s.split("/");return p[2]+"-"+p[0].padStart(2,"0")+"-"+p[1].padStart(2,"0")}
-var headerIndex=data.findIndex(function(r){return r.some(function(c){return String(c).trim()==="Employee"})&&r.some(function(c){return /Total Lines/i.test(String(c))})});
+var headerIndex=data.findIndex(function(r){return r.some(function(c){return String(c).replace(/\s+/g," ").trim().toLowerCase()==="employee"})&&r.some(function(c){return /total\s+lines/i.test(String(c).replace(/\s+/g," "))})});
 if(headerIndex<0)throw Error("Missing expected employee and total-line column headers.");
 var head=data[headerIndex].map(function(c){return String(c).replace(/\s+/g," ").trim().toLowerCase()});
 function col(name){return head.indexOf(name)}
@@ -49,7 +49,7 @@ var idx={employee:col("employee"),pulled:col("pulled"),pullErrors:col("pull erro
 if(Object.values(idx).some(function(v){return v<0}))throw Error("The report is missing one or more expected productivity columns.");
 var rows=data.slice(headerIndex+1).map(function(r){
 var name=String(r[idx.employee]||"").trim();
-if(!name||/^(total|grand total)$/i.test(name))return null;
+if(!name||/^(total|grand total|totals)$/i.test(name)||!/^[\d\s,.-]+$/.test(String(r[idx.net]??"")) )return null;
 return {name:name,pulled:number(r[idx.pulled]),checked:number(r[idx.checked]),errors:number(r[idx.errors]),net:number(r[idx.net]),total:number(r[idx.total]),pullErrors:number(r[idx.pullErrors]),checkErrors:number(r[idx.checkErrors]),netPull:number(r[idx.netPull]),netCheck:number(r[idx.netCheck])};
 }).filter(Boolean);
 if(!rows.length)throw Error("No employee rows were found.");
@@ -63,7 +63,7 @@ var ids=el("week").value==="all"?Object.keys(reports):[el("week").value],people=
 ids.forEach(function(id){var report=reports[id];if(!report)return;report.rows.forEach(function(row){
 var norm=row.name.toLowerCase().replace(/\s+/g," ").trim(),p=people.get(norm);
 if(!p){p={name:row.name,count:0,days:0,pulled:0,checked:0,errors:0,net:0};people.set(norm,p)}
-p.count++;p.days+=report.workdays||5;p.pulled+=row.pulled;p.checked+=row.checked;p.errors+=row.errors;p.net+=row.net;
+p.count++;p.days+=5;p.pulled+=row.pulled;p.checked+=row.checked;p.errors+=row.errors;p.net+=row.net;
 })});
 shown=[...people.values()].filter(function(p){return p.name.toLowerCase().includes(el("employee").value.toLowerCase().trim())}).map(function(p){p.weeklyPulled=p.pulled/p.count;p.weeklyChecked=p.checked/p.count;p.weeklyErrors=p.errors/p.count;p.weeklyNet=p.net/p.count;p.dailyNet=p.net/p.days;return p});
 var sort=el("sort").value;shown.sort(function(a,b){return sort==="name"?a.name.localeCompare(b.name):b[sort]-a[sort]||a.name.localeCompare(b.name)});
@@ -74,7 +74,7 @@ el("total").textContent=fixed(combined);
 el("avg").textContent=fixed(shown.length?shown.reduce(function(s,p){return s+p.weeklyNet},0)/shown.length:0);
 el("body").innerHTML=shown.length?shown.map(function(p){return "<tr><td>"+escapeHTML(p.name)+"</td><td>"+p.count+"</td><td>"+fixed(p.weeklyPulled)+"</td><td>"+fixed(p.weeklyChecked)+"</td><td>"+fixed(p.weeklyErrors)+"</td><td><strong>"+fixed(p.weeklyNet)+"</strong></td><td>"+fixed(p.dailyNet)+"</td><td>"+fixed(p.net)+"</td></tr>"}).join(""):'<tr><td colspan="8">No matching employee reports.</td></tr>';
 }
-el("upload").onclick=async function(){try{if(!user)throw Error("Please sign in first.");var f=el("file").files[0];if(!f)throw Error("Choose an Excel report.");var days=Number(el("workdays").value);if(!Number.isInteger(days)||days<1||days>7)throw Error("Workdays must be between 1 and 7.");var report=parseSheet(await f.arrayBuffer());report.workdays=days;reports[report.start+"|"+report.end]=report;save();populate();el("week").value=report.start+"|"+report.end;calc();message("Imported "+report.rows.length+" employees for "+report.start+" to "+report.end+". Saved for this browser.")}catch(e){message(e.message,true)}};
+el("upload").onclick=async function(){try{if(!user)throw Error("Please sign in first.");var f=el("file").files[0];if(!f)throw Error("Choose an Excel report.");var report=parseSheet(await f.arrayBuffer());report.workdays=5;reports[report.start+"|"+report.end]=report;save();populate();el("week").value=report.start+"|"+report.end;calc();message("SUCCESS: "+report.rows.length+" employees imported for "+report.start+" to "+report.end+". Daily averages = net weekly totals ÷ 5. Saved on this browser.")}catch(e){message(e.message,true)}};
 ["week","sort","employee"].forEach(function(id){el(id).addEventListener(id==="employee"?"input":"change",calc)});
 el("clearWeek").onclick=function(){var id=el("week").value;if(id==="all"){message("Select one week before removing it.",true);return}if(!confirm("Remove the selected locally stored weekly report?"))return;delete reports[id];save();populate();calc();message("Selected week removed.")};
 el("export").onclick=function(){if(!shown.length){message("Nothing to export.",true);return}var data=[["Employee","Weeks","Average Pulled Per Week","Average Checked Per Week","Average Errors Per Week","Average Net Per Week","Average Net Per Day","Total Net"]].concat(shown.map(function(p){return [p.name,p.count,p.weeklyPulled,p.weeklyChecked,p.weeklyErrors,p.weeklyNet,p.dailyNet,p.net]}));var csv=data.map(function(row){return row.map(function(v){var t=String(v);if(/^[=+@\-]/.test(t)&&typeof v==="string")t="'"+t;return '"'+t.replace(/"/g,'""')+'"'}).join(",")}).join("\r\n");var url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");a.href=url;a.download="transfer-productivity-"+(el("week").value==="all"?"all-weeks":"selected-week")+".csv";a.click();setTimeout(function(){URL.revokeObjectURL(url)},1000)};
