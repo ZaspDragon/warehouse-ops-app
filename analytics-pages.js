@@ -562,7 +562,7 @@
   $("exportRepeatedItems")?.addEventListener("click", printRepeatedItemsReport);
   $("clearAnalyticsData").addEventListener("click", () => {
     if (!confirm("Clear all saved uploads from this browser?")) return;
-    records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); render(); setMessage("Saved uploads cleared.");
+    records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); refreshAdjustmentDateOptions("latest"); render(); setMessage("Saved uploads cleared.");
   });
   ["filterReportDate", "filterCostSort", "filterStart", "filterEnd", "filterSearch", "filterDirection", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
   render();
