@@ -28,6 +28,9 @@
     }
     const direct = text(value).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (direct) return `${direct[1]}-${direct[2].padStart(2, "0")}-${direct[3].padStart(2, "0")}`;
+    // GP exports month/day/year dates, sometimes followed by a timestamp.
+    const usDate = text(value).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|$)/);
+    if (usDate) return `${usDate[3]}-${usDate[1].padStart(2, "0")}-${usDate[2].padStart(2, "0")}`;
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? "" : dateKey(parsed);
   }
@@ -76,17 +79,57 @@
   }
 
   function parseAdjustments(rows) {
-    const headerIndex = findHeader(rows, ["docdate", "item", "qty", "user"]);
-    if (headerIndex < 0) throw new Error("Could not find the adjustment report headings (Doc Date, Item #, Qty, User).");
+    // Support both legacy adjustment headers and Great Plains transaction exports.
+    const aliases = {
+      date: ["docdate", "date", "documentdate", "transactiondate"],
+      item: ["item", "itemnumber", "itemno", "itemnum"],
+      qty: ["qty", "transactionquantity", "quantity", "adjustmentquantity"],
+      user: ["user", "modifieduserid", "userid", "modifieduser"],
+      doc: ["doc", "documentnumber", "documentno", "docnumber"],
+      batch: ["batchnumber", "batch", "batchid"],
+      location: ["transactionlocation", "location", "siteid", "branch"],
+      description: ["description", "itemdescription"],
+      reason: ["reason", "adjustmentreason", "bchcomnt", "batchcomment"],
+      uom: ["uom", "unitofmeasure"],
+      cost: ["cost", "unitcost"],
+      gainLoss: ["gainloss", "gainlossvalue"]
+    };
+    const findColumn = (headers, names) => headers.findIndex((cell) => names.includes(keyName(cell)));
+    const headerIndex = rows.findIndex((row) =>
+      ["date", "item", "qty", "user"].every((field) => findColumn(row, aliases[field]) >= 0));
+    if (headerIndex < 0) {
+      throw new Error("Could not find adjustment columns. Supported headings include Date / Doc Date, Item Number / Item #, Transaction Quantity / Qty, and Modified User ID / User.");
+    }
     const headers = rows[headerIndex];
-    return rows.slice(headerIndex + 1).map((row) => rowObject(headers, row)).filter((row) => dateKey(row.docdate) && text(row.item)).map((row) => {
-      const qty = number(row.qty);
-      const item = text(row.item).replace(/\.0$/, "");
-      const doc = text(row.doc).replace(/\.0$/, "");
-      const record = { date: dateKey(row.docdate), doc, item, description: text(row.description), reason: text(row.reason), uom: text(row.uom), qty, cost: number(row.cost), gainLoss: number(row.gainloss), user: text(row.user), direction: qty >= 0 ? "Added" : "Removed" };
-      record.id = [record.date, doc, item, qty, record.user, record.reason].join("|").toLowerCase();
-      return record;
-    });
+    const columns = Object.fromEntries(Object.entries(aliases).map(([field, names]) => [field, findColumn(headers, names)]));
+    const result = [];
+    for (const row of rows.slice(headerIndex + 1)) {
+      const get = (field) => columns[field] < 0 ? "" : row[columns[field]];
+      const date = dateKey(get("date"));
+      const item = text(get("item")).replace(/\.0$/, "");
+      if (!date || !item) continue;
+      const qty = number(get("qty"));
+      const doc = text(get("doc")).replace(/\.0$/, "");
+      const batch = text(get("batch"));
+      const location = text(get("location"));
+      const user = text(get("user"));
+      const record = {
+        date, doc, batch, location, item,
+        description: text(get("description")),
+        reason: text(get("reason")),
+        uom: text(get("uom")),
+        qty, cost: number(get("cost")),
+        gainLoss: number(get("gainLoss")),
+        user,
+        direction: qty >= 0 ? "Added" : "Removed"
+      };
+      // Preserve the original ID format for legacy reports and saved records.
+      record.id = [date, doc, item, qty, user, record.reason,
+        ...(batch || location ? [batch, location] : [])].join("|").toLowerCase();
+      result.push(record);
+    }
+    if (!result.length) throw new Error("The report headings were found, but no valid adjustment rows were found.");
+    return result;
   }
 
   function parseCycleTiming(rows) {
@@ -118,7 +161,11 @@
       setMessage(`Reading ${file.name}…`);
       const incoming = page === "adjustments" ? parseAdjustments(await readWorkbook(file)) : parseCycleTiming(await readWorkbook(file));
       const ids = new Set(records.map((record) => record.id));
-      const additions = incoming.filter((record) => !ids.has(record.id));
+      const additions = incoming.filter((record) => {
+        if (ids.has(record.id)) return false;
+        ids.add(record.id);
+        return true;
+      });
       duplicateUploadRows = incoming.length - additions.length;
       records = [...records, ...additions];
       saveRecords();
