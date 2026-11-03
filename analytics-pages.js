@@ -81,7 +81,7 @@
     const headerIndex = rows.findIndex(row =>
       row.some(cell => keyName(cell) === "item" || keyName(cell) === "itemnumber") &&
       row.some(cell => keyName(cell) === "qty") &&
-      row.some(cell => keyName(cell) === "cost" || keyName(cell) === "gainloss")
+      row.some(cell => ["cost", "gainloss", "docdate"].includes(keyName(cell)))
     );
     if (headerIndex < 0) throw new Error("Could not find transaction columns (Item #, Qty, Cost or Gain/Loss). Upload the Warehouse Inventory Transaction Report.");
     const headers = rows[headerIndex];
