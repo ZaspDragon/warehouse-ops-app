@@ -44,15 +44,15 @@ th{white-space:nowrap;background:#eef3fc}tbody tr:hover{background:#f8fbff}.numb
 <a href="index.html" style="color:white">← Back to Warehouse Ops</a></header>
 <main><div id="printHeading" class="print-only"><h1>WarehouseOS — Hold Batch Investigation</h1><p id="printMeta"></p></div>
 <section class="card">
-<div class="hold-top"><div><h2>Hold Batch Priority Analyzer</h2><p class="muted">Upload the Great Plains Open Inventory Batches Excel or CSV report. Ranking is calculated in your browser only.</p></div></div>
+<div class="hold-top"><div><h2>Hold Batch Priority Analyzer</h2><p class="muted">Upload the Great Plains Open Inventory Batches Excel or CSV report. Only batches in the latest uploaded Open Inventory Batches report are shown. This report is treated as the current open/unposted snapshot.</p></div></div>
 <div class="hold-tools">
 <label>Upload open inventory batches<input id="holdFile" type="file" accept=".xlsx,.xls,.csv"></label>
 <label>Search batch, document, item, user<input id="holdSearch" placeholder="Search batches"></label>
-<label>Rank batches by<select id="holdSort"><option value="removals">Largest negative batch quantity</option><option value="gross">Total affected units (absolute)</option><option value="lines">Number of inventory lines</option><option value="net">Net quantity magnitude</option></select></label>
+<label>Rank batches by<select id="holdSort"><option value="removals">Largest negative batch quantity</option><option value="gross">Total affected units (absolute)</option><option value="lines">Number of inventory lines</option><option value="net">Net quantity magnitude</option><option value="oldest" selected>Oldest to newest (open batches)</option><option value="newest">Newest to oldest</option></select></label>
 <label>Choose hold batch<select id="batchSelect"><option value="">All batches</option></select></label><label>Top negative item rows<select id="itemLimit"><option value="10">Top 10</option><option value="25" selected>Top 25</option><option value="50">Top 50</option><option value="100">Top 100</option><option value="all">All</option></select></label><label>Minimum negative units<input id="minNegative" type="number" min="1" value="1"></label><button id="holdExport" class="primary" disabled>Export Ranked CSV</button><button id="itemExport" class="primary" disabled>Export Item Research CSV</button><button id="holdPrint" class="primary" disabled type="button">🖨 Print Current View</button>
 <button id="holdClear" class="danger">Clear Uploaded Report</button>
 </div><p class="muted" id="holdStatus" role="status">No report loaded yet. Choose an Excel file to begin.</p>
-<p class="muted">Each batch is identified by Batch Number + Document Number. Negative quantities are shown as removals; positive quantities as additions. These are reported quantities, not inventory dollar values. This screen does not clear or post a batch in Great Plains.</p>
+<p class="muted">Each batch is identified by Batch Number + Document Number. Negative quantities are shown as removals; positive quantities as additions. These are reported quantities, not inventory dollar values. Upload a fresh Open Inventory Batches report to remove batches that are no longer open. This screen does not clear or post a batch in Great Plains.</p>
 </section>
 <div class="hold-kpis">
 <div class="card"><strong id="holdBatchCount">0</strong><span>Open batches</span></div>
@@ -69,7 +69,7 @@ th{white-space:nowrap;background:#eef3fc}tbody tr:hover{background:#f8fbff}.numb
 (()=>{
 "use strict";
 const $=id=>document.getElementById(id), fmt=n=>Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2});
-let batches=[];const reviewKey="warehouseos_negative_item_research_v1";let reviews={};try{reviews=JSON.parse(localStorage.getItem(reviewKey)||"{}")||{}}catch(e){}
+let batches=[];const snapshotKey="warehouseos_open_hold_batches_snapshot_v1";let snapshotName="";const reviewKey="warehouseos_negative_item_research_v1";let reviews={};try{reviews=JSON.parse(localStorage.getItem(reviewKey)||"{}")||{}}catch(e){}
 const escape=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clean=s=>String(s??"").trim();
 const key=s=>clean(s).toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -92,10 +92,38 @@ function parseSheet(rows){
  });
  return {groups:[...groups.values()],invalid};
 }
+function dateStamp(value){
+ const s=clean(value);if(!s)return Number.POSITIVE_INFINITY;
+ const us=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+ if(us)return Date.UTC(Number(us[3]),Number(us[1])-1,Number(us[2]));
+ const iso=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+ if(iso)return Date.UTC(Number(iso[1]),Number(iso[2])-1,Number(iso[3]));
+ const n=Date.parse(s);return Number.isFinite(n)?n:Number.POSITIVE_INFINITY;
+}
+function restoreSnapshot(){
+ try{
+  const saved=JSON.parse(localStorage.getItem(snapshotKey)||"null");
+  if(saved&&Array.isArray(saved.batches)){
+   batches=saved.batches.filter(b=>b&&Array.isArray(b.lines));
+   snapshotName=clean(saved.name);
+  }
+ }catch(e){/* Keep the page usable if storage is unavailable. */}
+}
+function saveSnapshot(name){
+ snapshotName=name;
+ try{localStorage.setItem(snapshotKey,JSON.stringify({name,updatedAt:new Date().toISOString(),batches}));}
+ catch(e){$("holdStatus").textContent="Loaded report, but browser storage is full. The snapshot will not survive a refresh.";}
+}
 function reviewId(l){return JSON.stringify([l.batch,l.doc,l.item,l.qty,l.loc,l.date,l.owner]);}
 function sortRows(list){let mode=$("holdSort").value;return [...list].sort((a,b)=>{
+ if(mode==="oldest"||mode==="newest"){
+  const da=dateStamp(a.date),db=dateStamp(b.date);
+  // Missing dates are always last, not accidentally the oldest.
+  if(da!==db)return mode==="oldest"?da-db:(Number.isFinite(da)&&Number.isFinite(db)?db-da:(Number.isFinite(da)?-1:1));
+  return a.batch.localeCompare(b.batch)||a.doc.localeCompare(b.doc);
+ }
  const val=x=>mode==="removals"?x.neg:mode==="lines"?x.lines.length:mode==="net"?Math.abs(x.net):x.gross;
- return val(b)-val(a)||a.batch.localeCompare(b.batch)||a.doc.localeCompare(b.doc);
+ return val(b)-val(a)||dateStamp(a.date)-dateStamp(b.date)||a.batch.localeCompare(b.batch)||a.doc.localeCompare(b.doc);
 });}
 function filtered(){const s=$("holdSearch").value.trim().toLowerCase();return sortRows(batches.filter(b=>!s||[b.batch,b.doc,b.user,...b.lines.flatMap(l=>[l.item,l.user,l.loc])].some(x=>String(x).toLowerCase().includes(s))));}
 function refreshBatchSelect(){
@@ -147,14 +175,14 @@ $("holdFile").addEventListener("change",async e=>{
  const bytes=await file.arrayBuffer();const wb=XLSX.read(bytes,{type:"array",cellDates:false});
  let parsed=null;for(const name of wb.SheetNames){const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:"",raw:false});if(detectHeader(rows)>=0){parsed=parseSheet(rows);break;}}
  if(!parsed)throw Error("No sheet contains a recognized Open Inventory Batches report.");
- batches=parsed.groups;refreshBatchSelect();render();$("holdStatus").textContent=`Loaded ${file.name}: ${batches.length} batches, ${batches.reduce((n,b)=>n+b.lines.length,0)} lines.`+(parsed.invalid?` Skipped ${parsed.invalid} incomplete rows.`:"");
+ batches=parsed.groups;saveSnapshot(file.name);refreshBatchSelect();render();$("holdStatus").textContent=`Current open/unposted snapshot — ${file.name}: ${batches.length} batches, ${batches.reduce((n,b)=>n+b.lines.length,0)} lines. Sorted ${$("holdSort").value==="oldest"?"oldest first":$("holdSort").selectedOptions[0].textContent}.`+(parsed.invalid?` Skipped ${parsed.invalid} incomplete rows.`:"");
  }catch(err){$("holdStatus").textContent="Upload failed: "+err.message;}finally{e.target.value="";}
 });
 $("itemLimit").addEventListener("change",render);$("minNegative").addEventListener("input",render);
 $("negativeItems").addEventListener("change",e=>{const el=e.target;if(!el.dataset.id)return;reviews[el.dataset.id]={...(reviews[el.dataset.id]||{}),[el.dataset.field]:el.value};try{localStorage.setItem(reviewKey,JSON.stringify(reviews))}catch(err){$("holdStatus").textContent="Browser storage failed; export your research."}});
 $("batchSelect").addEventListener("change",render);
 $("holdSearch").addEventListener("input",render);$("holdSort").addEventListener("change",render);
-$("holdClear").addEventListener("click",()=>{batches=[];refreshBatchSelect();$("holdSearch").value="";render();$("holdStatus").textContent="Uploaded report cleared from this page.";});
+$("holdClear").addEventListener("click",()=>{if(!confirm("Clear the saved open-batch snapshot from this browser? Investigation notes will remain saved."))return;batches=[];snapshotName="";localStorage.removeItem(snapshotKey);refreshBatchSelect();$("holdSearch").value="";render();$("holdStatus").textContent="Saved open-batch snapshot cleared.";});
 $("printFocus").addEventListener("click",()=>{
  if(!$("batchSelect").value)return;
  document.body.classList.add("print-focus");
@@ -185,6 +213,7 @@ $("holdExport").addEventListener("click",()=>{
  const csv=csvRows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n");
  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="Hold_Batch_Priorities.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
 });
-render();
+restoreSnapshot();refreshBatchSelect();render();
+if(batches.length)$("holdStatus").textContent=`Restored saved open/unposted snapshot${snapshotName?" — "+snapshotName:""}: ${batches.length} batches. Upload a fresh Open Inventory Batches report to update current open batches.`;
 })();
 </script></body></html>
