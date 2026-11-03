@@ -17,7 +17,7 @@
     <section class="card upload-card">
       <div>
         <h2>Upload Transaction Report</h2>
-        <p class="hint">Use the Warehouse Inventory Transaction Report - By Date Excel file. Re-uploading the same rows will not double-count them.</p>
+        <p class="hint">Use the Warehouse Inventory Transaction Report - Daily or By Date Excel file. Re-uploading the same rows will not double-count them.</p>
       </div>
       <label class="file-picker">Choose Excel File<input id="analyticsFile" type="file" accept=".xlsx,.xls,.csv" /></label>
       <button id="clearAnalyticsData" class="danger" type="button">Clear Saved Uploads</button>
@@ -35,7 +35,7 @@
 
     <section class="card">
       <div class="section-heading">
-        <div><h2>Adjustment Details</h2><p class="hint">“Adjusted again” means the same item appears on more than one document or date in the saved uploads.</p></div>
+        <div><h2>Adjustment Details</h2><p class="hint">“Review” means an item has multiple adjustment rows in saved reports. Repeats are not necessarily mistakes; verify against source batches.</p></div>
         <button id="exportAnalytics" class="primary" type="button">Export CSV</button>
       </div>
       <div class="analytics-filters">
@@ -68,7 +68,7 @@
 
         <div class="section-heading repeated-items-heading">
           <div>
-            <h3>Same Item Numbers Adjusted More Than Once</h3>
+            <h3>Potential Double Adjustments — Review</h3>
             <p class="hint">Tracks repeated item numbers within the currently filtered results.</p>
           </div>
           <div class="repeat-item-count"><strong id="bottomRepeatItemCount">0</strong><span>Repeated Items</span></div>
@@ -77,12 +77,12 @@
           <button id="exportRepeatedItems" class="primary repeated-items-download" type="button">Print / Save Double Adjustments</button>
         </div>
         <div class="table-wrap repeated-items-wrap"><table>
-          <thead><tr><th>Item #</th><th>Description</th><th>Times Adjusted</th><th>Total Added</th><th>Total Subtracted</th><th>Net Qty</th><th>Users</th><th>Dates</th></tr></thead>
-          <tbody id="repeatedItemsBody"><tr><td colspan="8">No repeated item numbers in the current results.</td></tr></tbody>
+          <thead><tr><th>Item #</th><th>Description</th><th>Times Adjusted</th><th>Total Added</th><th>Total Subtracted</th><th>Net Qty</th><th>Gains $</th><th>Losses $</th><th>Net $</th><th>Users</th><th>Dates</th></tr></thead>
+          <tbody id="repeatedItemsBody"><tr><td colspan="11">No repeated item numbers in the current results.</td></tr></tbody>
         </table></div>
       </section>
     </section>
   </main>
-  <script src="analytics-pages.js?v=20261022-1"></script>
+  <script src="analytics-pages.js?v=20261103-daily-report-fix"></script>
 </body>
 </html>
