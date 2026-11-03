@@ -76,17 +76,59 @@
   }
 
   function parseAdjustments(rows) {
-    const headerIndex = findHeader(rows, ["docdate", "item", "qty", "user"]);
-    if (headerIndex < 0) throw new Error("Could not find the adjustment report headings (Doc Date, Item #, Qty, User).");
+    // Supports both the original By Date transaction export and the GP Daily export,
+    // whose report date is in A2 and whose header starts below the report title.
+    const headerIndex = rows.findIndex(row =>
+      row.some(cell => keyName(cell) === "item" || keyName(cell) === "itemnumber") &&
+      row.some(cell => keyName(cell) === "qty") &&
+      row.some(cell => keyName(cell) === "cost" || keyName(cell) === "gainloss")
+    );
+    if (headerIndex < 0) throw new Error("Could not find transaction columns (Item #, Qty, Cost or Gain/Loss). Upload the Warehouse Inventory Transaction Report.");
     const headers = rows[headerIndex];
-    return rows.slice(headerIndex + 1).map((row) => rowObject(headers, row)).filter((row) => dateKey(row.docdate) && text(row.item)).map((row) => {
+    const hasRowDates = headers.some(cell => keyName(cell) === "docdate");
+    const title = text(rows[0]?.[0]);
+    const branch = (title.match(/\b(OH\d{2})\b/i) || [])[1] || "";
+    const reportDate = dateKey(rows.slice(0, headerIndex).map(row => row[0]).find(value => dateKey(value)));
+    if (!hasRowDates && !reportDate) throw new Error("This Daily report does not contain a readable report date at the top.");
+    const occurrences = new Map();
+    const output = [];
+    for (const sourceRow of rows.slice(headerIndex + 1)) {
+      const row = rowObject(headers, sourceRow);
+      const item = text(row.item ?? row.itemnumber).replace(/\.0$/, "");
+      if (!/^\d{4,}$/.test(item)) continue; // skip totals, footers and blank lines
+      const date = dateKey(row.docdate) || reportDate;
+      if (!date) continue;
+      const location = text(row.location);
+      if (branch && location && /^OH\d{2}$/i.test(location) && location.toUpperCase() !== branch.toUpperCase()) continue;
       const qty = number(row.qty);
-      const item = text(row.item).replace(/\.0$/, "");
-      const doc = text(row.doc).replace(/\.0$/, "");
-      const record = { date: dateKey(row.docdate), doc, item, description: text(row.description), reason: text(row.reason), uom: text(row.uom), qty, cost: number(row.cost), gainLoss: number(row.gainloss), user: text(row.user), direction: qty >= 0 ? "Added" : "Removed" };
-      record.id = [record.date, doc, item, qty, record.user, record.reason].join("|").toLowerCase();
-      return record;
-    });
+      const cost = number(row.cost);
+      const gainLoss = row.gainloss !== undefined && text(row.gainloss) !== "" ? number(row.gainloss) : qty * cost;
+      const doc = text(row.doc || row.document || row.batch).replace(/\.0$/, "");
+      const reason = text(row.reason);
+      const user = text(row.user); // Daily report does not supply a user: do not infer one from batch name.
+      const record = {
+        date, doc, item, description: text(row.description), reason, uom: text(row.uom),
+        location, batch: text(row.batch) || doc, groups: text(row.groups), qty, cost,
+        gainLoss, user, direction: qty >= 0 ? "Added" : "Removed", branch
+      };
+      if (hasRowDates) {
+        // Keep previously saved By Date records compatible with their original IDs.
+        const legacyId = [date, doc, item, qty, user, reason].join("|").toLowerCase();
+        const occurrence = occurrences.get(legacyId) || 0;
+        occurrences.set(legacyId, occurrence + 1);
+        record.id = occurrence ? legacyId + "|occurrence:" + occurrence : legacyId;
+      } else {
+        // Row-occurrence suffix preserves genuine identical lines in one report,
+        // while making uploading that same report again idempotent.
+        const fingerprint = [date, branch, doc, item, location, record.uom, reason, qty, cost, gainLoss].join("|").toLowerCase();
+        const occurrence = occurrences.get(fingerprint) || 0;
+        occurrences.set(fingerprint, occurrence + 1);
+        record.id = "daily|" + fingerprint + "|occurrence:" + occurrence;
+      }
+      output.push(record);
+    }
+    if (!output.length) throw new Error("No inventory adjustment transactions were found in this report.");
+    return output;
   }
 
   function parseCycleTiming(rows) {
@@ -118,7 +160,11 @@
       setMessage(`Reading ${file.name}…`);
       const incoming = page === "adjustments" ? parseAdjustments(await readWorkbook(file)) : parseCycleTiming(await readWorkbook(file));
       const ids = new Set(records.map((record) => record.id));
-      const additions = incoming.filter((record) => !ids.has(record.id));
+      const additions = incoming.filter((record) => {
+        if (ids.has(record.id)) return false;
+        ids.add(record.id);
+        return true;
+      });
       duplicateUploadRows = incoming.length - additions.length;
       records = [...records, ...additions];
       saveRecords();
@@ -166,13 +212,12 @@
   function adjustmentRows() {
     const occurrences = new Map();
     records.forEach((record) => {
-      const uniqueEvent = `${record.date}|${record.doc}`;
-      if (!occurrences.has(record.item)) occurrences.set(record.item, new Set());
-      occurrences.get(record.item).add(uniqueEvent);
+      if (!occurrences.has(record.item)) occurrences.set(record.item, 0);
+      occurrences.set(record.item, occurrences.get(record.item) + 1);
     });
     const rows = records.filter(inRange).map((record) => ({
       ...record,
-      repeat: (occurrences.get(record.item)?.size || 0) > 1,
+      repeat: (occurrences.get(record.item) || 0) > 1,
       adjustmentValue: Math.abs(record.qty * record.cost)
     }));
     const sort = $("filterCostSort")?.value || "";
@@ -249,12 +294,16 @@
         count: 0,
         added: 0,
         removed: 0,
+        gains: 0,
+        losses: 0,
         users: new Set(),
         dates: new Set()
       };
       group.count += 1;
       if (row.qty >= 0) group.added += row.qty;
       else group.removed += Math.abs(row.qty);
+      if (row.gainLoss > 0) group.gains += row.gainLoss;
+      if (row.gainLoss < 0) group.losses += Math.abs(row.gainLoss);
       if (row.user) group.users.add(row.user);
       if (row.date) group.dates.add(row.date);
       groups.set(row.item, group);
@@ -265,9 +314,9 @@
 
     $("bottomRepeatItemCount").textContent = repeatedItems.length.toLocaleString();
     $("repeatedItemsBody").innerHTML = repeatedItems.length
-      ? repeatedItems.map((group) => `<tr><td>${esc(group.item)}</td><td>${esc(group.description)}</td><td class="numeric">${group.count.toLocaleString()}</td><td class="numeric">${group.added.toLocaleString()}</td><td class="numeric">${group.removed.toLocaleString()}</td><td class="numeric">${(group.added - group.removed).toLocaleString()}</td><td>${esc([...group.users].join(", "))}</td><td>${esc([...group.dates].sort().join(", "))}</td></tr>`).join("")
-      : '<tr><td colspan="8">No repeated item numbers in the current results.</td></tr>';
-    $("analyticsBody").innerHTML = rows.length ? rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.item)}</td><td>${esc(row.description)}</td><td class="numeric">${row.qty.toLocaleString()}</td><td><span class="badge badge-${row.direction.toLowerCase()}">${row.direction}</span></td><td>${esc(row.reason)}</td><td>${esc(row.user)}</td><td>${esc(row.doc)}</td><td class="numeric">${currency(row.cost)}</td><td class="numeric">${currency(row.adjustmentValue)}</td><td class="numeric">${row.gainLoss.toLocaleString(undefined, { style: "currency", currency: "USD" })}</td><td>${row.repeat ? '<span class="badge badge-repeat">Yes</span>' : "No"}</td></tr>`).join("") : '<tr><td colspan="12">No adjustments match these filters.</td></tr>';
+      ? repeatedItems.map((group) => `<tr><td>${esc(group.item)}</td><td>${esc(group.description)}</td><td class="numeric">${group.count.toLocaleString()}</td><td class="numeric">${group.added.toLocaleString()}</td><td class="numeric">${group.removed.toLocaleString()}</td><td class="numeric">${(group.added - group.removed).toLocaleString()}</td><td class="numeric">${currency(group.gains)}</td><td class="numeric">${currency(group.losses)}</td><td class="numeric">${currency(group.gains - group.losses)}</td><td>${esc([...group.users].join(", ") || "Not supplied")}</td><td>${esc([...group.dates].sort().join(", "))}</td></tr>`).join("")
+      : '<tr><td colspan="11">No repeated item numbers in the current results.</td></tr>';
+    $("analyticsBody").innerHTML = rows.length ? rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.item)}</td><td>${esc(row.description)}</td><td class="numeric">${row.qty.toLocaleString()}</td><td><span class="badge badge-${row.direction.toLowerCase()}">${row.direction}</span></td><td>${esc(row.reason)}</td><td>${esc(row.user || "Not supplied")}</td><td>${esc(row.doc)}</td><td class="numeric">${currency(row.cost)}</td><td class="numeric">${currency(row.adjustmentValue)}</td><td class="numeric">${row.gainLoss.toLocaleString(undefined, { style: "currency", currency: "USD" })}</td><td>${row.repeat ? '<span class="badge badge-repeat">Review</span>' : "No"}</td></tr>`).join("") : '<tr><td colspan="12">No adjustments match these filters.</td></tr>';
     return rows;
   }
 
@@ -303,6 +352,8 @@
       group.count += 1;
       if (row.qty >= 0) group.added += row.qty;
       else group.removed += Math.abs(row.qty);
+      if (row.gainLoss > 0) group.gains += row.gainLoss;
+      if (row.gainLoss < 0) group.losses += Math.abs(row.gainLoss);
       if (row.user) group.users.add(row.user);
       if (row.date) group.dates.add(row.date);
       groups.set(row.item, group);
@@ -327,6 +378,7 @@
     const filterLabel = filterParts.length ? filterParts.join(" · ") : "All current adjustment data";
     const generatedAt = new Date().toLocaleString();
 
+    const currency = (value) => value.toLocaleString(undefined, { style: "currency", currency: "USD" });
     const reportRows = repeatedItems.map((group) => `
       <tr>
         <td class="item">${esc(group.item)}</td>
@@ -335,7 +387,10 @@
         <td class="num added">${group.added.toLocaleString()}</td>
         <td class="num removed">${group.removed.toLocaleString()}</td>
         <td class="num net">${(group.added - group.removed).toLocaleString()}</td>
-        <td>${esc([...group.users].join(", "))}</td>
+        <td class="num">${currency(group.gains)}</td>
+        <td class="num">${currency(group.losses)}</td>
+        <td class="num">${currency(group.gains - group.losses)}</td>
+        <td>${esc([...group.users].join(", ") || "Not supplied")}</td>
         <td class="dates">${esc([...group.dates].sort().join(", "))}</td>
       </tr>
     `).join("");
@@ -520,6 +575,9 @@
             <th>Total Added</th>
             <th>Total Subtracted</th>
             <th>Net Qty</th>
+            <th>Gains $</th>
+            <th>Losses $</th>
+            <th>Net $</th>
             <th>Users</th>
             <th>Dates</th>
           </tr>
