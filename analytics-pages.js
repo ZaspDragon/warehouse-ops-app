@@ -346,6 +346,8 @@
         count: 0,
         added: 0,
         removed: 0,
+        gains: 0,
+        losses: 0,
         users: new Set(),
         dates: new Set()
       };
