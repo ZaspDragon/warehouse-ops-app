@@ -276,6 +276,32 @@
       tabs.appendChild(link);
     };
 
+    // Keep Cycle Count Production visible even if an older index is cached.
+    if (!tabs.querySelector('[data-tab="cycleProduction"]')) {
+      const cycleButton = document.createElement("button");
+      cycleButton.type = "button";
+      cycleButton.className = "tab";
+      cycleButton.dataset.tab = "cycleProduction";
+      cycleButton.textContent = "Cycle Count Production";
+      const nextTab = tabs.querySelector('[data-tab="itemHistory"]');
+      tabs.insertBefore(cycleButton, nextTab || null);
+      cycleButton.addEventListener("click", () => {
+        if (typeof switchTab === "function") switchTab("cycleProduction");
+      });
+    }
+    if (!document.getElementById("cycleProductionTab")) {
+      const panel = document.createElement("section");
+      panel.id = "cycleProductionTab";
+      panel.className = "tab-panel";
+      const frame = document.createElement("iframe");
+      frame.title = "Cycle Count Production";
+      frame.src = "cycle-count-production/index.html";
+      frame.loading = "lazy";
+      frame.style.cssText = "width:100%;min-height:1600px;border:0;border-radius:12px;background:#eef2f7";
+      panel.appendChild(frame);
+      tabs.insertAdjacentElement("afterend", panel);
+    }
+
     addLink("production.html", "Receiving Production", "receiving-production");
     addLink("po-checking.html", "PO Checking", "po-checking");
   });
