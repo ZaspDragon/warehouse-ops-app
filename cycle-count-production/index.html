@@ -143,7 +143,7 @@
         <input id="alreadyCountedFile" type="file" accept=".xlsx,.xls" />
       </label>
 
-      <div class="already-counted-controls">
+      <div class="already-counted-controls" hidden style="display:none">
         <label>
           <span>Filter credited items by initials</span>
           <select id="alreadyCountedInitialsFilter">
@@ -153,8 +153,8 @@
         <button id="matchAlreadyCountedBtn" class="primary" type="button">Match Items to Locations</button>
       </div>
 
-      <h3>Employee Initials</h3>
-      <div id="initialsAssignmentGrid" class="initials-assignment-grid"></div>
+      <h3 hidden style="display:none">Employee Initials</h3>
+      <div id="initialsAssignmentGrid" class="initials-assignment-grid" hidden style="display:none"></div>
 
       <div id="alreadyCountedPreview" class="hidden"></div>
     </section>
