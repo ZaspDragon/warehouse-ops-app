@@ -450,7 +450,7 @@ function wireEvents() {
 }
 
 function switchTab(tab) {
-  if (["cycle", "cycleProduction", "picking"].includes(tab)) {
+  if (["cycle", "picking"].includes(tab)) {
     tab = "putaway";
   }
 
