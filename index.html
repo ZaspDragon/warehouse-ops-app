@@ -122,13 +122,22 @@
         <a class="tab tab-link" href="inventory-adjustments.html">Inventory Adjustments</a>
         <a class="tab tab-link" href="transfer-productivity.html">Transfer Productivity</a>
         <a class="tab tab-link" href="hold-batch-priorities.html">Hold Batch Priorities</a>
-        <a class="tab tab-link" href="cycle-count-timing.html">Cycle Count Timing</a>
+        <button class="tab" data-tab="cycleProduction">Cycle Count Production</button>
         <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
         <button class="tab" data-tab="history">History</button>
         <button class="tab" data-tab="settings">Settings</button>
       </nav>
 
+      <!-- CYCLE COUNT PRODUCTION: integrated WarehouseOps tab -->
+      <section id="cycleProductionTab" class="tab-panel">
+        <div class="card" style="padding:8px">
+          <iframe id="cycleProductionFrame" title="Cycle Count Production" loading="lazy"
+            src="cycle-count-production/index.html"
+            style="width:100%;min-height:1600px;border:0;border-radius:12px;background:#eef2f7"
+            referrerpolicy="same-origin"></iframe>
+        </div>
+      </section>
       <!-- PUT AWAY -->
       <section id="putawayTab" class="tab-panel active">
         <div class="card">
