@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Cycle count production tracker by branch, employee, assigned aisle, attendance, and individual goals." />
+  <title>Cycle Count Production</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>.aisle-breakdown-table{min-width:600px}.aisle-share-meter{height:6px;margin-top:5px;background:#e8edf4;border-radius:8px;overflow:hidden;max-width:180px}.aisle-share-meter span{display:block;height:100%;background:#2563eb;border-radius:8px}</style>
+</head>
+<body>
+  <main class="app-shell">
+    <div id="appError" class="message error hidden" role="alert"></div>
+
+    <section class="branch-management card">
+      <div class="branch-header">
+        <h2>Branch Management</h2>
+        <div class="branch-controls">
+          <select id="branchSelect" class="branch-dropdown" aria-label="Select branch"></select>
+          <button id="addBranchBtn" class="secondary small" type="button">+ Add Branch</button>
+          <button id="renameBranchBtn" class="secondary small" type="button">Rename</button>
+          <button id="deleteBranchBtn" class="secondary small danger" type="button">Delete</button>
+        </div>
+      </div>
+      <div id="branchMessage" class="message hidden" role="status"></div>
+    </section>
+
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Inventory Control</p>
+        <h1>Cycle Count Production</h1>
+        <p class="subtitle">Upload the Cycle Count Detail report, calculate production from created-count batches, and save or export the results.</p>
+      </div>
+      <div class="goal-card">
+        <span>Default daily goal</span>
+        <strong id="dailyGoalDisplay">200</strong>
+        <small id="dailyGoalUnit">Individual goals can be changed per employee</small>
+      </div>
+    </header>
+
+    <section class="card team-members-section">
+      <div class="section-heading">
+        <div>
+          <h2>Team Members</h2>
+          <small>Daily status resets to Present each new day. Assigned aisle values may include multiple letters or numbers.</small>
+        </div>
+        <div class="branch-controls">
+          <button id="exportRosterBtn" class="secondary small" type="button">Download Team Backup</button>
+          <button id="importRosterBtn" class="secondary small" type="button">Restore Team Backup</button>
+          <input id="importRosterFile" type="file" accept=".json,application/json" hidden aria-label="Choose roster backup" />
+          <button id="addTeamMemberBtn" class="secondary small" type="button">+ Add Team Member</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="team-table">
+          <thead>
+            <tr>
+              <th>Employee Name</th>
+              <th>Assigned Aisles / Date</th>
+              <th>Daily Status</th>
+              <th>Edit</th>
+              <th>Delete</th>
+            </tr>
+          </thead>
+          <tbody id="teamBody"></tbody>
+        </table>
+      </div>
+      <div id="teamMessage" class="message hidden" role="status"></div>
+    </section>
+
+    <dialog id="teamMemberModal" class="modal">
+      <form id="teamMemberForm" class="modal-form">
+        <h3 id="teamMemberModalTitle">Team Member</h3>
+        <label><span>Employee Name *</span><input id="employeeNameInput" type="text" autocomplete="off" required /></label>
+        <label><span>Starting Aisle *</span><input id="startAisleInput" type="text" maxlength="30" autocomplete="off" required /></label>
+        <label><span>Ending Aisle *</span><input id="endAisleInput" type="text" maxlength="30" autocomplete="off" required /></label>
+        <label><span>Daily Production Goal *</span><input id="employeeGoalInput" type="number" min="1" max="10000" step="1" value="200" inputmode="numeric" required /></label>
+        <div class="modal-actions">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" class="secondary" id="teamMemberCancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="branchModal" class="modal">
+      <form id="branchForm" class="modal-form">
+        <h3 id="branchMemberModalTitle">Add Branch</h3>
+        <label><span>Branch Name *</span><input id="branchNameInput" type="text" autocomplete="off" required /></label>
+        <label><span>Expected Inventory Filename</span><input id="expectedFilenameInput" type="text" autocomplete="off" placeholder="Example: Daily Inventory.xlsx" /></label>
+        <div class="modal-actions">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" class="secondary" id="branchCancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <section class="card">
+      <div class="section-heading">
+        <h2>Inventory File</h2>
+        <span id="fileSourceStatus" class="status">Ready</span>
+      </div>
+      <fieldset class="file-source-group">
+        <legend>Inventory File Source</legend>
+        <label class="radio-option"><input type="radio" name="fileSource" value="manual" checked /><span>Manual Upload</span></label>
+      </fieldset>
+      <label class="file-drop" for="sourceFile">
+        <strong>Choose Cycle Count Detail file</strong>
+        <span id="expectedFilename" class="file-hint">The app uses the Batch column and credits batches such as A-09-12, AA-09-12, A1-09-12, or OH01 7/21-2.</span>
+        <input id="sourceFile" type="file" accept=".xlsx,.xls" />
+      </label>
+      <div id="sourceControls" class="controls hidden">
+        <label>Report sheet<select id="sourceSheet"></select></label>
+        <label>Created-count / Batch column<select id="batchColumn"></select></label>
+      </div>
+      <div id="sourceStatus" class="status">Waiting for file</div>
+    </section>
+
+    <section class="card already-counted-section">
+      <div class="section-heading">
+        <div>
+          <span class="step">2</span>
+          <div>
+            <h2>Already Cycle Counted</h2>
+            <small>Match item numbers and initials to the unique locations in Cycle Count Detail.</small>
+          </div>
+        </div>
+        <span id="alreadyCountedStatus" class="status">Waiting for both files</span>
+      </div>
+
+      <div class="sharepoint-link-row">
+        <label>
+          <span>SharePoint workbook link</span>
+          <input id="alreadyCountedSharePointUrl" type="url" placeholder="Paste the Already Cycle Counted SharePoint link" />
+        </label>
+        <button id="saveSharePointLinkBtn" class="secondary" type="button">Save Link</button>
+        <button id="openSharePointLinkBtn" class="secondary" type="button">Open SharePoint</button>
+      </div>
+      <p class="privacy-note">Because the workbook is private, open it through Microsoft 365, download it, then upload it below. The saved link gives you one-click access without exposing company credentials.</p>
+
+      <label class="file-drop" for="alreadyCountedFile">
+        <strong>Choose Already Cycle Counted file</strong>
+        <span>Required columns: Item Number and Initials.</span>
+        <input id="alreadyCountedFile" type="file" accept=".xlsx,.xls" />
+      </label>
+
+      <div class="already-counted-controls">
+        <label>
+          <span>Filter credited items by initials</span>
+          <select id="alreadyCountedInitialsFilter">
+            <option value="all">All initials</option>
+          </select>
+        </label>
+        <button id="matchAlreadyCountedBtn" class="primary" type="button">Match Items to Locations</button>
+      </div>
+
+      <h3>Employee Initials</h3>
+      <div id="initialsAssignmentGrid" class="initials-assignment-grid"></div>
+
+      <div id="alreadyCountedPreview" class="hidden"></div>
+    </section>
+
+    <section id="resultsSection" class="card hidden">
+      <div class="section-heading">
+        <div><span class="step">3</span><h2>Review Production</h2></div>
+        <span id="recordSummary" class="status success"></span>
+      </div>
+      <div id="kpiStrip" class="kpi-strip"></div>
+      <h3>Production Team</h3>
+      <div id="productionCards" class="summary-grid"></div>
+      <details id="reviewDetails" class="unassigned hidden">
+        <summary><span id="reviewCount">0</span> rows were not credited</summary>
+        <div id="reviewList" class="unassigned-list"></div>
+      </details>
+      <div class="action-row">
+        <button id="saveSnapshotBtn" class="primary" type="button">Save Current Results</button>
+        <button id="downloadSummaryBtn" class="secondary" type="button">Download Excel Summary</button>
+      </div>
+      <div id="saveMessage" class="message hidden" role="status"></div>
+    </section>
+
+    <section id="aisleBreakdown" class="card hidden" aria-label="Aisle Count Summary">
+      <div class="section-heading">
+        <div><h2>Aisle Count Summary</h2></div>
+        <span id="aisleBreakdownStatus" class="status">Waiting for report</span>
+      </div>
+      <p class="privacy-note" style="margin-bottom:16px">Based on the Bin # and Times Counted fields in the uploaded Cycle Count Detail report. Percent is share of report counts, not percent of all warehouse bins completed.</p>
+      <div class="kpi-strip" id="aisleBreakdownTotals" style="margin-bottom:16px"></div>
+      <div class="table-wrap">
+        <table class="history-table aisle-breakdown-table">
+          <thead><tr><th>Aisle</th><th>Completed Counts</th><th>Unique Bins</th><th>Share of Report</th></tr></thead>
+          <tbody id="aisleBreakdownRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div><span class="step">4</span><h2>Saved Results</h2></div>
+        <span class="status">Saved on this device</span>
+      </div>
+      <div class="table-wrap">
+        <table class="history-table">
+          <thead><tr><th>Saved</th><th>Team Counts</th><th>Uncredited</th><th>Delete</th></tr></thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+      <p class="privacy-note">Saved results stay in this browser's local storage.</p>
+    </section>
+
+    <section class="card assignments">
+      <h2>Aisle Assignments</h2>
+      <div id="assignmentGrid" class="assignment-grid"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+  <script src="alreadyCounted.js"></script>
+  <script src="alreadyCountedDayFilter.js?v=20260724-friday-only-1"></script>
+  <script src="alreadyCountedTotals.js"></script>
+  <script src="reportReconciliation.js"></script>
+  <script src="productionClassification.js"></script>
+  <script src="countAllDetailRows.js"></script>
+  <script src="oh01BatchCounting.js"></script>
+  <script src="attendance.js"></script>
+  <script src="assignmentFilters.js"></script>
+  <script src="oh01ReferenceDateFix.js"></script>
+  <script src="aisleHierarchy.js"></script>
+  <script src="employeeGoals.js"></script>
+  <script src="teamPersistence.js?v=20260729-april-r-1"></script>
+  <script src="initialsNormalization.js"></script>
+  <script src="batchTypoNormalization.js"></script>
+  <script src="supportTotalsGoals.js"></script>
+  <script src="allBranchesSupportSetup.js"></script>
+  <script src="timesCountedProductionFix.js?v=20260723-2"></script>
+  <script src="manualOwnershipBridge.js?v=20260727-1"></script>
+  <script src="dailyReportReconciliation.js?v=20260729-ownership-v2"></script>
+  <script src="numericItemReviewFix.js?v=20260727-1"></script>
+  <script src="activeAttendanceGoalFix.js?v=20260727-1"></script>
+  <script src="rosterBackup.js?v=20261013-1"></script>
+  <script src="aisleBreakdown.js?v=20261110-1"></script>
+</body>
+</html>
