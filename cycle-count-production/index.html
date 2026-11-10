@@ -207,6 +207,29 @@
       <p class="privacy-note">Saved results stay in this browser's local storage.</p>
     </section>
 
+    <section id="dailyJournal" class="card">
+      <div class="section-heading">
+        <div><h2>Daily Production &amp; Employee Notes</h2><small>Review each workday's count totals, goal completion, and notes.</small></div>
+      </div>
+      <div class="date-row" style="margin:16px 0">
+        <label>Work Date<input id="dailyJournalDate" type="date" /></label>
+        <label>Previously Saved Days<select id="dailyJournalSavedDates"><option value="">Select a saved date</option></select></label>
+      </div>
+      <p id="dailyJournalSummary" class="privacy-note"></p>
+      <div class="action-row" style="margin:16px 0;display:flex;gap:10px;flex-wrap:wrap">
+        <button id="dailyJournalCapture" class="primary" type="button">Save Current Report for This Date</button>
+        <button id="dailyJournalExport" class="secondary" type="button">Export Day as CSV</button>
+      </div>
+      <p class="privacy-note">Percentages compare completed counts with each employee's daily goal. Only save a report for a date when the uploaded file covers that date. Notes save when you leave the field; records stay in this browser.</p>
+      <div class="table-wrap" style="margin-top:14px">
+        <table class="history-table" style="min-width:850px">
+          <thead><tr><th>Employee</th><th>Completed Counts</th><th>Daily Goal</th><th>Goal %</th><th>Supervisor Notes / Reason</th></tr></thead>
+          <tbody id="dailyJournalRows"></tbody>
+        </table>
+      </div>
+      <p id="dailyJournalMessage" role="status" style="min-height:1.5em"></p>
+    </section>
+
     <section class="card assignments">
       <h2>Aisle Assignments</h2>
       <div id="assignmentGrid" class="assignment-grid"></div>
@@ -239,5 +262,6 @@
   <script src="activeAttendanceGoalFix.js?v=20260727-1"></script>
   <script src="rosterBackup.js?v=20261013-1"></script>
   <script src="aisleBreakdown.js?v=20261110-1"></script>
+  <script src="dailyJournal.js?v=20261110-1"></script>
 </body>
 </html>
