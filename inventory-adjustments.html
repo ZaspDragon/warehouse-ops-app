@@ -38,6 +38,7 @@
         <div><h2>Adjustment Details</h2><p class="hint">“Review” means an item has multiple adjustment rows in saved reports. Repeats are not necessarily mistakes; verify against source batches.</p></div>
         <button id="exportAnalytics" class="primary" type="button">Export CSV</button>
       </div>
+      <p class="hint">Fab Shop adjustments are excluded from totals, repeat checks, and exports. Matches Fab Shop labels in reason, batch, document, group, or location; original uploads remain saved.</p>
       <div class="analytics-filters">
         <label>Report Date<select id="filterReportDate"><option value="latest">Latest Report Date</option><option value="all">All Saved Dates</option></select></label>
         <label>Start Date<input id="filterStart" type="date" /></label>
@@ -83,6 +84,6 @@
       </section>
     </section>
   </main>
-  <script src="analytics-pages.js?v=20261103-daily-report-fix"></script>
+  <script src="analytics-pages.js?v=20261111-fab-shop-exclusion"></script>
 </body>
 </html>

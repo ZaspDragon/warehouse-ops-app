@@ -209,13 +209,23 @@
     return !search || Object.values(record).some((value) => text(value).toLowerCase().includes(search));
   }
 
+  function isFabShopAdjustment(record) {
+    // Match transaction labels, not item descriptions or employee names.
+    // Accept FABSHOP, Fab Shop, FAB-SHOP and batch labels with dates/numbers.
+    return [record.reason, record.batch, record.doc, record.groups, record.location]
+      .some((value) => /(?:^|[^a-z])fab[\s_-]*shop(?=$|[^a-z])/i.test(text(value)));
+  }
+
   function adjustmentRows() {
+    // Filter before repeat detection so Fab Shop cannot flag a warehouse item.
+    // Keep source records intact, including uploads saved before this rule.
+    const included = records.filter((record) => !isFabShopAdjustment(record));
     const occurrences = new Map();
-    records.forEach((record) => {
+    included.forEach((record) => {
       if (!occurrences.has(record.item)) occurrences.set(record.item, 0);
       occurrences.set(record.item, occurrences.get(record.item) + 1);
     });
-    const rows = records.filter(inRange).map((record) => ({
+    const rows = included.filter(inRange).map((record) => ({
       ...record,
       repeat: (occurrences.get(record.item) || 0) > 1,
       adjustmentValue: Math.abs(record.qty * record.cost)
@@ -372,7 +382,7 @@
     const endDate = $("filterEnd")?.value || "";
     const direction = $("filterDirection")?.value || "All";
     const search = $("filterSearch")?.value.trim() || "";
-    const filterParts = [];
+    const filterParts = ["Fab Shop adjustments excluded"];
     if (startDate) filterParts.push(`From ${startDate}`);
     if (endDate) filterParts.push(`Through ${endDate}`);
     if (direction !== "All") filterParts.push(`Direction: ${direction}`);
