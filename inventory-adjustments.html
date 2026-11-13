@@ -17,7 +17,7 @@
     <section class="card upload-card">
       <div>
         <h2>Upload Transaction Report</h2>
-        <p class="hint">Use the Warehouse Inventory Transaction Report - By Date Excel file. Re-uploading the same rows will not double-count them.</p>
+        <p class="hint">Use the Warehouse Inventory Transaction Report - Daily or By Date Excel file. Re-uploading the same rows will not double-count them.</p>
       </div>
       <label class="file-picker">Choose Excel File<input id="analyticsFile" type="file" accept=".xlsx,.xls,.csv" /></label>
       <button id="clearAnalyticsData" class="danger" type="button">Clear Saved Uploads</button>
@@ -35,24 +35,27 @@
 
     <section class="card">
       <div class="section-heading">
-        <div><h2>Adjustment Details</h2><p class="hint">“Adjusted again” means the same item appears on more than one document or date in the saved uploads.</p></div>
+        <div><h2>Adjustment Details</h2><p class="hint">“Review” means an item has multiple adjustment rows in saved reports. Repeats are not necessarily mistakes; verify against source batches.</p></div>
         <button id="exportAnalytics" class="primary" type="button">Export CSV</button>
       </div>
+      <p class="hint">Fab Shop adjustments are excluded from totals, repeat checks, and exports. Matches Fab Shop labels in reason, batch, document, group, or location; original uploads remain saved.</p>
       <div class="analytics-filters">
+        <label>Report Date<select id="filterReportDate"><option value="latest">Latest Report Date</option><option value="all">All Saved Dates</option></select></label>
         <label>Start Date<input id="filterStart" type="date" /></label>
         <label>End Date<input id="filterEnd" type="date" /></label>
         <label>Direction<select id="filterDirection"><option value="">All</option><option value="Added">Added</option><option value="Removed">Removed</option></select></label>
-        <label>Sort transactions<select id="filterSort"><option value="date">Newest date</option><option value="qty">Largest quantity</option><option value="loss">Largest loss value</option><option value="cost">Highest unit cost</option></select></label>
+        <label>Cost Sorting<select id="filterCostSort"><option value="">Newest First</option><option value="unit-desc">Highest Unit Cost</option><option value="unit-asc">Lowest Unit Cost</option><option value="value-desc">Highest Adjustment Value</option><option value="value-asc">Lowest Adjustment Value</option></select></label>
+        <label>Sort Transactions<select id="filterSort"><option value="date">Newest Date</option><option value="qty">Largest Quantity</option><option value="loss">Largest Loss Value</option><option value="cost">Highest Unit Cost</option></select></label>
         <label>Search<input id="filterSearch" placeholder="Item, user, reason, document" /></label>
       </div>
       <div class="table-wrap analytics-table-wrap"><table>
-        <thead><tr><th>Date</th><th>Item #</th><th>Description</th><th>Qty</th><th>Direction</th><th>Reason</th><th>User</th><th>Document #</th><th>Gain / Loss</th><th>Repeat?</th></tr></thead>
-        <tbody id="analyticsBody"><tr><td colspan="10">Upload a transaction report to begin.</td></tr></tbody>
+        <thead><tr><th>Date</th><th>Item #</th><th>Description</th><th>Qty</th><th>Direction</th><th>Reason</th><th>User</th><th>Document #</th><th>Unit Cost</th><th>Adjustment Value</th><th>Gain / Loss</th><th>Repeat?</th></tr></thead>
+        <tbody id="analyticsBody"><tr><td colspan="12">Upload a transaction report to begin.</td></tr></tbody>
       </table></div>
 
       <section class="adjustment-bottom-summary">
-        <div class="section-heading"><div><h3>Top Adjusted Items</h3><p class="hint">Ranked by item number across filtered transactions. Dates are from Doc Date, never upload date. Loss amounts come from the report's Gain / Loss field.</p></div><button id="exportRankings" class="primary" type="button">Export Ranking CSV</button></div>
-        <div class="analytics-filters"><label>Rank by<select id="rankingSort"><option value="removed">Most units removed</option><option value="loss">Highest total dollar loss</option><option value="cost">Highest unit cost</option><option value="added">Most units added</option><option value="net">Largest net reduction</option></select></label></div>
+        <div class="section-heading"><div><h3>Top Adjusted Items</h3><p class="hint">Rankings reflect selected filters and exclude Fab Shop. Transaction dates come from the imported report.</p></div><button id="exportRankings" class="primary" type="button">Export Ranking CSV</button></div>
+        <div class="analytics-filters"><label>Rank By<select id="rankingSort"><option value="removed">Most Units Removed</option><option value="loss">Highest Dollar Loss</option><option value="cost">Highest Unit Cost</option><option value="added">Most Units Added</option><option value="net">Largest Net Reduction</option></select></label></div>
         <div class="table-wrap"><table><thead><tr><th>Rank</th><th>Item #</th><th>Description</th><th>Transactions</th><th>Added</th><th>Removed</th><th>Net</th><th>Loss Value</th><th>Max Unit Cost</th><th>Transaction Dates</th></tr></thead><tbody id="rankedItemsBody"></tbody></table></div>
       </section>
       <section class="adjustment-bottom-summary" aria-labelledby="adjustmentTotalsTitle">
@@ -72,7 +75,7 @@
 
         <div class="section-heading repeated-items-heading">
           <div>
-            <h3>Same Item Numbers Adjusted More Than Once</h3>
+            <h3>Potential Double Adjustments — Review</h3>
             <p class="hint">Tracks repeated item numbers within the currently filtered results.</p>
           </div>
           <div class="repeat-item-count"><strong id="bottomRepeatItemCount">0</strong><span>Repeated Items</span></div>
@@ -81,12 +84,12 @@
           <button id="exportRepeatedItems" class="primary repeated-items-download" type="button">Print / Save Double Adjustments</button>
         </div>
         <div class="table-wrap repeated-items-wrap"><table>
-          <thead><tr><th>Item #</th><th>Description</th><th>Times Adjusted</th><th>Total Added</th><th>Total Subtracted</th><th>Net Qty</th><th>Users</th><th>Dates</th></tr></thead>
-          <tbody id="repeatedItemsBody"><tr><td colspan="8">No repeated item numbers in the current results.</td></tr></tbody>
+          <thead><tr><th>Item #</th><th>Description</th><th>Times Adjusted</th><th>Total Added</th><th>Total Subtracted</th><th>Net Qty</th><th>Gains $</th><th>Losses $</th><th>Net $</th><th>Users</th><th>Dates</th></tr></thead>
+          <tbody id="repeatedItemsBody"><tr><td colspan="11">No repeated item numbers in the current results.</td></tr></tbody>
         </table></div>
       </section>
     </section>
   </main>
-  <script src="analytics-pages.js?v=20261020-1"></script>
+  <script src="analytics-pages.js?v=20261113-rankings-merged"></script>
 </body>
 </html>
