@@ -268,6 +268,7 @@
               <button id="leaderboardTodayBtn" type="button">Today</button>
               <button id="leaderboardWeekBtn" type="button">This Week</button>
               <button id="leaderboardAllBtn" type="button">All Dates</button>
+              <button id="leaderboardRefreshBtn" class="primary" type="button">Refresh Saved History</button>
             </div>
             <label>Employee Search
               <input id="leaderboardSearch" placeholder="Filter by employee name" />
@@ -296,6 +297,7 @@
               </table>
             </div>
           </section>
+          <p class="hint" id="leaderboardSelectedRange" aria-live="polite">Showing selected work dates.</p>
           <p class="hint" id="leaderboardLoadStatus" aria-live="polite">Loading saved putaway lines…</p>
           <p class="hint" id="leaderboardDateAudit" aria-live="polite"></p>
           <div class="leaderboard-summary stats">
@@ -642,7 +644,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20261113-history-reconciled-names"></script>
+  <script src="app.js?v=20261113-leaderboard-exact-date-refresh"></script>
   <script src="putaway-audit.js?v=20260922-8"></script>
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
 
