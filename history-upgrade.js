@@ -141,16 +141,30 @@
     };
     const base = window.db.collection(collectionName);
 
-    try {
-      addSnap(await base.where("ownerEmail", "==", email).limit(1000).get());
-    } catch (err) {
-      console.warn(`Tenant ownerEmail query failed for ${collectionName}:`, err);
+    async function readOwnerPages(field) {
+      // Reading more than the first 1,000 is necessary for historical daily lookups.
+      // Paged reads are read-only and keep the original Firestore documents intact.
+      const pageSize = collectionName === "putAwayLogs" ? 500 : 1000;
+      const maxPages = collectionName === "putAwayLogs" ? 20 : 1;
+      let query = base.where(field, "==", email).limit(pageSize);
+      for (let page = 0; page < maxPages; page++) {
+        const snapshot = await query.get();
+        addSnap(snapshot);
+        if (snapshot.docs.length < pageSize) return;
+        if (page === maxPages - 1) {
+          console.warn(`History read capped at ${pageSize * maxPages} documents for ${field}; older records may not be loaded.`);
+          return;
+        }
+        query = base.where(field, "==", email).limit(pageSize).startAfter(snapshot.docs[snapshot.docs.length - 1]);
+      }
     }
 
-    try {
-      addSnap(await base.where("createdByEmail", "==", email).limit(1000).get());
-    } catch (err) {
-      console.warn(`Tenant legacy createdByEmail query failed for ${collectionName}:`, err);
+    for (const field of ["ownerEmail", "createdByEmail"]) {
+      try {
+        await readOwnerPages(field);
+      } catch (err) {
+        console.warn(`Tenant ${field} query failed for ${collectionName}:`, err);
+      }
     }
 
     return [...rowsById.values()].sort((a, b) =>
