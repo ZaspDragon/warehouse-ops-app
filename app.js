@@ -338,9 +338,7 @@ function wireEvents() {
   $("exportHistoryBtn")?.addEventListener("click", () => exportCsv("history"));
   $("searchItemHistoryBtn")?.addEventListener("click", renderItemHistory);
   $("exportItemHistoryBtn")?.addEventListener("click", exportItemHistory);
-  $("leaderboardRangePreset")?.addEventListener("change", syncLeaderboardDateControls);
-  $("leaderboardStartDate")?.addEventListener("change", renderLeaderboard);
-  $("leaderboardEndDate")?.addEventListener("change", renderLeaderboard);
+  $("leaderboardDate")?.addEventListener("change", renderLeaderboard);
   $("leaderboardSearch")?.addEventListener("input", renderLeaderboard);
   $("exportLeaderboardBtn")?.addEventListener("click", exportLeaderboardCsv);
   $("saveSettingsBtn")?.addEventListener("click", saveSettings);
@@ -3050,45 +3048,21 @@ function calculateOverallLeaderboard(putawayRows, cycleRows, transferRows) {
 }
 
 function getLeaderboardDateRange() {
-  const preset = $("leaderboardRangePreset")?.value || "today";
-  const today = new Date();
-  const todayText = localDateKey(today);
-
-  if (preset === "all") {
-    return { preset, start: "", end: "", label: "All time", includeUndated: true };
-  }
-
-  if (preset === "custom") {
-    const start = $("leaderboardStartDate")?.value || "";
-    const end = $("leaderboardEndDate")?.value || start;
-    return { preset, start, end, label: start && end ? `${start} to ${end}` : "Custom", includeUndated: false };
-  }
-
-  if (preset === "week") {
-    const start = new Date(today);
-    start.setDate(today.getDate() - today.getDay());
-    return { preset, start: localDateKey(start), end: todayText, label: "This week", includeUndated: false };
-  }
-
-  if (preset === "month") {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { preset, start: localDateKey(start), end: todayText, label: "This month", includeUndated: false };
-  }
-
-  return { preset: "today", start: todayText, end: todayText, label: "Today", includeUndated: false };
+  // This leaderboard intentionally reports exactly one work date at a time.
+  // Date-only comparison prevents historical activity leaking into today's totals.
+  const selectedDate = $("leaderboardDate")?.value || localDateKey(new Date());
+  return {
+    preset: "day",
+    start: selectedDate,
+    end: selectedDate,
+    label: selectedDate,
+    includeUndated: false
+  };
 }
 
 function syncLeaderboardDateControls() {
-  const preset = $("leaderboardRangePreset")?.value || "today";
-  const custom = preset === "custom";
-
-  ["leaderboardStartDate", "leaderboardEndDate"].forEach((id) => {
-    const input = $(id);
-    if (!input) return;
-    input.disabled = !custom;
-    if (!custom) input.value = "";
-  });
-
+  const dateInput = $("leaderboardDate");
+  if (dateInput && !dateInput.value) dateInput.value = localDateKey(new Date());
   renderLeaderboard();
 }
 
