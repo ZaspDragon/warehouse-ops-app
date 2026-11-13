@@ -181,7 +181,7 @@ function hasPutawayDraftData(draft = collectPutawayDraft()) {
 
   return Boolean(
     (draft.worker || "").trim() ||
-      (draft.putawayNumber || "").trim() ||
+      ((draft.putawayNumber || "").trim() && (draft.putawayNumber || "").trim() !== "1") ||
       hasLines ||
       (draft.status && draft.status !== "Completed")
   );
