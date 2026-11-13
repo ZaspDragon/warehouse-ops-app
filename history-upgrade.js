@@ -16,6 +16,7 @@
     patchHistoryToPutawayOnly();
     patchItemHistory();
     installHistoryControls();
+    installDailyEmployeeLookupControls();
     installItemHistoryControls();
     renderTenantBadge();
   });
@@ -140,16 +141,30 @@
     };
     const base = window.db.collection(collectionName);
 
-    try {
-      addSnap(await base.where("ownerEmail", "==", email).limit(1000).get());
-    } catch (err) {
-      console.warn(`Tenant ownerEmail query failed for ${collectionName}:`, err);
+    async function readOwnerPages(field) {
+      // Reading more than the first 1,000 is necessary for historical daily lookups.
+      // Paged reads are read-only and keep the original Firestore documents intact.
+      const pageSize = collectionName === "putAwayLogs" ? 500 : 1000;
+      const maxPages = collectionName === "putAwayLogs" ? 20 : 1;
+      let query = base.where(field, "==", email).limit(pageSize);
+      for (let page = 0; page < maxPages; page++) {
+        const snapshot = await query.get();
+        addSnap(snapshot);
+        if (snapshot.docs.length < pageSize) return;
+        if (page === maxPages - 1) {
+          console.warn(`History read capped at ${pageSize * maxPages} documents for ${field}; older records may not be loaded.`);
+          return;
+        }
+        query = base.where(field, "==", email).limit(pageSize).startAfter(snapshot.docs[snapshot.docs.length - 1]);
+      }
     }
 
-    try {
-      addSnap(await base.where("createdByEmail", "==", email).limit(1000).get());
-    } catch (err) {
-      console.warn(`Tenant legacy createdByEmail query failed for ${collectionName}:`, err);
+    for (const field of ["ownerEmail", "createdByEmail"]) {
+      try {
+        await readOwnerPages(field);
+      } catch (err) {
+        console.warn(`Tenant ${field} query failed for ${collectionName}:`, err);
+      }
     }
 
     return [...rowsById.values()].sort((a, b) =>
@@ -278,6 +293,8 @@
         ? window.buildPutawayDailyGroups(app.putawayLogs || [])
         : [...(app.putawayLogs || [])].sort((a, b) => String(b.submittedAt || b.createdAt || "").localeCompare(String(a.submittedAt || a.createdAt || "")));
       const rows = filteredPutawayRows(logs);
+      refreshDailyEmployeeOptions(logs);
+      renderDailyEmployeeLookup(logs);
       body.innerHTML = "";
       if (!rows.length) {
         body.insertAdjacentHTML("beforeend", `<tr><td colspan="8">No putaway records match these filters.</td></tr>`);
@@ -300,6 +317,104 @@
         </tr>`);
       });
     };
+  }
+
+  // Daily production is built from saved putaway history, not the Employees roster.
+  // Historical dates and item quantities are read only; this feature never writes records.
+  function dailyEmployeeRows(groups = []) {
+    const term = String(document.getElementById("dailyPutawayEmployee")?.value || "").trim().toLocaleLowerCase();
+    if (!term) return [];
+    const byDay = new Map();
+    groups.forEach(group => {
+      (group.lines || []).forEach(line => {
+        if (line.active === false) return;
+        const employee = String(line.employeeName || line.worker || group.employeeName || group.worker || "").trim();
+        if (!employee.toLocaleLowerCase().includes(term)) return;
+        const date = localDateKey(line.workDate || line.submittedDate || line.submittedAt || group.workDate || group.date || group.createdAt);
+        if (!date) return;
+        const key = date + "|" + employee.toLocaleLowerCase();
+        const entry = byDay.get(key) || { date, employee, lines: 0, quantity: 0, items: new Map() };
+        const item = String(line.itemNumber || line.item || "").trim() || "Unknown";
+        const qty = Number(line.quantity ?? line.qty ?? 0);
+        const safeQty = Number.isFinite(qty) ? qty : 0;
+        entry.lines++;
+        entry.quantity += safeQty;
+        entry.items.set(item, (entry.items.get(item) || 0) + safeQty);
+        byDay.set(key, entry);
+      });
+    });
+    return [...byDay.values()].sort((a,b) => b.date.localeCompare(a.date) || a.employee.localeCompare(b.employee));
+  }
+  function refreshDailyEmployeeOptions(groups = []) {
+    const options = document.getElementById("dailyPutawayEmployeeOptions");
+    if (!options) return;
+    const names = new Set();
+    groups.forEach(group => (group.lines || []).forEach(line => {
+      if (line.active === false) return;
+      const name = String(line.employeeName || line.worker || group.employeeName || group.worker || "").trim();
+      if (name) names.add(name);
+    }));
+    options.innerHTML = [...names].sort((a,b) => a.localeCompare(b))
+      .map(name => `<option value="${escapeHtml(name)}"></option>`).join("");
+  }
+  function renderDailyEmployeeLookup(groups = []) {
+    const body = document.getElementById("dailyPutawayBody");
+    const summary = document.getElementById("dailyPutawaySummary");
+    if (!body || !summary) return;
+    const term = String(document.getElementById("dailyPutawayEmployee")?.value || "").trim();
+    if (!term) {
+      summary.textContent = "Enter an employee name to see their putaways by date.";
+      body.innerHTML = '<tr><td colspan="5">Search for an employee.</td></tr>';
+      return;
+    }
+    const results = dailyEmployeeRows(groups);
+    const lines = results.reduce((sum,row) => sum + row.lines,0);
+    const qty = results.reduce((sum,row) => sum + row.quantity,0);
+    summary.textContent = results.length
+      ? `${results.length} employee/date group(s) · ${lines} putaway line(s) · ${qty.toLocaleString()} total units`
+      : "No saved putaways found for that employee in the currently loaded history.";
+    body.innerHTML = results.length
+      ? results.map(row => `<tr>
+          <td data-label="Date">${escapeHtml(row.date)}</td>
+          <td data-label="Employee">${escapeHtml(row.employee)}</td>
+          <td data-label="Putaway Lines">${row.lines}</td>
+          <td data-label="Total Qty">${row.quantity.toLocaleString()}</td>
+          <td data-label="Item Numbers">${escapeHtml([...row.items.entries()].map(([item, qty]) => item + " (" + qty + ")").join(", "))}</td>
+        </tr>`).join("")
+      : '<tr><td colspan="5">No matching saved putaways.</td></tr>';
+  }
+  function currentPutawayGroups() {
+    const app = appState();
+    return typeof window.buildPutawayDailyGroups === "function"
+      ? window.buildPutawayDailyGroups(app?.putawayLogs || [])
+      : [];
+  }
+  function installDailyEmployeeLookupControls() {
+    const input = document.getElementById("dailyPutawayEmployee");
+    const search = document.getElementById("dailyPutawaySearchBtn");
+    const exportButton = document.getElementById("dailyPutawayExportBtn");
+    if (!input || !search || !exportButton) return;
+    search.addEventListener("click", async () => {
+      search.disabled = true;
+      try {
+        await window.loadHistory?.();
+        renderDailyEmployeeLookup(currentPutawayGroups());
+      } finally {
+        search.disabled = false;
+      }
+    });
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") { event.preventDefault(); search.click(); }
+    });
+    exportButton.addEventListener("click", () => {
+      const results = dailyEmployeeRows(currentPutawayGroups());
+      if (!results.length) return window.toast?.("No employee daily records to export.");
+      downloadRows(results.map(row => ({
+        date: row.date, employee: row.employee, putawayLines: row.lines,
+        totalQuantity: row.quantity,
+        items: [...row.items.entries()].map(([item,qty]) => item + " (" + qty + ")").join("; ")
+      })), "employee-putaways-by-day-" + todayDate() + ".csv");
+    });
   }
 
   function itemHistoryRows() {
