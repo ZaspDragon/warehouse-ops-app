@@ -20,20 +20,21 @@
     return Number.isFinite(parsed) ? parsed : 0;
   }
   function verifiedDate(y, m, d) {
+    if (![y, m, d].every(Number.isInteger) || y < 1900 || y > 2100) return "";
     const day = new Date(y, m - 1, d);
     return day.getFullYear() === y && day.getMonth() === m - 1 && day.getDate() === d
       ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` : "";
   }
   function dateKey(value) {
-    if (!value) return "";
-    if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : verifiedDate(value.getFullYear(), value.getMonth() + 1, value.getDate());
     if (typeof value === "number" && value > 20000 && window.XLSX?.SSF?.parse_date_code) {
       const d = XLSX.SSF.parse_date_code(value);
       return d ? verifiedDate(d.y, d.m, d.d) : "";
     }
-    const direct = text(value).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (direct) return verifiedDate(Number(direct[1]), Number(direct[2]), Number(direct[3]));
-    const us = text(value).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|$)/);
+    const input = text(value);
+    const iso = input.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:T|\\s|$)/);
+    if (iso) return verifiedDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    const us = input.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})(?:\\s|$)/);
     return us ? verifiedDate(Number(us[3]), Number(us[1]), Number(us[2])) : "";
   }
   function timeParts(value) {
@@ -81,17 +82,59 @@
   }
 
   function parseAdjustments(rows) {
-    const headerIndex = findHeader(rows, ["docdate", "item", "qty", "user"]);
-    if (headerIndex < 0) throw new Error("Could not find the adjustment report headings (Doc Date, Item #, Qty, User).");
+    // Supports both the original By Date transaction export and the GP Daily export,
+    // whose report date is in A2 and whose header starts below the report title.
+    const headerIndex = rows.findIndex(row =>
+      row.some(cell => keyName(cell) === "item" || keyName(cell) === "itemnumber") &&
+      row.some(cell => keyName(cell) === "qty") &&
+      row.some(cell => ["cost", "gainloss", "docdate"].includes(keyName(cell)))
+    );
+    if (headerIndex < 0) throw new Error("Could not find transaction columns (Item #, Qty, Cost or Gain/Loss). Upload the Warehouse Inventory Transaction Report.");
     const headers = rows[headerIndex];
-    return rows.slice(headerIndex + 1).map((row) => rowObject(headers, row)).filter((row) => dateKey(row.docdate) && text(row.item)).map((row) => {
+    const hasRowDates = headers.some(cell => keyName(cell) === "docdate");
+    const title = text(rows[0]?.[0]);
+    const branch = (title.match(/\b(OH\d{2})\b/i) || [])[1] || "";
+    const reportDate = dateKey(rows.slice(0, headerIndex).map(row => row[0]).find(value => dateKey(value)));
+    if (!hasRowDates && !reportDate) throw new Error("This Daily report does not contain a readable report date at the top.");
+    const occurrences = new Map();
+    const output = [];
+    for (const sourceRow of rows.slice(headerIndex + 1)) {
+      const row = rowObject(headers, sourceRow);
+      const item = text(row.item ?? row.itemnumber).replace(/\.0$/, "");
+      if (!/^\d{4,}$/.test(item)) continue; // skip totals, footers and blank lines
+      const date = dateKey(row.docdate) || reportDate;
+      if (!date) continue;
+      const location = text(row.location);
+      if (branch && location && /^OH\d{2}$/i.test(location) && location.toUpperCase() !== branch.toUpperCase()) continue;
       const qty = number(row.qty);
-      const item = text(row.item).replace(/\.0$/, "");
-      const doc = text(row.doc).replace(/\.0$/, "");
-      const record = { date: dateKey(row.docdate), doc, item, description: text(row.description), reason: text(row.reason), uom: text(row.uom), qty, cost: number(row.cost), gainLoss: number(row.gainloss), user: text(row.user), direction: qty >= 0 ? "Added" : "Removed" };
-      record.id = [record.date, doc, item, qty, record.user, record.reason].join("|").toLowerCase();
-      return record;
-    });
+      const cost = number(row.cost);
+      const gainLoss = row.gainloss !== undefined && text(row.gainloss) !== "" ? number(row.gainloss) : qty * cost;
+      const doc = text(row.doc || row.document || row.batch).replace(/\.0$/, "");
+      const reason = text(row.reason);
+      const user = text(row.user); // Daily report does not supply a user: do not infer one from batch name.
+      const record = {
+        date, doc, item, description: text(row.description), reason, uom: text(row.uom),
+        location, batch: text(row.batch) || doc, groups: text(row.groups), qty, cost,
+        gainLoss, user, direction: qty >= 0 ? "Added" : "Removed", branch
+      };
+      if (hasRowDates) {
+        // Keep previously saved By Date records compatible with their original IDs.
+        const legacyId = [date, doc, item, qty, user, reason].join("|").toLowerCase();
+        const occurrence = occurrences.get(legacyId) || 0;
+        occurrences.set(legacyId, occurrence + 1);
+        record.id = occurrence ? legacyId + "|occurrence:" + occurrence : legacyId;
+      } else {
+        // Row-occurrence suffix preserves genuine identical lines in one report,
+        // while making uploading that same report again idempotent.
+        const fingerprint = [date, branch, doc, item, location, record.uom, reason, qty, cost, gainLoss].join("|").toLowerCase();
+        const occurrence = occurrences.get(fingerprint) || 0;
+        occurrences.set(fingerprint, occurrence + 1);
+        record.id = "daily|" + fingerprint + "|occurrence:" + occurrence;
+      }
+      output.push(record);
+    }
+    if (!output.length) throw new Error("No inventory adjustment transactions were found in this report.");
+    return output;
   }
 
   function parseCycleTiming(rows) {
@@ -123,10 +166,18 @@
       setMessage(`Reading ${file.name}…`);
       const incoming = page === "adjustments" ? parseAdjustments(await readWorkbook(file)) : parseCycleTiming(await readWorkbook(file));
       const ids = new Set(records.map((record) => record.id));
-      const additions = incoming.filter((record) => !ids.has(record.id));
+      const additions = incoming.filter((record) => {
+        if (ids.has(record.id)) return false;
+        ids.add(record.id);
+        return true;
+      });
       duplicateUploadRows = incoming.length - additions.length;
       records = [...records, ...additions];
       saveRecords();
+      if (page === "adjustments") {
+        const uploadedDates = [...new Set(incoming.map((row) => row.date))].sort();
+        refreshAdjustmentDateOptions(uploadedDates.length === 1 ? uploadedDates[0] : "latest");
+      }
       render();
       setMessage(`${additions.length} new row${additions.length === 1 ? "" : "s"} imported. ${duplicateUploadRows} duplicate upload row${duplicateUploadRows === 1 ? "" : "s"} skipped.`);
     } catch (error) {
@@ -135,7 +186,25 @@
     } finally { event.target.value = ""; }
   }
 
+  function refreshAdjustmentDateOptions(preferredDate) {
+    if (page !== "adjustments") return;
+    const select = $("filterReportDate");
+    if (!select) return;
+    const previous = preferredDate || select.value || "latest";
+    const dates = [...new Set(records.map((record) => record.date).filter(Boolean))].sort().reverse();
+    select.innerHTML = '<option value="latest">Latest Report Date</option><option value="all">All Saved Dates</option>' +
+      dates.map((date) => `<option value="${esc(date)}">${esc(date)}</option>`).join("");
+    select.value = previous === "all" || previous === "latest" || dates.includes(previous) ? previous : "latest";
+  }
+
   function inRange(record) {
+    if (page === "adjustments" && $("filterReportDate")) {
+      const reportDate = $("filterReportDate").value;
+      if (reportDate === "latest") {
+        const latestDate = records.reduce((latest, entry) => entry.date > latest ? entry.date : latest, "");
+        if (record.date !== latestDate) return false;
+      } else if (reportDate !== "all" && reportDate && record.date !== reportDate) return false;
+    }
     const start = $("filterStart").value;
     const end = $("filterEnd").value;
     const search = $("filterSearch").value.trim().toLowerCase();
@@ -146,17 +215,40 @@
     return !search || Object.values(record).some((value) => text(value).toLowerCase().includes(search));
   }
 
+  function isFabShopAdjustment(record) {
+    // Match transaction labels, not item descriptions or employee names.
+    // Accept FABSHOP, Fab Shop, FAB-SHOP and batch labels with dates/numbers.
+    return [record.reason, record.batch, record.doc, record.groups, record.location]
+      .some((value) => /(?:^|[^a-z])fab[\s_-]*shop(?=$|[^a-z])/i.test(text(value)));
+  }
+
   function adjustmentRows() {
+    // Filter before repeat detection so Fab Shop cannot flag a warehouse item.
+    // Keep source records intact, including uploads saved before this rule.
+    const included = records.filter((record) => !isFabShopAdjustment(record));
     const occurrences = new Map();
-    records.forEach((record) => {
-      const uniqueEvent = `${record.date}|${record.doc}`;
-      if (!occurrences.has(record.item)) occurrences.set(record.item, new Set());
-      occurrences.get(record.item).add(uniqueEvent);
+    included.forEach((record) => {
+      if (!occurrences.has(record.item)) occurrences.set(record.item, 0);
+      occurrences.set(record.item, occurrences.get(record.item) + 1);
     });
-    const sort = $("filterSort")?.value || "date";
-    const metric = { qty: r => Math.abs(r.qty), loss: r => Math.max(0, -r.gainLoss), cost: r => Math.abs(r.cost) }[sort];
-    return records.filter(inRange).map(record => ({ ...record, repeat: (occurrences.get(record.item)?.size || 0) > 1 }))
-      .sort((a, b) => (metric ? metric(b) - metric(a) : 0) || `${b.date}|${b.doc}`.localeCompare(`${a.date}|${a.doc}`));
+    const rows = included.filter(inRange).map((record) => ({
+      ...record,
+      repeat: (occurrences.get(record.item) || 0) > 1,
+      adjustmentValue: Math.abs(record.qty * record.cost)
+    }));
+    const sort = $("filterCostSort")?.value || "";
+    rows.sort((a, b) => {
+      if (sort === "unit-desc") return b.cost - a.cost || a.item.localeCompare(b.item);
+      if (sort === "unit-asc") return a.cost - b.cost || a.item.localeCompare(b.item);
+      if (sort === "value-desc") return b.adjustmentValue - a.adjustmentValue || a.item.localeCompare(b.item);
+      if (sort === "value-asc") return a.adjustmentValue - b.adjustmentValue || a.item.localeCompare(b.item);
+      const mode = $("filterSort")?.value || "date";
+      if (mode === "qty") return Math.abs(b.qty) - Math.abs(a.qty) || a.item.localeCompare(b.item);
+      if (mode === "loss") return Math.max(0, -b.gainLoss) - Math.max(0, -a.gainLoss) || a.item.localeCompare(b.item);
+      if (mode === "cost") return Math.abs(b.cost) - Math.abs(a.cost) || a.item.localeCompare(b.item);
+      return `${b.date}|${b.doc}`.localeCompare(`${a.date}|${a.doc}`);
+    });
+    return rows;
   }
 
   function cycleAisle(countId) {
@@ -195,36 +287,48 @@
     return timed.filter(inRange);
   }
 
-
   function rankedItems() {
+    // Reuse the filtered adjustment view (including Fab Shop exclusion).
     const groups = new Map();
-    adjustmentRows().forEach(r => {
-      const g = groups.get(r.item) || { item:r.item, description:r.description, count:0, added:0, removed:0, loss:0, cost:0, dates:new Set() };
-      g.count++;
-      g.added += Math.max(0, r.qty);
-      g.removed += Math.max(0, -r.qty);
-      g.loss += Math.max(0, -r.gainLoss);
-      g.cost = Math.max(g.cost, Math.abs(r.cost));
-      g.dates.add(r.date);
-      groups.set(r.item, g);
+    adjustmentRows().forEach(row => {
+      const group = groups.get(row.item) || {
+        item: row.item, description: row.description, count: 0, added: 0,
+        removed: 0, loss: 0, cost: 0, dates: new Set()
+      };
+      group.count += 1;
+      group.added += Math.max(0, row.qty);
+      group.removed += Math.max(0, -row.qty);
+      group.loss += Math.max(0, -row.gainLoss);
+      group.cost = Math.max(group.cost, Math.abs(row.cost));
+      if (row.date) group.dates.add(row.date);
+      groups.set(row.item, group);
     });
-    const metric = { removed:g=>g.removed, loss:g=>g.loss, cost:g=>g.cost, added:g=>g.added, net:g=>g.removed-g.added }[$("rankingSort").value];
-    return [...groups.values()].sort((a,b)=>metric(b)-metric(a)||b.removed-a.removed||a.item.localeCompare(b.item));
+    const mode = $("rankingSort")?.value || "removed";
+    const score = {
+      removed: g => g.removed, loss: g => g.loss, cost: g => g.cost,
+      added: g => g.added, net: g => g.removed - g.added
+    }[mode] || (g => g.removed);
+    return [...groups.values()].sort((a,b) => score(b) - score(a) || b.removed - a.removed || a.item.localeCompare(b.item));
   }
   function renderRankings() {
+    const body = $("rankedItemsBody");
+    if (!body) return;
     const money = n => n.toLocaleString(undefined,{style:"currency",currency:"USD"});
     const items = rankedItems();
-    $("rankedItemsBody").innerHTML = items.length ? items.map((g,i)=>
-      `<tr><td>${i+1}</td><td>${esc(g.item)}</td><td>${esc(g.description)}</td><td>${g.count}</td><td>${g.added.toLocaleString()}</td><td>${g.removed.toLocaleString()}</td><td>${(g.added-g.removed).toLocaleString()}</td><td>${money(g.loss)}</td><td>${money(g.cost)}</td><td>${esc([...g.dates].sort().join(", "))}</td></tr>`).join("") : '<tr><td colspan="10">No matching items.</td></tr>';
+    body.innerHTML = items.length ? items.map((g,i) =>
+      `<tr><td>${i+1}</td><td>${esc(g.item)}</td><td>${esc(g.description)}</td><td>${g.count}</td><td>${g.added.toLocaleString()}</td><td>${g.removed.toLocaleString()}</td><td>${(g.added-g.removed).toLocaleString()}</td><td>${money(g.loss)}</td><td>${money(g.cost)}</td><td>${esc([...g.dates].sort().join(", "))}</td></tr>`
+    ).join("") : '<tr><td colspan="10">No matching items.</td></tr>';
   }
   function exportRankings() {
     const items = rankedItems();
-    if (!items.length) return setMessage("No ranked items to export.",true);
+    if (!items.length) return setMessage("No ranked items to export.", true);
     const rows = [["Rank","Item #","Description","Transactions","Added","Removed","Net","Loss Value","Max Unit Cost","Transaction Dates"],
-      ...items.map((g,i)=>[i+1,g.item,g.description,g.count,g.added,g.removed,g.added-g.removed,g.loss,g.cost,[...g.dates].sort().join("; ")])];
-    const link=document.createElement("a");
-    link.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(csvCell).join(",")).join("\n")],{type:"text/csv;charset=utf-8"}));
-    link.download="inventory-adjustment-rankings.csv";link.click();URL.revokeObjectURL(link.href);
+      ...items.map((g,i) => [i+1,g.item,g.description,g.count,g.added,g.removed,g.added-g.removed,g.loss,g.cost,[...g.dates].sort().join("; ")])];
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([rows.map(row => row.map(csvCell).join(",")).join("\\n")], {type:"text/csv;charset=utf-8"}));
+    link.download = "inventory-adjustment-rankings.csv";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
 
   function renderAdjustments() {
@@ -255,12 +359,16 @@
         count: 0,
         added: 0,
         removed: 0,
+        gains: 0,
+        losses: 0,
         users: new Set(),
         dates: new Set()
       };
       group.count += 1;
       if (row.qty >= 0) group.added += row.qty;
       else group.removed += Math.abs(row.qty);
+      if (row.gainLoss > 0) group.gains += row.gainLoss;
+      if (row.gainLoss < 0) group.losses += Math.abs(row.gainLoss);
       if (row.user) group.users.add(row.user);
       if (row.date) group.dates.add(row.date);
       groups.set(row.item, group);
@@ -271,9 +379,9 @@
 
     $("bottomRepeatItemCount").textContent = repeatedItems.length.toLocaleString();
     $("repeatedItemsBody").innerHTML = repeatedItems.length
-      ? repeatedItems.map((group) => `<tr><td>${esc(group.item)}</td><td>${esc(group.description)}</td><td class="numeric">${group.count.toLocaleString()}</td><td class="numeric">${group.added.toLocaleString()}</td><td class="numeric">${group.removed.toLocaleString()}</td><td class="numeric">${(group.added - group.removed).toLocaleString()}</td><td>${esc([...group.users].join(", "))}</td><td>${esc([...group.dates].sort().join(", "))}</td></tr>`).join("")
-      : '<tr><td colspan="8">No repeated item numbers in the current results.</td></tr>';
-    $("analyticsBody").innerHTML = rows.length ? rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.item)}</td><td>${esc(row.description)}</td><td class="numeric">${row.qty.toLocaleString()}</td><td><span class="badge badge-${row.direction.toLowerCase()}">${row.direction}</span></td><td>${esc(row.reason)}</td><td>${esc(row.user)}</td><td>${esc(row.doc)}</td><td class="numeric">${row.gainLoss.toLocaleString(undefined, { style: "currency", currency: "USD" })}</td><td>${row.repeat ? '<span class="badge badge-repeat">Yes</span>' : "No"}</td></tr>`).join("") : '<tr><td colspan="10">No adjustments match these filters.</td></tr>';
+      ? repeatedItems.map((group) => `<tr><td>${esc(group.item)}</td><td>${esc(group.description)}</td><td class="numeric">${group.count.toLocaleString()}</td><td class="numeric">${group.added.toLocaleString()}</td><td class="numeric">${group.removed.toLocaleString()}</td><td class="numeric">${(group.added - group.removed).toLocaleString()}</td><td class="numeric">${currency(group.gains)}</td><td class="numeric">${currency(group.losses)}</td><td class="numeric">${currency(group.gains - group.losses)}</td><td>${esc([...group.users].join(", ") || "Not supplied")}</td><td>${esc([...group.dates].sort().join(", "))}</td></tr>`).join("")
+      : '<tr><td colspan="11">No repeated item numbers in the current results.</td></tr>';
+    $("analyticsBody").innerHTML = rows.length ? rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.item)}</td><td>${esc(row.description)}</td><td class="numeric">${row.qty.toLocaleString()}</td><td><span class="badge badge-${row.direction.toLowerCase()}">${row.direction}</span></td><td>${esc(row.reason)}</td><td>${esc(row.user || "Not supplied")}</td><td>${esc(row.doc)}</td><td class="numeric">${currency(row.cost)}</td><td class="numeric">${currency(row.adjustmentValue)}</td><td class="numeric">${row.gainLoss.toLocaleString(undefined, { style: "currency", currency: "USD" })}</td><td>${row.repeat ? '<span class="badge badge-repeat">Review</span>' : "No"}</td></tr>`).join("") : '<tr><td colspan="12">No adjustments match these filters.</td></tr>';
     return rows;
   }
 
@@ -303,12 +411,16 @@
         count: 0,
         added: 0,
         removed: 0,
+        gains: 0,
+        losses: 0,
         users: new Set(),
         dates: new Set()
       };
       group.count += 1;
       if (row.qty >= 0) group.added += row.qty;
       else group.removed += Math.abs(row.qty);
+      if (row.gainLoss > 0) group.gains += row.gainLoss;
+      if (row.gainLoss < 0) group.losses += Math.abs(row.gainLoss);
       if (row.user) group.users.add(row.user);
       if (row.date) group.dates.add(row.date);
       groups.set(row.item, group);
@@ -325,7 +437,7 @@
     const endDate = $("filterEnd")?.value || "";
     const direction = $("filterDirection")?.value || "All";
     const search = $("filterSearch")?.value.trim() || "";
-    const filterParts = [];
+    const filterParts = ["Fab Shop adjustments excluded"];
     if (startDate) filterParts.push(`From ${startDate}`);
     if (endDate) filterParts.push(`Through ${endDate}`);
     if (direction !== "All") filterParts.push(`Direction: ${direction}`);
@@ -333,6 +445,7 @@
     const filterLabel = filterParts.length ? filterParts.join(" · ") : "All current adjustment data";
     const generatedAt = new Date().toLocaleString();
 
+    const currency = (value) => value.toLocaleString(undefined, { style: "currency", currency: "USD" });
     const reportRows = repeatedItems.map((group) => `
       <tr>
         <td class="item">${esc(group.item)}</td>
@@ -341,7 +454,10 @@
         <td class="num added">${group.added.toLocaleString()}</td>
         <td class="num removed">${group.removed.toLocaleString()}</td>
         <td class="num net">${(group.added - group.removed).toLocaleString()}</td>
-        <td>${esc([...group.users].join(", "))}</td>
+        <td class="num">${currency(group.gains)}</td>
+        <td class="num">${currency(group.losses)}</td>
+        <td class="num">${currency(group.gains - group.losses)}</td>
+        <td>${esc([...group.users].join(", ") || "Not supplied")}</td>
         <td class="dates">${esc([...group.dates].sort().join(", "))}</td>
       </tr>
     `).join("");
@@ -526,6 +642,9 @@
             <th>Total Added</th>
             <th>Total Subtracted</th>
             <th>Net Qty</th>
+            <th>Gains $</th>
+            <th>Losses $</th>
+            <th>Net $</th>
             <th>Users</th>
             <th>Dates</th>
           </tr>
@@ -551,8 +670,8 @@
   function exportCsv() {
     const rows = page === "adjustments" ? adjustmentRows() : timedCycleRows();
     if (!rows.length) return setMessage("There is no filtered data to export.", true);
-    const headers = page === "adjustments" ? ["Date", "Item #", "Description", "Qty", "Direction", "Reason", "User", "Document #", "Gain/Loss", "Adjusted Again"] : ["Date", "Start Time", "Count ID", "Status", "Previous Count", "Minutes Since Previous"];
-    const values = page === "adjustments" ? rows.map((row) => [row.date, row.item, row.description, row.qty, row.direction, row.reason, row.user, row.doc, row.gainLoss, row.repeat ? "Yes" : "No"]) : rows.map((row) => [row.date, row.startTime, row.countId, row.status, row.previousCount, Number.isFinite(row.gapMinutes) ? row.gapMinutes.toFixed(2) : ""]);
+    const headers = page === "adjustments" ? ["Date", "Item #", "Description", "Qty", "Direction", "Reason", "User", "Document #", "Unit Cost", "Adjustment Value", "Gain/Loss", "Adjusted Again"] : ["Date", "Start Time", "Count ID", "Status", "Previous Count", "Minutes Since Previous"];
+    const values = page === "adjustments" ? rows.map((row) => [row.date, row.item, row.description, row.qty, row.direction, row.reason, row.user, row.doc, row.cost, row.adjustmentValue, row.gainLoss, row.repeat ? "Yes" : "No"]) : rows.map((row) => [row.date, row.startTime, row.countId, row.status, row.previousCount, Number.isFinite(row.gapMinutes) ? row.gapMinutes.toFixed(2) : ""]);
     const blob = new Blob([[headers, ...values].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -562,14 +681,15 @@
   }
 
   function render() { return page === "adjustments" ? renderAdjustments() : renderCycleTiming(); }
+  refreshAdjustmentDateOptions();
   $("analyticsFile").addEventListener("change", importFile);
   $("exportAnalytics").addEventListener("click", exportCsv);
   $("exportRepeatedItems")?.addEventListener("click", printRepeatedItemsReport);
   $("exportRankings")?.addEventListener("click", exportRankings);
   $("clearAnalyticsData").addEventListener("click", () => {
     if (!confirm("Clear all saved uploads from this browser?")) return;
-    records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); render(); setMessage("Saved uploads cleared.");
+    records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); refreshAdjustmentDateOptions("latest"); render(); setMessage("Saved uploads cleared.");
   });
-  ["filterStart", "filterEnd", "filterSearch", "filterDirection", "filterSort", "rankingSort", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
+  ["filterReportDate", "filterCostSort", "filterSort", "rankingSort", "filterStart", "filterEnd", "filterSearch", "filterDirection", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
   render();
 })();
