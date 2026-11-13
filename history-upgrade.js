@@ -216,7 +216,6 @@
         window.renderHistory?.();
         window.renderItemHistory?.();
         window.renderLeaderboard?.();
-        window.renderLeaderboard?.();
         window.populateEmployeeDropdowns?.();
       } catch (err) {
         console.error("Tenant data load failed:", err);
@@ -236,6 +235,7 @@
         window.renderLogs?.();
         window.renderHistory?.();
         window.renderItemHistory?.();
+        window.renderLeaderboard?.();
       } catch (err) {
         console.error("History load failed:", err);
         window.toast?.("History failed: " + err.message);
