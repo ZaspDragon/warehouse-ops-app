@@ -340,14 +340,19 @@ function wireEvents() {
   $("exportHistoryBtn")?.addEventListener("click", () => exportCsv("history"));
   $("searchItemHistoryBtn")?.addEventListener("click", renderItemHistory);
   $("exportItemHistoryBtn")?.addEventListener("click", exportItemHistory);
-  ["leaderboardStartDate","leaderboardEndDate"].forEach(id => $(id)?.addEventListener("change",renderLeaderboard));
+  ["leaderboardStartDate","leaderboardEndDate"].forEach(id => $(id)?.addEventListener("change", () => {
+    state.leaderboard.allDates = false;
+    renderLeaderboard();
+  }));
   $("leaderboardTodayBtn")?.addEventListener("click", () => {
+    state.leaderboard.allDates = false;
     const today = todayValue();
     $("leaderboardStartDate").value = today;
     $("leaderboardEndDate").value = today;
     renderLeaderboard();
   });
   $("leaderboardWeekBtn")?.addEventListener("click", () => {
+    state.leaderboard.allDates = false;
     const now = new Date();
     const monday = new Date(now.getFullYear(),now.getMonth(),now.getDate() - (now.getDay()+6)%7);
     $("leaderboardStartDate").value = localDateKey(monday);
@@ -355,9 +360,22 @@ function wireEvents() {
     renderLeaderboard();
   });
   $("leaderboardAllBtn")?.addEventListener("click", () => {
+    state.leaderboard.allDates = true;
     $("leaderboardStartDate").value = "";
     $("leaderboardEndDate").value = "";
     renderLeaderboard();
+  });
+  $("leaderboardRefreshBtn")?.addEventListener("click", async () => {
+    const button = $("leaderboardRefreshBtn");
+    if (!button) return;
+    button.disabled = true;
+    try {
+      if (!state.isDemoMode && typeof window.loadHistory === "function") await window.loadHistory();
+      renderLeaderboard();
+    } catch(err) {
+      const status = $("leaderboardLoadStatus");
+      if (status) status.textContent = "History refresh failed: " + (err?.message || String(err));
+    } finally {button.disabled = false;}
   });
   $("leaderboardSearch")?.addEventListener("input", renderLeaderboard);
   $("exportLeaderboardBtn")?.addEventListener("click", exportLeaderboardCsv);
@@ -3094,21 +3112,24 @@ function calculateOverallLeaderboard(putawayRows, cycleRows, transferRows) {
 }
 
 function getLeaderboardDateRange() {
-  const start = $("leaderboardStartDate")?.value || "";
-  const end = $("leaderboardEndDate")?.value || "";
+  const allDates = state.leaderboard.allDates === true;
+  // Empty date controls are not treated as all-time unless All Dates was clicked.
+  const today = todayValue();
+  const start = allDates ? "" : ($("leaderboardStartDate")?.value || today);
+  const end = allDates ? "" : ($("leaderboardEndDate")?.value || start);
   return {
-    preset:"range", start, end, includeUndated:false,
+    preset:allDates ? "all" : "range", start, end, includeUndated:false,
     invalid:Boolean(start && end && start > end),
-    label:start || end ? `${start || "Earliest"} – ${end || "Latest"}` : "All saved dates"
+    label:allDates ? "All saved dates" : start === end ? start : `${start} – ${end}`
   };
 }
 
 function syncLeaderboardDateControls() {
   const start = $("leaderboardStartDate");
   const end = $("leaderboardEndDate");
-  if (start && end && !start.value && !end.value) {
-    start.value = todayValue();
-    end.value = todayValue();
+  if (start && end && state.leaderboard.allDates !== true) {
+    if (!start.value) start.value = todayValue();
+    if (!end.value) end.value = start.value;
   }
   renderLeaderboard();
 }
@@ -3221,6 +3242,9 @@ function renderLeaderboard() {
   if ($("leaderboardEmployeeCount")) $("leaderboardEmployeeCount").textContent = rows.length;
   if ($("leaderboardRecordCount")) $("leaderboardRecordCount").textContent = result.recordCount;
   if ($("leaderboardRangeLabel")) $("leaderboardRangeLabel").textContent = range.label;
+  if ($("leaderboardSelectedRange")) $("leaderboardSelectedRange").textContent =
+    range.preset === "all" ? "Viewing ALL saved work dates (not a daily ranking). Click Today for November 13." :
+    "Ranking saved putaway lines dated " + range.label + " only. Other dates are excluded.";
   const auditText = $("leaderboardDateAudit");
   if (auditText) {
     const excluded = audit.otherDates.length
@@ -3240,7 +3264,7 @@ function renderLeaderboard() {
       : !count
         ? "No saved putaway history loaded. Refresh History or check account access."
         : result.recordCount
-          ? `Found ${result.recordCount} saved putaway submission(s) for these dates across ${count} loaded records.`
+          ? `Found ${result.recordCount} matching daily group(s) from ${count} loaded putaway records. ${rows.length} name(s) displayed.`
           : `No saved lines found for the selected dates among ${count} loaded records. Try This Week or All Dates.`;
   }
 
@@ -3254,7 +3278,7 @@ function renderLeaderboard() {
   body.innerHTML = "";
 
   if (!rows.length) {
-    body.insertAdjacentHTML("beforeend", `<tr><td colspan="${columns.length + 1}">No saved employee putaway lines found for the selected dates.</td></tr>`);
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="${columns.length + 1}">No saved employee putaway lines found for the selected dates. Try Refresh Saved History or search another date.</td></tr>`);
     return;
   }
 
