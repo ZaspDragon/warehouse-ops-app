@@ -2848,34 +2848,26 @@ function getPutawayRecordsByDateRange(records, startDate, endDate, options = {})
   const end = normalizeLeaderboardDate(endDate);
   const includeUndated = Boolean(options.includeUndated || (!start && !end));
 
-  return (records || []).flatMap((record) => {
-    const sourceLines = Array.isArray(record?.lines) ? record.lines : [];
-
-    // Older single-line records do not always have a lines array. Keep using
-    // their record date so historical data remains visible and filterable.
-    if (!sourceLines.length) {
-      return getRecordsByDateRange([record], start, end, { includeUndated });
-    }
-
-    const matchingLines = sourceLines.filter((line) => {
-      if (line?.active === false) return false;
+  // Use exactly the same legacy-record normalization as Put Away History.
+  // Older standalone item rows become one normalized line rather than zero.
+  return (records || []).flatMap((source) => {
+    const record = normalizePutawayRecord(source);
+    const matchingLines = (record.lines || []).filter((line) => {
+      if (line.active === false) return false;
       const lineDate = getPutawayLineDate(line, record);
       if (!lineDate) return includeUndated;
       if (start && lineDate < start) return false;
       if (end && lineDate > end) return false;
       return true;
     });
-
     if (!matchingLines.length) return [];
-
     return [{
       ...record,
       lines: matchingLines,
       totalLines: matchingLines.length,
       lineCount: matchingLines.length,
       totalQty: matchingLines.reduce(
-        (sum, line) => sum + numericValue(line?.quantity ?? line?.qty),
-        0
+        (sum, line) => sum + numericValue(line.quantity ?? line.qty), 0
       )
     }];
   });
@@ -2938,21 +2930,29 @@ function sortLeaderboardRows(rows, primaryField) {
 }
 
 function calculatePutawayStats(records) {
-  const groups = groupRecordsByEmployee(records, ["employeeName", "worker", "employee"]);
-
-  return sortLeaderboardRows(
-    Object.entries(groups).map(([employee, employeeRecords]) => {
-      const totalLines = employeeRecords.reduce((sum, record) => sum + normalizedLineCount(record), 0);
-      return {
-        employee,
-        totalLines,
-        totalTickets: employeeRecords.length,
-        averageLinesPerDay: averagePerDay(totalLines, employeeRecords),
-        lastActivityDate: lastActivityDate(employeeRecords)
-      };
-    }),
-    "totalLines"
-  );
+  // Attribute each completed line to the employee on that line, falling back
+  // to its parent session. A batch is not one unit of production.
+  const employeeGroups = new Map();
+  (records || []).forEach((record) => {
+    (record.lines || []).forEach((line) => {
+      if (line.active === false) return;
+      const employee = normalizeEmployeeName(line.employeeName || line.worker || record.employeeName || record.worker);
+      const key = employee.toLocaleLowerCase();
+      if (!employeeGroups.has(key)) employeeGroups.set(key, { employee, lines: 0, tickets: new Set(), dates: new Set() });
+      const group = employeeGroups.get(key);
+      group.lines += 1;
+      group.tickets.add(String(record.id || record.putawayNumber || group.lines));
+      const date = getPutawayLineDate(line, record);
+      if (date) group.dates.add(date);
+    });
+  });
+  return sortLeaderboardRows([...employeeGroups.values()].map((group) => ({
+    employee: group.employee,
+    totalLines: group.lines,
+    totalTickets: group.tickets.size,
+    averageLinesPerDay: group.lines / Math.max(1, group.dates.size),
+    lastActivityDate: [...group.dates].sort().at(-1) || "Unknown"
+  })), "totalLines");
 }
 
 function cycleCompletedCount(record) {
@@ -3215,7 +3215,7 @@ function exportLeaderboardCsv() {
     return out;
   });
 
-  downloadCsv(rows, `leaderboard-${view}-${new Date().toISOString().slice(0, 10)}.csv`);
+  downloadCsv(rows, `leaderboard-${view}-${getLeaderboardDateRange().start}.csv`);
 }
 
 /* ---------------------------
