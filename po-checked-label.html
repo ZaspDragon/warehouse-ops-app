@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PO Checked Quantity | WarehouseOS</title>
+<style>
+body{margin:0;background:#f3f6fa;color:#152234;font:16px system-ui,Arial,sans-serif}
+main{max-width:540px;margin:25px auto;padding:18px}article{background:#fff;padding:22px;border-radius:14px;box-shadow:0 4px 24px #17203316}
+h1{margin-top:0;font-size:23px}.qty{font-size:48px;font-weight:800;color:#075b3e}.field{padding:12px 0;border-bottom:1px solid #e4e8ec}
+small{color:#566477}a{color:#1356ac}strong{overflow-wrap:anywhere}
+</style></head>
+<body><main><article><h1>PO Checked Quantity</h1>
+<p><small>Read-only snapshot from a printed QR label. This page does not submit, receive, or modify inventory.</small></p>
+<div class="field"><small>CHADWELL ITEM</small><div><strong id="item"></strong></div></div>
+<div class="field"><small>FINISHED CHECKED QUANTITY</small><div class="qty" id="qty"></div></div>
+<div class="field"><small>PO NUMBER</small><div><strong id="po"></strong></div></div>
+<div class="field"><small>BRANCH</small><div id="branch"></div></div>
+<div class="field"><small>CHECKER</small><div id="checker"></div></div>
+<div class="field"><small>WORK DATE</small><div id="date"></div></div>
+<p><a href="po-checking.html">Back to PO Checking</a></p></article></main>
+<script>
+const q=new URLSearchParams(location.search);
+["item","qty","po","branch","checker","date"].forEach(k=>document.getElementById(k).textContent=(q.get(k)||"—").slice(0,150));
+</script></body></html>
