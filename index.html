@@ -259,14 +259,20 @@
           </nav>
 
           <div class="leaderboard-filters">
-            <label>Work Date
-              <input id="leaderboardDate" type="date" aria-label="Select putaway production date" />
+            <label>Start Date
+              <input id="leaderboardStartDate" type="date" aria-label="Leaderboard start date" />
             </label>
+            <label>End Date
+              <input id="leaderboardEndDate" type="date" aria-label="Leaderboard end date" />
+            </label>
+            <button id="leaderboardTodayBtn" type="button">Today Only</button>
+            <button id="leaderboardAllDatesBtn" type="button">All Dates</button>
             <label>Employee Search
               <input id="leaderboardSearch" placeholder="Filter by employee name" />
             </label>
           </div>
 
+          <p id="leaderboardStatus" class="hint" role="status" aria-live="polite">Loading saved putaways…</p>
           <div class="leaderboard-summary stats">
             <div><strong id="leaderboardEmployeeCount">0</strong><span>Employees Ranked</span></div>
             <div><strong id="leaderboardRecordCount">0</strong><span>Records Included</span></div>
@@ -611,11 +617,11 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20261113-sheet-one-daily-history"></script>
+  <script src="app.js?v=20261113-leaderboard-date-range"></script>
   <script src="putaway-audit.js?v=20260922-8"></script>
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
 
-  <script src="history-upgrade.js?v=20261113-employee-daily-history"></script>
+  <script src="history-upgrade.js?v=20261113-leaderboard-history-load"></script>
   <script src="responsive-ui.js?v=20261110-cycle-nav-fix"></script>
 </body>
 </html>
