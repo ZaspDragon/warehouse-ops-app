@@ -274,6 +274,28 @@
             </label>
           </div>
 
+          <section class="card" aria-label="Search saved putaway history">
+            <h3>Find Saved Putaways</h3>
+            <p class="hint">Look up actual saved item lines for a worker on any date, including November 13. This search is separate from the leaderboard ranking filter.</p>
+            <div class="grid">
+              <label>Employee name (optional)
+                <input id="leaderboardHistoryName" placeholder="Name or part of a name" autocomplete="off" />
+              </label>
+              <label>Work date
+                <input id="leaderboardHistoryDate" type="date" />
+              </label>
+            </div>
+            <div class="actions">
+              <button id="leaderboardHistorySearchBtn" class="primary" type="button">Search Saved Putaways</button>
+              <button id="leaderboardHistoryResetBtn" type="button">Use Leaderboard Date</button>
+            </div>
+            <p id="leaderboardHistorySearchStatus" class="hint" role="status" aria-live="polite">Search for all names or enter an employee.</p>
+            <div class="table-wrap small">
+              <table><thead><tr><th>Employee</th><th>Work Date</th><th>Saved Lines</th><th>Quantity</th><th>Item # (Qty)</th></tr></thead>
+                <tbody id="leaderboardHistorySearchResults"><tr><td colspan="5">Run a search to view saved putaway lines.</td></tr></tbody>
+              </table>
+            </div>
+          </section>
           <p class="hint" id="leaderboardLoadStatus" aria-live="polite">Loading saved putaway lines…</p>
           <p class="hint" id="leaderboardDateAudit" aria-live="polite"></p>
           <div class="leaderboard-summary stats">
@@ -625,6 +647,7 @@
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
 
   <script src="history-upgrade.js?v=20261113-weekly-leaderboard-refresh"></script>
-  <script src="responsive-ui.js?v=20261110-cycle-nav-fix"></script>
+  <script src="leaderboard-history-search.js?v=20261113-1"></script>
+<script src="responsive-ui.js?v=20261110-cycle-nav-fix"></script>
 </body>
 </html>
