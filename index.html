@@ -120,6 +120,7 @@
         <button class="tab active" data-tab="putaway">Put Away Log</button>
         <button class="tab" data-tab="leaderboard">Leaderboard</button>
         <a class="tab tab-link" href="inventory-adjustments.html">Inventory Adjustments</a>
+        <a class="tab tab-link" href="qr-bin-scanner.html">QR Bin Scanner</a>
         <a class="tab tab-link" href="transfer-productivity.html">Transfer Productivity</a>
         <a class="tab tab-link" href="hold-batch-priorities.html">Hold Batch Priorities</a>
         <button id="cycleProductionNavBtn" class="tab" type="button" data-tab="cycleProduction" title="Cycle Count Production — A-L and XA-XG">Cycle Count Production</button>
@@ -152,8 +153,9 @@
               <input id="putSheetNumber" placeholder="Sheet or putaway number" required />
             </label>
 
-            <label>Work Date
-              <input id="putDate" type="date" />
+            <label>Work Date (Automatic)
+              <input id="putDate" type="date" readonly aria-describedby="putDateNote" />
+              <small id="putDateNote">Assigned automatically when you submit; no date selection required.</small>
             </label>
 
             <label>Status
@@ -593,7 +595,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20261113-daily-putaway-leaderboard"></script>
+  <script src="app.js?v=20261113-auto-putaway-date"></script>
   <script src="putaway-audit.js?v=20260922-8"></script>
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
 
