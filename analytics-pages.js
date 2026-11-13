@@ -19,17 +19,23 @@
     const parsed = Number(String(value ?? "").replace(/[$,]/g, ""));
     return Number.isFinite(parsed) ? parsed : 0;
   }
+  function verifiedDate(y, m, d) {
+    if (![y, m, d].every(Number.isInteger) || y < 1900 || y > 2100) return "";
+    const day = new Date(y, m - 1, d);
+    return day.getFullYear() === y && day.getMonth() === m - 1 && day.getDate() === d
+      ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` : "";
+  }
   function dateKey(value) {
-    if (!value) return "";
-    if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : verifiedDate(value.getFullYear(), value.getMonth() + 1, value.getDate());
     if (typeof value === "number" && value > 20000 && window.XLSX?.SSF?.parse_date_code) {
       const d = XLSX.SSF.parse_date_code(value);
-      return d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : "";
+      return d ? verifiedDate(d.y, d.m, d.d) : "";
     }
-    const direct = text(value).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (direct) return `${direct[1]}-${direct[2].padStart(2, "0")}-${direct[3].padStart(2, "0")}`;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? "" : dateKey(parsed);
+    const input = text(value);
+    const iso = input.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:T|\s|$)/);
+    if (iso) return verifiedDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    const us = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|$)/);
+    return us ? verifiedDate(Number(us[3]), Number(us[1]), Number(us[2])) : "";
   }
   function timeParts(value) {
     if (value instanceof Date && !Number.isNaN(value.getTime())) return { seconds: value.getHours() * 3600 + value.getMinutes() * 60 + value.getSeconds(), label: value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) };
@@ -236,6 +242,10 @@
       if (sort === "unit-asc") return a.cost - b.cost || a.item.localeCompare(b.item);
       if (sort === "value-desc") return b.adjustmentValue - a.adjustmentValue || a.item.localeCompare(b.item);
       if (sort === "value-asc") return a.adjustmentValue - b.adjustmentValue || a.item.localeCompare(b.item);
+      const mode = $("filterSort")?.value || "date";
+      if (mode === "qty") return Math.abs(b.qty) - Math.abs(a.qty) || a.item.localeCompare(b.item);
+      if (mode === "loss") return Math.max(0, -b.gainLoss) - Math.max(0, -a.gainLoss) || a.item.localeCompare(b.item);
+      if (mode === "cost") return Math.abs(b.cost) - Math.abs(a.cost) || a.item.localeCompare(b.item);
       return `${b.date}|${b.doc}`.localeCompare(`${a.date}|${a.doc}`);
     });
     return rows;
@@ -277,7 +287,52 @@
     return timed.filter(inRange);
   }
 
+  function rankedItems() {
+    // Reuse the filtered adjustment view (including Fab Shop exclusion).
+    const groups = new Map();
+    adjustmentRows().forEach(row => {
+      const group = groups.get(row.item) || {
+        item: row.item, description: row.description, count: 0, added: 0,
+        removed: 0, loss: 0, cost: 0, dates: new Set()
+      };
+      group.count += 1;
+      group.added += Math.max(0, row.qty);
+      group.removed += Math.max(0, -row.qty);
+      group.loss += Math.max(0, -row.gainLoss);
+      group.cost = Math.max(group.cost, Math.abs(row.cost));
+      if (row.date) group.dates.add(row.date);
+      groups.set(row.item, group);
+    });
+    const mode = $("rankingSort")?.value || "removed";
+    const score = {
+      removed: g => g.removed, loss: g => g.loss, cost: g => g.cost,
+      added: g => g.added, net: g => g.removed - g.added
+    }[mode] || (g => g.removed);
+    return [...groups.values()].sort((a,b) => score(b) - score(a) || b.removed - a.removed || a.item.localeCompare(b.item));
+  }
+  function renderRankings() {
+    const body = $("rankedItemsBody");
+    if (!body) return;
+    const money = n => n.toLocaleString(undefined,{style:"currency",currency:"USD"});
+    const items = rankedItems();
+    body.innerHTML = items.length ? items.map((g,i) =>
+      `<tr><td>${i+1}</td><td>${esc(g.item)}</td><td>${esc(g.description)}</td><td>${g.count}</td><td>${g.added.toLocaleString()}</td><td>${g.removed.toLocaleString()}</td><td>${(g.added-g.removed).toLocaleString()}</td><td>${money(g.loss)}</td><td>${money(g.cost)}</td><td>${esc([...g.dates].sort().join(", "))}</td></tr>`
+    ).join("") : '<tr><td colspan="10">No matching items.</td></tr>';
+  }
+  function exportRankings() {
+    const items = rankedItems();
+    if (!items.length) return setMessage("No ranked items to export.", true);
+    const rows = [["Rank","Item #","Description","Transactions","Added","Removed","Net","Loss Value","Max Unit Cost","Transaction Dates"],
+      ...items.map((g,i) => [i+1,g.item,g.description,g.count,g.added,g.removed,g.added-g.removed,g.loss,g.cost,[...g.dates].sort().join("; ")])];
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([rows.map(row => row.map(csvCell).join(",")).join("\n")], {type:"text/csv;charset=utf-8"}));
+    link.download = "inventory-adjustment-rankings.csv";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }
+
   function renderAdjustments() {
+    renderRankings();
     const rows = adjustmentRows();
     const added = rows.filter((row) => row.qty > 0).reduce((sum, row) => sum + row.qty, 0);
     const removed = Math.abs(rows.filter((row) => row.qty < 0).reduce((sum, row) => sum + row.qty, 0));
@@ -630,10 +685,11 @@
   $("analyticsFile").addEventListener("change", importFile);
   $("exportAnalytics").addEventListener("click", exportCsv);
   $("exportRepeatedItems")?.addEventListener("click", printRepeatedItemsReport);
+  $("exportRankings")?.addEventListener("click", exportRankings);
   $("clearAnalyticsData").addEventListener("click", () => {
     if (!confirm("Clear all saved uploads from this browser?")) return;
     records = []; duplicateUploadRows = 0; localStorage.removeItem(storageKey); refreshAdjustmentDateOptions("latest"); render(); setMessage("Saved uploads cleared.");
   });
-  ["filterReportDate", "filterCostSort", "filterStart", "filterEnd", "filterSearch", "filterDirection", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
+  ["filterReportDate", "filterCostSort", "filterSort", "rankingSort", "filterStart", "filterEnd", "filterSearch", "filterDirection", "filterStatus", "gapThreshold"].forEach((id) => $(id)?.addEventListener(id === "filterSearch" ? "input" : "change", render));
   render();
 })();

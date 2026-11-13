@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WarehouseOS · QR Bin Scanner</title>
+<style>
+:root{font:16px system-ui,Arial,sans-serif;color-scheme:dark;background:#101820;color:#f3f7fa}
+*{box-sizing:border-box}body{margin:0}header{background:#172632;padding:18px max(18px,calc((100vw - 1020px)/2));display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+main{max-width:1020px;padding:20px;margin:auto}h1{font-size:1.3rem;margin:0}h2{font-size:1.15rem;margin:0 0 12px}p{line-height:1.5}a{color:#8dd4ff}
+.card{border:1px solid #354956;background:#1b2833;border-radius:12px;padding:18px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.wide{grid-column:1/-1}
+label{display:block;font-weight:650;font-size:.9rem}input,select,button{font:inherit}input,select{display:block;width:100%;background:#0e1922;color:#fff;border:1px solid #60717c;border-radius:7px;padding:11px;margin-top:6px;min-height:44px}
+input:focus,select:focus{outline:2px solid #69bee8}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+button,.btn{border:0;border-radius:8px;min-height:43px;padding:10px 15px;background:#2b719d;color:white;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
+button.secondary,.btn.secondary{background:#384c5b}button:disabled{opacity:.5;cursor:not-allowed}
+.notice{background:#2b2b20;border-left:4px solid #efbb69;padding:12px;border-radius:4px}.muted{color:#b0c5d0}
+#reader{max-width:480px;margin:12px auto;background:#0f1a22}#reader video{max-width:100%}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #354956} .scroll{overflow:auto}
+.pill{background:#34546a;border-radius:14px;padding:4px 10px;font-size:.8rem}.status{min-height:24px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}main{padding:12px}header{padding:15px}}
+</style></head>
+<body><header><div><h1>WarehouseOS · QR Bin Scanner</h1><small>OH01 · Draft-only scan-to-scan workflow</small></div><a href="./index.html" class="btn secondary">← WarehouseOS</a></header>
+<main>
+<div class="notice"><strong>Not connected to Bin Manager.</strong> Item quantities come only from a CSV you import. Drafts do not move stock or post any Bin Manager transactions. Verify all transfers in <a href="http://binmgr.chadwellsupply.com/" target="_blank" rel="noopener noreferrer">Bin Manager</a> using your authorized account. Ask IT to enable HTTPS before transmitting credentials.</div>
+<section class="card"><h2>1. Scan item and bins</h2><p class="muted">Phone: tap a field then Start camera. Bluetooth/USB keyboard scanners: focus a field and scan; Enter advances to the next field. QR payloads should contain only the item number or location code.</p>
+<div class="grid">
+<label>Item number<input id="item" placeholder="Scan item QR" inputmode="text" autocomplete="off"></label>
+<label>From bin<input id="from" placeholder="Scan source bin" autocomplete="off"></label>
+<label>To bin<input id="to" placeholder="Scan destination bin" autocomplete="off"></label>
+<label>Quantity (EA)<input id="qty" type="number" min="1" step="1" placeholder="Enter quantity"></label>
+</div>
+<div class="actions"><button id="camera" type="button">Start phone camera</button><button id="stop" class="secondary" type="button" disabled>Stop camera</button><button id="review" type="button">Save transfer draft</button><button id="clear" type="button" class="secondary">Clear</button></div>
+<p id="status" class="status" role="status" aria-live="polite"></p><div id="reader" hidden></div>
+</section>
+<section class="card"><h2>2. Optional item lookup via CSV</h2><p class="muted">Import an approved CSV with columns <code>item,bin,qty,allocated,description</code>. Export from an authorized source; this local lookup is not live. Data stays in this browser tab.</p>
+<input id="csv" type="file" accept=".csv,text/csv" aria-label="Import inventory CSV">
+<p id="lookup" class="muted">Scan an item to search imported inventory.</p>
+<div id="matches" class="scroll"></div>
+</section>
+<section class="card"><h2>3. Review draft transfers</h2><p class="muted">Drafts are saved in this browser's local storage. They are not synchronized between devices and must be manually confirmed in Bin Manager.</p>
+<div class="actions"><button id="export" class="secondary">Export draft CSV</button><button id="clearDrafts" class="secondary">Delete all drafts</button></div>
+<div id="drafts" class="scroll"></div>
+</section>
+</main>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+<script>
+(()=>{'use strict';
+const ids=['item','from','to','qty'], el=id=>document.getElementById(id), key='warehouseos_oh01_transfer_drafts_v1';
+let rows=[],active='item',scanner=null,locking=false;
+const norm=s=>String(s??'').trim().toUpperCase(), notify=(msg,error=false)=>{el('status').textContent=msg;el('status').style.color=error?'#ffb48c':'#a8e7b0'};
+const draftRead=()=>{try{const x=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(x)?x:[]}catch{return []}};
+ids.forEach((id,i)=>{const n=el(id);n.addEventListener('focus',()=>active=id);n.addEventListener('input',renderLookup);n.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(i<ids.length-1)el(ids[i+1]).focus();else el('review').focus()}})});
+function parseCsv(text){const out=[];let fields=[],v='',quote=false;for(let i=0;i<text.length;i++){const c=text[i];if(quote){if(c==='"'&&text[i+1]==='"'){v+='"';i++}else if(c==='"')quote=false;else v+=c}else if(c==='"')quote=true;else if(c===','){fields.push(v);v=''}else if(c==='\n'){fields.push(v.replace(/\r$/,''));out.push(fields);fields=[];v=''}else v+=c}if(fields.length||v){fields.push(v);out.push(fields)}return out}
+el('csv').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{const data=parseCsv(await f.text()),headers=(data.shift()||[]).map(x=>x.trim().toLowerCase());if(!['item','bin','qty'].every(x=>headers.includes(x)))throw Error('CSV requires item, bin, qty columns');rows=data.filter(a=>a.some(Boolean)).map(a=>Object.fromEntries(headers.map((h,i)=>[h,a[i]??''])));notify('Imported '+rows.length+' inventory rows (not live).');renderLookup()}catch(err){rows=[];notify(err.message,true)}});
+function renderLookup(){const item=norm(el('item').value),matched=item?rows.filter(r=>norm(r.item)===item):[];el('lookup').textContent=rows.length?matched.length+' matching bin(s) in imported CSV. Verify against live Bin Manager.':'No imported inventory — item lookup unavailable until CSV upload.';const container=el('matches');container.replaceChildren();if(!matched.length)return;const t=document.createElement('table'),head=document.createElement('tr');['Bin','Quantity','Allocated','Description'].forEach(s=>{const th=document.createElement('th');th.textContent=s;head.append(th)});t.append(head);matched.forEach(r=>{const tr=document.createElement('tr');['bin','qty','allocated','description'].forEach(k=>{const td=document.createElement('td');td.textContent=r[k]??'';tr.append(td)});t.append(tr)});container.append(t)}
+function renderDrafts(){const drafts=draftRead(),container=el('drafts');container.replaceChildren();if(!drafts.length){container.textContent='No drafts saved.';return}const table=document.createElement('table'),header=document.createElement('tr');['Created','Item','From','To','Qty','Status','Action'].forEach(x=>{const th=document.createElement('th');th.textContent=x;header.append(th)});table.append(header);drafts.slice().reverse().forEach(d=>{const tr=document.createElement('tr');[new Date(d.created).toLocaleString(),d.item,d.from,d.to,d.qty+' EA','NOT POSTED'].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td)});const td=document.createElement('td'),b=document.createElement('button');b.className='secondary';b.textContent='Delete';b.addEventListener('click',()=>{localStorage.setItem(key,JSON.stringify(draftRead().filter(x=>x.id!==d.id)));renderDrafts()});td.append(b);tr.append(td);table.append(tr)});container.append(table)}
+function data(){return {item:norm(el('item').value),from:norm(el('from').value),to:norm(el('to').value),qty:Number(el('qty').value)}}
+el('review').addEventListener('click',()=>{const d=data();if(!/^\d{4,10}$/.test(d.item))return notify('Check the item number.',true);if(!/^[A-Z0-9][A-Z0-9-]{0,39}$/.test(d.from)||!/^[A-Z0-9][A-Z0-9-]{0,39}$/.test(d.to))return notify('Scan valid source and destination bin codes.',true);if(d.from===d.to)return notify('Source and destination cannot match.',true);if(!Number.isSafeInteger(d.qty)||d.qty<1)return notify('Quantity must be a positive whole number.',true);
+const available=rows.find(r=>norm(r.item)===d.item&&norm(r.bin)===d.from);if(available){const a=Number(available.qty)-Number(available.allocated||0);if(Number.isFinite(a)&&d.qty>a)return notify('Qty exceeds imported available stock ('+a+'). Check Bin Manager.',true)}
+const list=draftRead();list.push({...d,id:crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),created:new Date().toISOString()});try{localStorage.setItem(key,JSON.stringify(list))}catch{return notify('Could not save draft on this device.',true)}renderDrafts();notify('Saved locally as NOT POSTED. Complete transfer in Bin Manager.')});
+el('clear').addEventListener('click',()=>{ids.forEach(id=>el(id).value='');renderLookup();el('item').focus();notify('Fields cleared.')});
+el('clearDrafts').addEventListener('click',()=>{if(!confirm('Delete every locally saved transfer draft on this device?'))return;localStorage.removeItem(key);renderDrafts()});
+el('export').addEventListener('click',()=>{const list=draftRead(),lines=[['created','item','from','to','qty','status'],...list.map(d=>[d.created,d.item,d.from,d.to,d.qty,'NOT POSTED'])],csv=lines.map(row=>row.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n'),url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})),a=document.createElement('a');a.href=url;a.download='OH01-transfer-drafts.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+async function stop(){if(scanner){try{await scanner.stop()}catch{}try{await scanner.clear()}catch{}scanner=null}el('reader').hidden=true;el('camera').disabled=false;el('stop').disabled=true;locking=false}
+el('camera').addEventListener('click',async()=>{if(!window.isSecureContext)return notify('Camera requires HTTPS or localhost. Open the deployed GitHub Pages version.',true);if(typeof Html5Qrcode==='undefined')return notify('QR camera library failed to load; keyboard scanners still work.',true);if(scanner)return;locking=false;el('reader').hidden=false;el('camera').disabled=true;el('stop').disabled=false;try{scanner=new Html5Qrcode('reader');await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:240}},async decoded=>{if(locking)return;locking=true;el(active).value=decoded.trim();renderLookup();const pos=ids.indexOf(active);notify('Scanned '+active+': '+decoded.trim());await stop();if(pos<ids.length-1)el(ids[pos+1]).focus()})}catch(e){await stop();notify('Could not start camera: '+(e.message||String(e)),true)}});
+el('stop').addEventListener('click',stop);renderDrafts();renderLookup();
+})();
+</script></body></html>

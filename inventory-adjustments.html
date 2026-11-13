@@ -45,6 +45,7 @@
         <label>End Date<input id="filterEnd" type="date" /></label>
         <label>Direction<select id="filterDirection"><option value="">All</option><option value="Added">Added</option><option value="Removed">Removed</option></select></label>
         <label>Cost Sorting<select id="filterCostSort"><option value="">Newest First</option><option value="unit-desc">Highest Unit Cost</option><option value="unit-asc">Lowest Unit Cost</option><option value="value-desc">Highest Adjustment Value</option><option value="value-asc">Lowest Adjustment Value</option></select></label>
+        <label>Sort Transactions<select id="filterSort"><option value="date">Newest Date</option><option value="qty">Largest Quantity</option><option value="loss">Largest Loss Value</option><option value="cost">Highest Unit Cost</option></select></label>
         <label>Search<input id="filterSearch" placeholder="Item, user, reason, document" /></label>
       </div>
       <div class="table-wrap analytics-table-wrap"><table>
@@ -52,6 +53,11 @@
         <tbody id="analyticsBody"><tr><td colspan="12">Upload a transaction report to begin.</td></tr></tbody>
       </table></div>
 
+      <section class="adjustment-bottom-summary">
+        <div class="section-heading"><div><h3>Top Adjusted Items</h3><p class="hint">Rankings reflect selected filters and exclude Fab Shop. Transaction dates come from the imported report.</p></div><button id="exportRankings" class="primary" type="button">Export Ranking CSV</button></div>
+        <div class="analytics-filters"><label>Rank By<select id="rankingSort"><option value="removed">Most Units Removed</option><option value="loss">Highest Dollar Loss</option><option value="cost">Highest Unit Cost</option><option value="added">Most Units Added</option><option value="net">Largest Net Reduction</option></select></label></div>
+        <div class="table-wrap"><table><thead><tr><th>Rank</th><th>Item #</th><th>Description</th><th>Transactions</th><th>Added</th><th>Removed</th><th>Net</th><th>Loss Value</th><th>Max Unit Cost</th><th>Transaction Dates</th></tr></thead><tbody id="rankedItemsBody"></tbody></table></div>
+      </section>
       <section class="adjustment-bottom-summary" aria-labelledby="adjustmentTotalsTitle">
         <h3 id="adjustmentTotalsTitle">Filtered Adjustment Totals</h3>
         <div class="bottom-total-grid">
@@ -84,6 +90,6 @@
       </section>
     </section>
   </main>
-  <script src="analytics-pages.js?v=20261111-fab-shop-exclusion"></script>
+  <script src="analytics-pages.js?v=20261113-rankings-merged"></script>
 </body>
 </html>
