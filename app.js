@@ -2870,31 +2870,53 @@ function getPutawayLineDate(line, record) {
 function getPutawayRecordsByDateRange(records, startDate, endDate, options = {}) {
   const start = normalizeLeaderboardDate(startDate);
   const end = normalizeLeaderboardDate(endDate);
-  const includeUndated = Boolean(options.includeUndated || (!start && !end));
-
-  // Use exactly the same legacy-record normalization as Put Away History.
-  // Older standalone item rows become one normalized line rather than zero.
-  return (records || []).flatMap((source) => {
-    const record = normalizePutawayRecord(source);
-    const matchingLines = (record.lines || []).filter((line) => {
+  const includeUndated = Boolean(options.includeUndated);
+  // Reconcile directly from the SAME normalized daily groups used by Put Away History.
+  // Do not use the Employees roster and do not change stored record dates.
+  return buildPutawayDailyGroups(records).flatMap((group) => {
+    const matchingLines = (group.lines || []).filter((line) => {
       if (line.active === false) return false;
-      const lineDate = getPutawayLineDate(line, record);
-      if (!lineDate) return includeUndated;
-      if (start && lineDate < start) return false;
-      if (end && lineDate > end) return false;
+      const date = getPutawayLineDate(line, group);
+      if (!date) return includeUndated;
+      if (start && date < start) return false;
+      if (end && date > end) return false;
       return true;
     });
-    if (!matchingLines.length) return [];
-    return [{
-      ...record,
+    return matchingLines.length ? [{
+      ...group,
+      id: group.key,
+      employeeName: group.employeeName,
+      workDate: group.workDate,
       lines: matchingLines,
       totalLines: matchingLines.length,
-      lineCount: matchingLines.length,
-      totalQty: matchingLines.reduce(
-        (sum, line) => sum + numericValue(line.quantity ?? line.qty), 0
-      )
-    }];
+      totalQty: matchingLines.reduce((sum, line) => sum + numericValue(line.quantity ?? line.qty), 0)
+    }] : [];
   });
+}
+
+function leaderboardDateAudit(records, start, end) {
+  const namesAll = new Map();
+  const namesInRange = new Set();
+  let undated = 0;
+  let dated = 0;
+  buildPutawayDailyGroups(records).forEach(group => {
+    (group.lines || []).forEach(line => {
+      if (line.active === false) return;
+      const name = normalizeEmployeeName(line.employeeName || group.employeeName);
+      const key = name.toLocaleLowerCase();
+      const date = getPutawayLineDate(line, group);
+      if (!date) { undated++; return; }
+      dated++;
+      const row = namesAll.get(key) || {name, dates:new Set()};
+      row.dates.add(date);
+      namesAll.set(key,row);
+      if ((!start || date >= start) && (!end || date <= end)) namesInRange.add(key);
+    });
+  });
+  const otherDates = [...namesAll.entries()].filter(([key]) => !namesInRange.has(key))
+    .map(([,row]) => ({name:row.name,dates:[...row.dates].sort()}))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  return {dated,undated,otherDates};
 }
 
 function normalizeEmployeeName(value) {
@@ -3189,6 +3211,7 @@ function renderLeaderboard() {
   const view = state.leaderboard.activeView || "putaway";
   const search = $("leaderboardSearch")?.value.trim().toLowerCase() || "";
   const result = range.invalid ? {rows:[],recordCount:0} : buildLeaderboardRows(range);
+  const audit = leaderboardDateAudit(state.putawayLogs || [], range.start, range.end);
   const rows = result.rows.filter((row) => !search || String(row.employee || "").toLowerCase().includes(search));
   const columns = leaderboardColumns(view);
 
@@ -3198,6 +3221,17 @@ function renderLeaderboard() {
   if ($("leaderboardEmployeeCount")) $("leaderboardEmployeeCount").textContent = rows.length;
   if ($("leaderboardRecordCount")) $("leaderboardRecordCount").textContent = result.recordCount;
   if ($("leaderboardRangeLabel")) $("leaderboardRangeLabel").textContent = range.label;
+  const auditText = $("leaderboardDateAudit");
+  if (auditText) {
+    const excluded = audit.otherDates.length
+      ? audit.otherDates.slice(0, 25).map(x => x.name + " (" + x.dates[0] + (x.dates.length>1 ? "–" + x.dates.at(-1) : "") + ")").join(", ")
+      : "None";
+    auditText.textContent = range.invalid
+      ? "Choose a start date that is not later than the end date."
+      : audit.dated
+        ? `${audit.otherDates.length} other employee name(s) appear in History but have lines dated outside the selected range: ${excluded}.${audit.otherDates.length > 25 ? " More available under All Dates." : ""} ${audit.undated ? audit.undated + " undated line(s) need date review and were not assigned to today." : ""}`
+        : `No dated putaway lines are loaded. ${audit.undated} undated line(s) need date review.`;
+  }
   const status = $("leaderboardLoadStatus");
   if (status) {
     const count = (state.putawayLogs || []).length;
