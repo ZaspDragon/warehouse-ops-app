@@ -2994,29 +2994,39 @@ function sortLeaderboardRows(rows, primaryField) {
 }
 
 function calculatePutawayStats(records) {
-  // Attribute each completed line to the employee on that line, falling back
-  // to its parent session. A batch is not one unit of production.
+  // Date-filtered putaway groups are already built from the same saved line
+  // normalization that History uses. Count exactly those visible, active lines.
   const employeeGroups = new Map();
   (records || []).forEach((record) => {
     (record.lines || []).forEach((line) => {
       if (line.active === false) return;
       const employee = normalizeEmployeeName(line.employeeName || line.worker || record.employeeName || record.worker);
       const key = employee.toLocaleLowerCase();
-      if (!employeeGroups.has(key)) employeeGroups.set(key, { employee, lines: 0, tickets: new Set(), dates: new Set() });
+      if (!employeeGroups.has(key)) {
+        employeeGroups.set(key, { employee, totalLines: 0, tickets: new Set(), byDate: new Map() });
+      }
       const group = employeeGroups.get(key);
-      group.lines += 1;
-      group.tickets.add(String(record.id || record.putawayNumber || group.lines));
       const date = getPutawayLineDate(line, record);
-      if (date) group.dates.add(date);
+      // A blank date is not counted in a dated ranking.
+      if (!date) return;
+      group.totalLines++;
+      const recordId = String(line.sourceRecordId || record.id || "").trim();
+      if (recordId) group.tickets.add(recordId);
+      group.byDate.set(date, (group.byDate.get(date) || 0) + 1);
     });
   });
-  return sortLeaderboardRows([...employeeGroups.values()].map((group) => ({
-    employee: group.employee,
-    totalLines: group.lines,
-    totalTickets: group.tickets.size,
-    averageLinesPerDay: group.lines / Math.max(1, group.dates.size),
-    lastActivityDate: [...group.dates].sort().at(-1) || "Unknown"
-  })), "totalLines");
+  return sortLeaderboardRows([...employeeGroups.values()].map(group => {
+    const days = [...group.byDate.entries()].sort(([a],[b])=>a.localeCompare(b));
+    return {
+      employee:group.employee,
+      totalLines:group.totalLines,
+      totalTickets:group.tickets.size,
+      daysWorked:days.length,
+      dailyBreakdown:days.map(([date,count])=>`${date}: ${count}`).join(" | "),
+      averageLinesPerDay:days.length ? group.totalLines / days.length : 0,
+      lastActivityDate:days.at(-1)?.[0] || "Unknown"
+    };
+  }), "totalLines");
 }
 
 function cycleCompletedCount(record) {
@@ -3209,7 +3219,9 @@ function leaderboardColumns(view) {
   return [
     ["employee", "Employee"],
     ["totalLines", "Putaway Lines"],
-    ["totalTickets", "Tickets / Orders"],
+    ["totalTickets", "Saved Submissions"],
+    ["daysWorked", "Days Worked"],
+    ["dailyBreakdown", "By Work Date"],
     ["averageLinesPerDay", "Avg Lines / Day"],
     ["lastActivityDate", "Last Activity"]
   ];
@@ -3244,7 +3256,7 @@ function renderLeaderboard() {
   if ($("leaderboardRangeLabel")) $("leaderboardRangeLabel").textContent = range.label;
   if ($("leaderboardSelectedRange")) $("leaderboardSelectedRange").textContent =
     range.preset === "all" ? "Viewing ALL saved work dates (not a daily ranking). Click Today for November 13." :
-    "Ranking saved putaway lines dated " + range.label + " only. Other dates are excluded.";
+    "Totals use saved Put Away History work dates from " + range.label + ". The By Work Date column shows exactly which days were counted.";
   const auditText = $("leaderboardDateAudit");
   if (auditText) {
     const excluded = audit.otherDates.length
