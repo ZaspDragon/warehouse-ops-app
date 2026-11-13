@@ -340,19 +340,7 @@ function wireEvents() {
   $("exportHistoryBtn")?.addEventListener("click", () => exportCsv("history"));
   $("searchItemHistoryBtn")?.addEventListener("click", renderItemHistory);
   $("exportItemHistoryBtn")?.addEventListener("click", exportItemHistory);
-  ["leaderboardStartDate", "leaderboardEndDate"].forEach(id =>
-    $(id)?.addEventListener("change", renderLeaderboard));
-  $("leaderboardTodayBtn")?.addEventListener("click", () => {
-    const today = todayValue();
-    if ($("leaderboardStartDate")) $("leaderboardStartDate").value = today;
-    if ($("leaderboardEndDate")) $("leaderboardEndDate").value = today;
-    renderLeaderboard();
-  });
-  $("leaderboardAllDatesBtn")?.addEventListener("click", () => {
-    if ($("leaderboardStartDate")) $("leaderboardStartDate").value = "";
-    if ($("leaderboardEndDate")) $("leaderboardEndDate").value = "";
-    renderLeaderboard();
-  });
+  $("leaderboardDate")?.addEventListener("change", renderLeaderboard);
   $("leaderboardSearch")?.addEventListener("input", renderLeaderboard);
   $("exportLeaderboardBtn")?.addEventListener("click", exportLeaderboardCsv);
   $("saveSettingsBtn")?.addEventListener("click", saveSettings);
@@ -2347,7 +2335,7 @@ function normalizePutawayRecord(record = {}) {
     normalizeLeaderboardDate(record.submittedDate) ||
     normalizeLeaderboardDate(record.completedDate) ||
     normalizeLeaderboardDate(record.createdAt) ||
-    "";
+    todayValue();
   const branchId = record.branchId || record.tenantKey || currentBranchId();
   const sourceLines = Array.isArray(record.lines) && record.lines.length
     ? record.lines
@@ -3066,27 +3054,21 @@ function calculateOverallLeaderboard(putawayRows, cycleRows, transferRows) {
 }
 
 function getLeaderboardDateRange() {
-  const start = $("leaderboardStartDate")?.value || "";
-  const end = $("leaderboardEndDate")?.value || "";
+  // This leaderboard intentionally reports exactly one work date at a time.
+  // Date-only comparison prevents historical activity leaking into today's totals.
+  const selectedDate = $("leaderboardDate")?.value || localDateKey(new Date());
   return {
-    preset: "range",
-    start,
-    end,
-    invalid: Boolean(start && end && start > end),
-    label: start || end ? `${start || "First record"} to ${end || "Latest record"}` : "All saved dates",
+    preset: "day",
+    start: selectedDate,
+    end: selectedDate,
+    label: selectedDate,
     includeUndated: false
   };
 }
 
 function syncLeaderboardDateControls() {
-  // Default to the current month so older records aren't hidden behind Today.
-  const start = $("leaderboardStartDate");
-  const end = $("leaderboardEndDate");
-  if (start && end && !start.value && !end.value) {
-    const now = new Date();
-    start.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-    end.value = todayValue();
-  }
+  const dateInput = $("leaderboardDate");
+  if (dateInput && !dateInput.value) dateInput.value = localDateKey(new Date());
   renderLeaderboard();
 }
 
@@ -3187,7 +3169,7 @@ function renderLeaderboard() {
   const range = getLeaderboardDateRange();
   const view = state.leaderboard.activeView || "putaway";
   const search = $("leaderboardSearch")?.value.trim().toLowerCase() || "";
-  const result = range.invalid ? {rows:[],recordCount:0} : buildLeaderboardRows(range);
+  const result = buildLeaderboardRows(range);
   const rows = result.rows.filter((row) => !search || String(row.employee || "").toLowerCase().includes(search));
   const columns = leaderboardColumns(view);
 
@@ -3197,17 +3179,6 @@ function renderLeaderboard() {
   if ($("leaderboardEmployeeCount")) $("leaderboardEmployeeCount").textContent = rows.length;
   if ($("leaderboardRecordCount")) $("leaderboardRecordCount").textContent = result.recordCount;
   if ($("leaderboardRangeLabel")) $("leaderboardRangeLabel").textContent = range.label;
-  const status = $("leaderboardStatus");
-  if (status) {
-    const allRecords = state.putawayLogs || [];
-    status.textContent = range.invalid
-      ? "Start date must be on or before end date."
-      : !allRecords.length
-        ? "No saved putaway records loaded. Check your sign-in and refresh History."
-        : result.recordCount
-          ? `Showing ${result.recordCount} matching putaway submission(s) from ${allRecords.length} loaded history records. Each item line counts once.`
-          : `No records within this date range. ${allRecords.length} history record(s) loaded; try All Dates or adjust the dates.`;
-  }
 
   head.innerHTML = `
     <tr>
@@ -3219,7 +3190,7 @@ function renderLeaderboard() {
   body.innerHTML = "";
 
   if (!rows.length) {
-    body.insertAdjacentHTML("beforeend", `<tr><td colspan="${columns.length + 1}">No matching putaways. Try a wider date range or select All Dates.</td></tr>`);
+    body.insertAdjacentHTML("beforeend", `<tr><td colspan="${columns.length + 1}">No data found for this date range.</td></tr>`);
     return;
   }
 
@@ -3250,7 +3221,7 @@ function exportLeaderboardCsv() {
     return out;
   });
 
-  downloadCsv(rows, `leaderboard-${view}-${getLeaderboardDateRange().start || "all"}-to-${getLeaderboardDateRange().end || "all"}.csv`);
+  downloadCsv(rows, `leaderboard-${view}-${getLeaderboardDateRange().start}.csv`);
 }
 
 /* ---------------------------
