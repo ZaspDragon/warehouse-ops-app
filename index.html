@@ -149,8 +149,9 @@
               <input id="putWorker" list="workerOptions" placeholder="Employee name" required />
             </label>
 
-            <label>Putaway / Sheet #
-              <input id="putSheetNumber" placeholder="Sheet or putaway number" required />
+            <label>Putaway / Sheet # (Automatic)
+              <input id="putSheetNumber" value="1" readonly aria-label="Automatic putaway sheet number 1" />
+              <small>Automatically assigned as 1 for each new putaway.</small>
             </label>
 
             <label>Work Date (Automatic)
@@ -422,6 +423,21 @@
               </div>
             </div>
 
+            <section class="card" aria-labelledby="employeeDailyHistoryTitle">
+              <h3 id="employeeDailyHistoryTitle">Employee Daily Putaway Lookup</h3>
+              <p class="hint">Search any employee name from saved Put Away History, including employees not on the active Employees list. Totals and item numbers are grouped by work date.</p>
+              <div class="history-toolbar">
+                <label>Employee Name<input id="dailyPutawayEmployee" list="dailyPutawayEmployeeOptions" placeholder="Search employee name" /></label>
+                <datalist id="dailyPutawayEmployeeOptions"></datalist>
+                <button id="dailyPutawaySearchBtn" class="primary" type="button">Look Up Putaways</button>
+                <button id="dailyPutawayExportBtn" type="button">Export Daily Results CSV</button>
+              </div>
+              <p id="dailyPutawaySummary" class="hint" aria-live="polite">Enter an employee name to see their putaways by date.</p>
+              <div class="table-wrap small"><table>
+                <thead><tr><th>Date</th><th>Employee</th><th>Putaway Lines</th><th>Total Qty</th><th>Item Numbers (Qty)</th></tr></thead>
+                <tbody id="dailyPutawayBody"><tr><td colspan="5">Search for an employee.</td></tr></tbody>
+              </table></div>
+            </section>
             <div class="table-wrap small history-table-wrap">
               <table>
                 <thead>
@@ -595,11 +611,11 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20261113-auto-putaway-date"></script>
+  <script src="app.js?v=20261113-sheet-one-daily-history"></script>
   <script src="putaway-audit.js?v=20260922-8"></script>
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
 
-  <script src="history-upgrade.js"></script>
+  <script src="history-upgrade.js?v=20261113-employee-daily-history"></script>
   <script src="responsive-ui.js?v=20261110-cycle-nav-fix"></script>
 </body>
 </html>
