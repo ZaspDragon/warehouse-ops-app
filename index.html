@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Deployment refresh: employee reset and unified navigation -->
+<!-- Deployment refresh: Cycle Count Production navigation, November 10 2026 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -121,14 +121,24 @@
         <button class="tab" data-tab="leaderboard">Leaderboard</button>
         <a class="tab tab-link" href="inventory-adjustments.html">Inventory Adjustments</a>
         <a class="tab tab-link" href="qr-bin-scanner.html">QR Bin Scanner</a>
+        <a class="tab tab-link" href="transfer-productivity.html">Transfer Productivity</a>
         <a class="tab tab-link" href="hold-batch-priorities.html">Hold Batch Priorities</a>
-        <a class="tab tab-link" href="cycle-count-timing.html">Cycle Count Timing</a>
+        <button id="cycleProductionNavBtn" class="tab" type="button" data-tab="cycleProduction" title="Cycle Count Production — A-L and XA-XG">Cycle Count Production</button>
         <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
         <button class="tab" data-tab="history">History</button>
         <button class="tab" data-tab="settings">Settings</button>
       </nav>
 
+      <!-- CYCLE COUNT PRODUCTION: integrated WarehouseOps tab -->
+      <section id="cycleProductionTab" class="tab-panel">
+        <div class="card" style="padding:8px">
+          <iframe id="cycleProductionFrame" title="Cycle Count Production" loading="lazy"
+            src="cycle-count-production/index.html"
+            style="width:100%;min-height:1600px;border:0;border-radius:12px;background:#eef2f7"
+            referrerpolicy="same-origin"></iframe>
+        </div>
+      </section>
       <!-- PUT AWAY -->
       <section id="putawayTab" class="tab-panel active">
         <div class="card">
@@ -236,7 +246,7 @@
           <div class="section-heading">
             <div>
               <h2>Leaderboard</h2>
-              <p class="hint">Rankings use saved Putaway records.</p>
+              <p class="hint">Rankings show saved putaways for the selected work date only.</p>
             </div>
             <button id="exportLeaderboardBtn" class="primary">Export CSV</button>
           </div>
@@ -247,20 +257,8 @@
           </nav>
 
           <div class="leaderboard-filters">
-            <label>Date Range
-              <select id="leaderboardRangePreset">
-                <option value="today">Today</option>
-                <option value="week">This week</option>
-                <option value="month">This month</option>
-                <option value="custom">Custom date range</option>
-                <option value="all">Overall / all time</option>
-              </select>
-            </label>
-            <label>Start Date
-              <input id="leaderboardStartDate" type="date" disabled />
-            </label>
-            <label>End Date
-              <input id="leaderboardEndDate" type="date" disabled />
+            <label>Work Date
+              <input id="leaderboardDate" type="date" aria-label="Select putaway production date" />
             </label>
             <label>Employee Search
               <input id="leaderboardSearch" placeholder="Filter by employee name" />
@@ -596,11 +594,11 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20260918-4"></script>
+  <script src="app.js?v=20261113-daily-putaway-leaderboard"></script>
   <script src="putaway-audit.js?v=20260922-8"></script>
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
 
   <script src="history-upgrade.js"></script>
-  <script src="responsive-ui.js?v=20260604-1"></script>
+  <script src="responsive-ui.js?v=20261110-cycle-nav-fix"></script>
 </body>
 </html>
