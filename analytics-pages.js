@@ -32,9 +32,9 @@
       return d ? verifiedDate(d.y, d.m, d.d) : "";
     }
     const input = text(value);
-    const iso = input.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:T|\\s|$)/);
+    const iso = input.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:T|\s|$)/);
     if (iso) return verifiedDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
-    const us = input.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})(?:\\s|$)/);
+    const us = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|$)/);
     return us ? verifiedDate(Number(us[3]), Number(us[1]), Number(us[2])) : "";
   }
   function timeParts(value) {
@@ -325,7 +325,7 @@
     const rows = [["Rank","Item #","Description","Transactions","Added","Removed","Net","Loss Value","Max Unit Cost","Transaction Dates"],
       ...items.map((g,i) => [i+1,g.item,g.description,g.count,g.added,g.removed,g.added-g.removed,g.loss,g.cost,[...g.dates].sort().join("; ")])];
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([rows.map(row => row.map(csvCell).join(",")).join("\\n")], {type:"text/csv;charset=utf-8"}));
+    link.href = URL.createObjectURL(new Blob([rows.map(row => row.map(csvCell).join(",")).join("\n")], {type:"text/csv;charset=utf-8"}));
     link.download = "inventory-adjustment-rankings.csv";
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
