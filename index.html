@@ -348,6 +348,16 @@
             </div>
           </div>
 
+          <section id="itemHistoryPutawaySummary" class="card" aria-label="Putaway totals for filtered item history">
+            <h3>Putaway Summary</h3>
+            <p id="itemHistorySummaryScope" class="hint" aria-live="polite">Search by worker and date to see putaway totals.</p>
+            <div class="stats">
+              <div><strong id="itemHistoryPutawayCount">0</strong><span>Total Putaway Lines</span></div>
+              <div><strong id="itemHistoryPutawayQty">0</strong><span>Total Units Put Away</span></div>
+              <div><strong id="itemHistoryPutawayDays">0</strong><span>Work Days</span></div>
+            </div>
+            <p id="itemHistoryPutawayDaily" class="hint"></p>
+          </section>
           <div class="table-wrap small">
             <table>
               <thead>
@@ -648,7 +658,7 @@
   <script src="putaway-audit.js?v=20260922-8"></script>
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
 
-  <script src="history-upgrade.js?v=20261113-weekly-leaderboard-refresh"></script>
+  <script src="history-upgrade.js?v=20261113-item-history-summary"></script>
   <script src="leaderboard-history-search.js?v=20261113-1"></script>
 <script src="responsive-ui.js?v=20261110-cycle-nav-fix"></script>
 </body>
