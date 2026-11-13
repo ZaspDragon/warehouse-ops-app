@@ -92,6 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeDataProtection();
   initializeCycleProductionData();
   initializePutawayDraft();
+  if ($("putDate")) $("putDate").value = todayValue();
   wireEvents();
   syncLeaderboardDateControls();
   syncSettingsUi();
@@ -2231,7 +2232,8 @@ function sanitizeDailyDocPart(value) {
 }
 
 function putawayWorkDate() {
-  return $("putDate")?.value || todayValue();
+  // Always use the current local work date at submission, not a stale draft date.
+  return todayValue();
 }
 
 function parseDateValue(value) {
@@ -2564,6 +2566,7 @@ async function savePutaway() {
 
   const branchId = currentBranchId();
   const workDate = putawayWorkDate();
+  if ($("putDate")) $("putDate").value = workDate;
   const submittedAt = new Date().toISOString();
   const clientSubmissionId = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   const lines = rawLines.map((line) =>
