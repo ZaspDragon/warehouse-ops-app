@@ -457,6 +457,46 @@
     }).sort((a, b) => String(b.createdAt || b.date).localeCompare(String(a.createdAt || a.date)));
   }
 
+  function renderItemHistoryPutawaySummary(rows, filters) {
+    const count = document.getElementById("itemHistoryPutawayCount");
+    const qtyBox = document.getElementById("itemHistoryPutawayQty");
+    const daysBox = document.getElementById("itemHistoryPutawayDays");
+    const scope = document.getElementById("itemHistorySummaryScope");
+    const daily = document.getElementById("itemHistoryPutawayDaily");
+    if (!count || !qtyBox || !daysBox || !scope || !daily) return;
+
+    // Use the exact deduplicated, filtered rows rendered in Item History.
+    // Count each Put Away item row as one line, not one unit, and never write history.
+    const putaways = (rows || []).filter(row =>
+      normalizeProcessValue(row.process) === "putaway");
+    const byDay = new Map();
+    let totalQty = 0;
+    putaways.forEach(row => {
+      const date = localDateKey(row.date || row.createdAt) || "Date unavailable";
+      const quantity = Number(row.qty);
+      const safeQuantity = Number.isFinite(quantity) ? quantity : 0;
+      totalQty += safeQuantity;
+      const previous = byDay.get(date) || {lines:0,quantity:0};
+      previous.lines++;
+      previous.quantity += safeQuantity;
+      byDay.set(date,previous);
+    });
+    const days = [...byDay.entries()].sort(([a],[b]) => b.localeCompare(a));
+    count.textContent = putaways.length.toLocaleString();
+    qtyBox.textContent = totalQty.toLocaleString();
+    daysBox.textContent = days.filter(([date]) => date !== "Date unavailable").length.toLocaleString();
+    const workerLabel = document.getElementById("itemHistoryWorker")?.value.trim() || "All workers";
+    const start = filters.start || "Earliest";
+    const end = filters.end || "Latest";
+    scope.textContent = `${workerLabel} · ${start === end ? start : start + " through " + end}` +
+      (filters.item ? " · Item filter applied" : "") +
+      ". Counts reflect the filtered Item History table.";
+    daily.textContent = days.length
+      ? "By day: " + days.map(([date,values]) =>
+        date + " — " + values.lines + " line(s), " + values.quantity.toLocaleString() + " units").join(" | ")
+      : "No Put Away rows match these filters.";
+  }
+
   function patchItemHistory() {
     window.renderItemHistory = function safeRenderItemHistory() {
       const body = document.getElementById("itemHistoryBody");
@@ -476,6 +516,7 @@
         if (end && (!date || date > end)) return false;
         return true;
       });
+      renderItemHistoryPutawaySummary(app.itemHistoryRows, {worker, start, end, item});
       body.innerHTML = "";
       if (!app.itemHistoryRows.length) {
         body.insertAdjacentHTML("beforeend", `<tr><td colspan="9">No item activity found.</td></tr>`);
