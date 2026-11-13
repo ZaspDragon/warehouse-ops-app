@@ -44,6 +44,7 @@
     window.auth = firebase.auth();
     window.db = firebase.firestore();
   </script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 </head>
 
 <body>
@@ -120,7 +121,6 @@
         <button class="tab active" data-tab="putaway">Put Away Log</button>
         <button class="tab" data-tab="leaderboard">Leaderboard</button>
         <a class="tab tab-link" href="inventory-adjustments.html">Inventory Adjustments</a>
-        <a class="tab tab-link" href="qr-bin-scanner.html">QR Bin Scanner</a>
         <a class="tab tab-link" href="transfer-productivity.html">Transfer Productivity</a>
         <a class="tab tab-link" href="hold-batch-priorities.html">Hold Batch Priorities</a>
         <button id="cycleProductionNavBtn" class="tab" type="button" data-tab="cycleProduction" title="Cycle Count Production — A-L and XA-XG">Cycle Count Production</button>
@@ -177,6 +177,19 @@
             </div>
           </div>
 
+          <section class="card" id="putawayQrSection">
+            <h3>QR Putaway Scanner</h3>
+            <p class="hint">Scan the finished-quantity QR from PO Checking, then scan the destination location QR or enter the magnet's location code. Review the row before saving; scanning alone never posts inventory.</p>
+            <div class="actions">
+              <button id="putawayScanPackage" class="primary" type="button">1. Scan Box / Pallet QR</button>
+              <button id="putawayScanLocation" type="button" disabled>2. Scan Location QR</button>
+              <button id="putawayStopQr" type="button" disabled>Stop Camera</button>
+            </div>
+            <div id="putawayQrCamera" style="max-width:460px;margin:12px auto;display:none"></div>
+            <label>Location without a QR? <input id="putawayManualQrLocation" placeholder="Enter the magnet location code" autocomplete="off" /></label>
+            <button id="putawayApplyManualLocation" type="button" disabled>Apply Typed Location</button>
+            <p id="putawayQrStatus" class="hint" role="status" aria-live="polite">Ready to scan a checked PO label.</p>
+          </section>
           <div class="table-wrap">
             <table class="putaway-entry-table">
               <thead>
@@ -248,7 +261,7 @@
           <div class="section-heading">
             <div>
               <h2>Leaderboard</h2>
-              <p class="hint">Rankings show saved putaways for the selected work date only.</p>
+              <p class="hint">Rankings use saved putaway lines for your selected start and end dates.</p>
             </div>
             <button id="exportLeaderboardBtn" class="primary">Export CSV</button>
           </div>
@@ -620,6 +633,7 @@
   <script src="app.js?v=20261113-leaderboard-date-range"></script>
   <script src="putaway-audit.js?v=20260922-8"></script>
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
+  <script src="putaway-qr-scanner.js?v=20261113-integrated"></script>
 
   <script src="history-upgrade.js?v=20261113-leaderboard-history-load"></script>
   <script src="responsive-ui.js?v=20261110-cycle-nav-fix"></script>
