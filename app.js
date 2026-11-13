@@ -93,6 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeCycleProductionData();
   initializePutawayDraft();
   if ($("putDate")) $("putDate").value = todayValue();
+  if ($("putSheetNumber")) $("putSheetNumber").value = "1";
   wireEvents();
   syncLeaderboardDateControls();
   syncSettingsUi();
@@ -159,7 +160,7 @@ function putawayDraftRows() {
 function collectPutawayDraft() {
   return {
     worker: $("putWorker")?.value.trim() || "",
-    putawayNumber: $("putSheetNumber")?.value.trim() || "",
+    putawayNumber: "1",
     date: $("putDate")?.value || "",
     status: $("putStatus")?.value || "Completed",
     updatedAt: new Date().toISOString(),
@@ -243,7 +244,7 @@ function restorePutawayDraft() {
   }
 
   if ($("putWorker")) $("putWorker").value = draft.worker || "";
-  if ($("putSheetNumber")) $("putSheetNumber").value = draft.putawayNumber || draft.sheetNumber || "";
+  if ($("putSheetNumber")) $("putSheetNumber").value = "1";
   if ($("putDate")) $("putDate").value = draft.date || todayValue();
   if ($("putStatus")) $("putStatus").value = draft.status || "Completed";
 
@@ -2524,7 +2525,7 @@ function resetPutawayLineAfterSubmit() {
 
   if ($("putWorker")) $("putWorker").value = "";
   if ($("putDate")) $("putDate").value = todayValue();
-  if ($("putSheetNumber")) $("putSheetNumber").value = "";
+  if ($("putSheetNumber")) $("putSheetNumber").value = "1";
   if ($("putStatus")) $("putStatus").value = "Completed";
   updatePutawayStats();
   clearPutawayDraft();
@@ -2534,7 +2535,7 @@ function resetPutawayLineAfterSubmit() {
 async function savePutaway() {
   flushPutawayDraftSave({ force: true, statusMessage: "All changes saved" });
   const employeeName = $("putWorker")?.value.trim() || "";
-  const putawayNumber = $("putSheetNumber")?.value.trim() || "";
+  const putawayNumber = "1";
   const status = $("putStatus")?.value || "Completed";
   const rawLines = collectPutawayLines();
   const saveButton = $("savePutawayBtn");
@@ -2601,6 +2602,7 @@ async function savePutaway() {
     renderLogs();
     renderHistory();
     renderItemHistory();
+    renderLeaderboard();
     resetPutawayLineAfterSubmit();
     putawaySubmissionInProgress = false;
     if (saveButton) saveButton.disabled = false;
@@ -2615,6 +2617,7 @@ async function savePutaway() {
     renderLogs();
     renderHistory();
     renderItemHistory();
+    renderLeaderboard();
     resetPutawayLineAfterSubmit();
 
     toast(`${doc.totalLines} putaway line${doc.totalLines === 1 ? "" : "s"} saved.`);
