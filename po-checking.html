@@ -10,6 +10,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     * { box-sizing: border-box; }
     .checker-shell { max-width: 1400px; margin: 0 auto; padding: 18px; }
@@ -39,6 +40,14 @@
       .table-wrap td { display: grid; grid-template-columns: 42% 58%; gap: 8px; border: 0; padding: 7px; }
       .table-wrap td::before { content: attr(data-label); font-weight: 700; }
     }
+    .qr-labels {display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:12px}
+    .qr-label{border:2px solid #111;background:#fff;color:#000;padding:12px;break-inside:avoid;page-break-inside:avoid;font-family:Arial,sans-serif}
+    .qr-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}
+    .qr-pair > div {text-align:center;min-width:0;font-size:12px;font-weight:bold}
+    .qr-pair canvas,.qr-pair img {margin:6px auto;max-width:100%;height:auto}
+    .qr-large {font-size:22px;font-weight:900}
+    .qr-small{font-size:13px;overflow-wrap:anywhere}
+    @media print{body *{visibility:hidden!important}#poQrPrintArea,#poQrPrintArea *{visibility:visible!important}#poQrPrintArea{position:absolute;left:0;top:0;width:100%;display:block!important} .qr-labels{display:block;margin:0}.qr-label{width:4in;min-height:3in;margin:0 0 0.1in;break-after:page;page-break-after:always} .qr-label:last-child{break-after:auto;page-break-after:auto} @page{size:4in 3in;margin:0.08in}}
   </style>
 </head>
 <body>
@@ -103,6 +112,16 @@
         <p id="saveStatus" class="message"></p>
       </section>
 
+      <section class="card" id="poQrSection">
+        <h2>PO QR Sticker Printer</h2>
+        <p class="read-note">Print two codes per checked item: Chadwell item website lookup and completed checked quantity. Enter the verified finished quantity beside each item above before printing. No label data is written to Firestore.</p>
+        <div class="form-grid"><label>Branch<input id="qrBranch" value="OH01" maxlength="12"></label><label>Website search link template<input id="qrSearchTemplate" value="https://www.chadwellsupply.com/search?q={item}" aria-describedby="qrWebsiteNotice"></label></div>
+        <p class="read-note" id="qrWebsiteNotice">The Chadwell search URL is provisional; test a printed website QR with a real item before relying on it. Replace {item} in the template with the item number.</p>
+        <div class="page-actions"><button id="previewPoLabelsBtn" type="button">Preview QR Stickers</button><button id="printPoLabelsBtn" class="primary" type="button">Print Checked Labels</button></div>
+        <p id="poQrStatus" class="message" aria-live="polite"></p>
+        <div id="poQrPrintArea"><div id="poQrLabels" class="qr-labels"></div></div>
+      </section>
+
       <section class="card">
         <h2>Checker Leaderboard</h2>
         <div class="table-wrap">
@@ -164,7 +183,7 @@
   function addLine(itemNumber = "", quantity = "") {
     const row = document.createElement("div");
     row.className = "line-editor";
-    row.innerHTML = `<label>Item Number<input class="item-number" value="${esc(itemNumber)}" placeholder="Item #" /></label><label>Quantity<input class="item-qty" type="number" min="0" value="${esc(quantity)}" /></label><button class="danger remove-line" type="button">Remove</button>`;
+    row.innerHTML = `<label>Item Number<input class="item-number" value="${esc(itemNumber)}" placeholder="Item #" /></label><label>PO Qty<input class="item-qty" type="number" min="0" value="${esc(quantity)}" /></label><label>Finished Checked Qty<input class="checked-qty" type="number" min="0" step="1" placeholder="Verify actual qty" /></label><button class="danger remove-line" type="button">Remove</button>`;
     row.querySelector(".remove-line").addEventListener("click", () => { row.remove(); updateTotals(); });
     row.querySelectorAll("input").forEach(input => input.addEventListener("input", updateTotals));
     $("manualLines").appendChild(row);
@@ -295,5 +314,6 @@
   });
 })();
 </script>
+<script src="po-qr-labels.js?v=20261113-1"></script>
 </body>
 </html>
