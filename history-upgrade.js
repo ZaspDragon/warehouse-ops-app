@@ -200,6 +200,8 @@
         window.renderLogs?.();
         window.renderHistory?.();
         window.renderItemHistory?.();
+        window.renderLeaderboard?.();
+        window.renderLeaderboard?.();
         window.populateEmployeeDropdowns?.();
       } catch (err) {
         console.error("Tenant data load failed:", err);

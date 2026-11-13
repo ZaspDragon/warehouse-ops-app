@@ -245,7 +245,7 @@
           <div class="section-heading">
             <div>
               <h2>Leaderboard</h2>
-              <p class="hint">Rankings use saved Putaway records.</p>
+              <p class="hint">Rankings show saved putaways for the selected work date only.</p>
             </div>
             <button id="exportLeaderboardBtn" class="primary">Export CSV</button>
           </div>
@@ -256,20 +256,8 @@
           </nav>
 
           <div class="leaderboard-filters">
-            <label>Date Range
-              <select id="leaderboardRangePreset">
-                <option value="today">Today</option>
-                <option value="week">This week</option>
-                <option value="month">This month</option>
-                <option value="custom">Custom date range</option>
-                <option value="all">Overall / all time</option>
-              </select>
-            </label>
-            <label>Start Date
-              <input id="leaderboardStartDate" type="date" disabled />
-            </label>
-            <label>End Date
-              <input id="leaderboardEndDate" type="date" disabled />
+            <label>Work Date
+              <input id="leaderboardDate" type="date" aria-label="Select putaway production date" />
             </label>
             <label>Employee Search
               <input id="leaderboardSearch" placeholder="Filter by employee name" />
@@ -605,7 +593,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20261021-login-backup-fix"></script>
+  <script src="app.js?v=20261113-daily-putaway-leaderboard"></script>
   <script src="putaway-audit.js?v=20260922-8"></script>
   <script src="camera-batch-putaway.js?v=20261014-8"></script>
 
