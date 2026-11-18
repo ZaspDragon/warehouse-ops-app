@@ -8,37 +8,37 @@
   const field = (value) => String(value || "").trim().toUpperCase();
   const escapeHTML = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const info = (s) => { byId("cameraBatchStatus").textContent = s; };
+  // Correct OCR lookalikes only in contexts where the expected field is known.
+  // Never silently turn an uncertain or missing field into a putaway record.
+  function itemFrom(line) {
+    const compact=String(line||"").toUpperCase().replace(/^(?:ITEM\s*#|ITEM|SKU|PART)\s*[:#-]?\s*/,"").replace(/[\s-]/g,"");
+    if (!/^[0-9OQIL|SBZ]{6}$/.test(compact)) return "";
+    const digits=compact.replace(/[OQ]/g,"0").replace(/[IL|]/g,"1").replace(/S/g,"5").replace(/B/g,"8").replace(/Z/g,"2");
+    return /^\d{6}$/.test(digits)?digits:"";
+  }
+  function qtyFrom(line) {
+    const clean=String(line||"").toUpperCase().trim();
+    const match=clean.match(/^(?:(?:QTY|QUANTITY|PCS|PIECES|COUNT)\s*[:#=-]?\s*)?(\d{1,4})\s*(?:PCS|EA)?$/);
+    return match && Number(match[1])>0?String(Number(match[1])):"";
+  }
   function parseLabel(text) {
-    // Receiving sticker layout: first line item, second location, third quantity.
-    // A fourth line may contain the purchase order. Keep uncertain values blank.
+    // Receiving sticker rows: item, location, quantity, optional PO.
+    // Never use an unrelated number as quantity when the row relationship is unclear.
     const lines=String(text||"").toUpperCase().split(/\n+/)
-      .map(x=>x.trim().replace(/[.·]/g,"-")).filter(Boolean);
-    const itemFrom=line=>{
-      const condensed=line.replace(/\s/g,"");
-      return /^\d{6}$/.test(condensed)?condensed:"";
-    };
-    const locationFrom=line=>{
-      const value=line.replace(/\s/g,"").replace(/[—–]/g,"-");
-      const match=value.match(/^([A-Z]{1,2})-?(\d{2})(?:-?(\d{1,2}))?$/);
-      return match?match.slice(1).filter(Boolean).join("-"):"";
-    };
-    const qtyFrom=line=>{
-      const value=line.replace(/\s/g,"");
-      return /^\d{1,4}$/.test(value)&&Number(value)>0?value:"";
-    };
-    // Locate the sticker's distinctive location row to avoid reading package
-    // descriptions, carton counts and large pink stickers as quantity.
-    const locIndex=lines.findIndex(locationFrom);
-    const location=locIndex>=0?locationFrom(lines[locIndex]):"";
-    const item=locIndex>0?itemFrom(lines[locIndex-1]):(locIndex<0?itemFrom(lines[0]||""):"");
+      .map(x=>x.trim().replace(/[·]/g,"-")).filter(Boolean);
+    const locIndex=lines.findIndex(x=>Boolean(normalLocation(x)));
+    const location=locIndex>=0?normalLocation(lines[locIndex]):"";
+    const item=locIndex>0?itemFrom(lines[locIndex-1]):(!lines.length?"":itemFrom(lines[0]));
     const qty=locIndex>=0?qtyFrom(lines[locIndex+1]||""):"";
     const po=locIndex>=0?lines.slice(locIndex+2).map(x=>x.replace(/\s/g,"")).find(x=>/^(?:SP|SPO|PO|XFR|EDI)[A-Z0-9-]{4,}$/.test(x))||"":"";
     return {item,location,qty,po,reviewed:false,itemConfirmed:false,rackVerified:false,rackRead:"",raw:text,id:crypto.randomUUID?.()||String(Date.now()+Math.random())};
   }
   function normalLocation(value) {
-    const clean=field(value).replace(/[\s_]/g,"").replace(/[—–]/g,"-").replace(/[.]/g,"-");
+    const clean=field(value).replace(/^(?:BIN|LOC|LOCATION|RACK)\s*[:#=-]?\s*/,"")
+      .replace(/[\s_.]/g,"-").replace(/[—–]/g,"-").replace(/-+/g,"-");
+    // Accept A01, A-01, A-01-2, XA-01-02, etc.; do not guess an invalid bin.
     const match=clean.match(/^([A-Z]{1,2})-?(\d{2})(?:-?(\d{1,2}))?$/);
-    return match ? match.slice(1).filter(Boolean).join("-") : "";
+    return match?match.slice(1).filter(Boolean).join("-"):"";
   }
   function readRack(text) {
     const cleaned=field(text).replace(/[—–]/g,"-");
@@ -74,17 +74,18 @@
     byId("cameraBatchRows")?.lastElementChild?.querySelector('input[data-key="item"]')?.focus();
   }
   function enhancedFrame(video){
-    // Enlarge the center area where employees aim the handwritten sticker.
+    // Preserve grayscale detail: harsh binary thresholding erases thin handwriting.
     const w=video.videoWidth,h=video.videoHeight;
     const canvas=document.createElement("canvas");
-    const cropW=Math.round(w*.78),cropH=Math.round(h*.78);
-    canvas.width=Math.min(2200,cropW*2);canvas.height=Math.min(2200,cropH*2);
+    const cropW=Math.round(w*.9),cropH=Math.round(h*.85);
+    canvas.width=Math.min(2200,Math.round(cropW*1.5));
+    canvas.height=Math.min(2200,Math.round(cropH*1.5));
     const ctx=canvas.getContext("2d",{willReadFrequently:true});
     ctx.drawImage(video,(w-cropW)/2,(h-cropH)/2,cropW,cropH,0,0,canvas.width,canvas.height);
     const image=ctx.getImageData(0,0,canvas.width,canvas.height);
     for(let i=0;i<image.data.length;i+=4){
       const gray=.299*image.data[i]+.587*image.data[i+1]+.114*image.data[i+2];
-      const value=gray<145?0:255;
+      const value=Math.max(0,Math.min(255,(gray-128)*1.35+138));
       image.data[i]=image.data[i+1]=image.data[i+2]=value;
     }
     ctx.putImageData(image,0,0);
@@ -116,7 +117,9 @@
       if(rackTarget!==null){
         const target=rackTarget, record=batch[target];
         if(!record){rackTarget=null;info("That label is no longer in the batch.");return;}
-        const found=readRack(result.data.text), expected=normalLocation(record.location);
+        let found=readRack(result.data.text);
+        if(found.length!==1){const enhanced=await worker.recognize(enhancedFrame(video));found=readRack(enhanced.data.text);}
+        const expected=normalLocation(record.location);
         if(found.length!==1 || !expected){
           record.rackVerified=false;record.rackRead="";
           redraw();info("Could not identify exactly one rack magnet. Aim only at the location magnet and rescan.");return;
@@ -170,8 +173,9 @@
       stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}},audio:false});
       const v=byId("cameraBatchVideo");v.srcObject=stream;await v.play();
       active=true;byId("cameraBatchStart").textContent="Pause camera";
-      info("Camera ready. Hold each label steady, then move to the next.");
-      timer=setInterval(()=>{if(active && rackTarget===null && !scanning && batch.length<MAX)capture();},3500);
+      info("Camera ready. Hold one label steady and tap Scan now. Review each captured line.");
+      // Manual capture prevents blurred frames and repeated records while moving.
+      timer=null;
     }catch(e){info("Camera unavailable: "+e.message);stop();}
   }
   async function submit(){
@@ -211,7 +215,7 @@
     section.id="cameraBatch";section.className="card";
     section.hidden=true;section.style.display="none";
     section.style.marginTop="16px";
-    section.innerHTML='<h3>Camera Batch Scanner</h3><p class="hint">Scan up to 25 receiving labels continuously. Scan each actual rack magnet and review every handwritten field before submitting through the existing Put Away Log. Photos stay on this device and are not uploaded.</p>'+
+    section.innerHTML='<h3>Camera Batch Scanner</h3><p class="hint">Scan up to 25 receiving labels using Scan now for each steady image. Scan each actual rack magnet and review every handwritten field before submitting through the existing Put Away Log. Photos stay on this device and are not uploaded.</p>'+
       '<div class="actions"><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button><button type="button" id="cameraBatchManual">+ Add label manually</button></div>'+
       '<video id="cameraBatchVideo" playsinline muted style="width:100%;max-height:330px;background:#111;border-radius:8px;object-fit:contain"></video>'+
       '<p class="hint" id="cameraBatchStatus" role="status">Camera is stopped.</p><strong id="cameraBatchCount">0 / 25 labels</strong>'+
