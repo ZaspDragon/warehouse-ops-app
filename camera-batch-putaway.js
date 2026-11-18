@@ -11,7 +11,7 @@
   // Correct OCR lookalikes only in contexts where the expected field is known.
   // Never silently turn an uncertain or missing field into a putaway record.
   function itemFrom(line) {
-    const compact=String(line||"").toUpperCase().replace(/^(?:ITEM|SKU|PART|ITEM\s*#)\s*[:#-]?\s*/,"").replace(/[\s-]/g,"");
+    const compact=String(line||"").toUpperCase().replace(/^(?:ITEM\s*#|ITEM|SKU|PART)\s*[:#-]?\s*/,"").replace(/[\s-]/g,"");
     if (!/^[0-9OQIL|SBZ]{6}$/.test(compact)) return "";
     const digits=compact.replace(/[OQ]/g,"0").replace(/[IL|]/g,"1").replace(/S/g,"5").replace(/B/g,"8").replace(/Z/g,"2");
     return /^\d{6}$/.test(digits)?digits:"";
