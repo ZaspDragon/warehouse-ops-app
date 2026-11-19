@@ -266,6 +266,26 @@ service cloud.firestore {
     }
 
     // BLOCK EVERYTHING ELSE
+    match /oh01TransferTickets/{ticket} {
+      function team() { return isCounterRole() || isManager(); }
+      function validStep(key) {
+        let event = request.resource.data[key];
+        return event.keys().hasOnly(['uid', 'worker', 'at']) &&
+          event.uid == request.auth.uid && event.at == request.time &&
+          event.worker is string && event.worker.size() > 0;
+      }
+      function advance(stage, key) {
+        return resource.data.stage == stage - 1 && request.resource.data.stage == stage &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stage',key]) && validStep(key);
+      }
+      allow read: if team();
+      allow create: if team() && ticket.matches('[A-Z0-9][A-Z0-9._-]{0,63}') &&
+        request.resource.data.keys().hasOnly(['stage','step0']) &&
+        request.resource.data.stage == 0 && validStep('step0');
+      allow update: if team() && (advance(1,'step1') || advance(2,'step2') ||
+        advance(3,'step3') || advance(4,'step4'));
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
