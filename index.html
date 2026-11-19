@@ -124,6 +124,7 @@
         <a class="tab tab-link" href="transfer-productivity.html">Transfer Productivity</a>
         <a class="tab tab-link" href="hold-batch-priorities.html">Hold Batch Priorities</a>
         <button id="cycleProductionNavBtn" class="tab" type="button" data-tab="cycleProduction" title="Cycle Count Production — A-L and XA-XG">Cycle Count Production</button>
+        <button class="tab" type="button" data-tab="downtime" aria-controls="downtimeTab">Downtime Tracker</button>
         <button class="tab" data-tab="itemHistory">Item History</button>
         <button class="tab" data-tab="employees">Employees</button>
         <button class="tab" data-tab="history">History</button>
@@ -137,6 +138,22 @@
             src="cycle-count-production/index.html"
             style="width:100%;min-height:1600px;border:0;border-radius:12px;background:#eef2f7"
             referrerpolicy="same-origin"></iframe>
+        </div>
+      </section>
+      <!-- DOWNTIME TRACKER: embedded original app keeps its own data and settings -->
+      <section id="downtimeTab" class="tab-panel" aria-label="Downtime Tracker">
+        <div class="card" style="padding:12px;">
+          <div class="section-heading" style="gap:12px;flex-wrap:wrap;">
+            <div>
+              <h2>Downtime Tracker</h2>
+              <p class="hint">Analyze bin-transfer inactivity, breaks, and productivity using your existing tracker.</p>
+            </div>
+            <a href="https://zaspdragon.github.io/Downtime-tracker/" target="_blank" rel="noopener noreferrer">Open Full Screen</a>
+          </div>
+          <iframe id="downtimeFrame" title="Downtime Tracker" loading="lazy"
+            src="https://zaspdragon.github.io/Downtime-tracker/"
+            style="display:block;width:100%;height:1650px;max-width:100%;border:0;border-radius:12px;background:#f5f7fa;"
+            referrerpolicy="strict-origin-when-cross-origin"></iframe>
         </div>
       </section>
       <!-- PUT AWAY -->
