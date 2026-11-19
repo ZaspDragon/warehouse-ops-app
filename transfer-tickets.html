@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Transfer Tickets | WarehouseOps</title>
+<style>*{box-sizing:border-box}body{font:16px system-ui;background:#f4f6fa;color:#17283e;margin:auto;max-width:850px;padding:20px}button,input{font:inherit;padding:9px;border:1px solid #aab8c7;border-radius:6px}button{background:white;cursor:pointer}article,form{background:white;padding:16px;margin:12px 0;border-radius:10px}article>*{margin:4px}h2{font-size:20px}button[aria-pressed=true],.next{background:#174e78;color:white}small{display:block}#label{background:white;padding:15px} @media print{body>*:not(#label){display:none}#label button{display:none}}</style>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script></head><body>
+<a href="./">← WarehouseOps</a><h1>Transfer tickets</h1>
+<form id="entry"><label>Ticket number <input id="number" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,63}" placeholder="Scan or type ticket number"></label> <button>Add or open</button></form>
+<button id="active">Active</button> <button id="done">Completed</button>
+<p id="message" role="status"></p><main id="list"></main><section id="label" hidden></section>
+<script>
+const firebaseConfig = {
+      apiKey: "AIzaSyAAJgxXqBqKgvWnNIIBaG72iwiZ3PFykoU",
+      authDomain: "put-away-log-cw.firebaseapp.com",
+      projectId: "put-away-log-cw",
+      storageBucket: "put-away-log-cw.firebasestorage.app",
+      messagingSenderId: "23183103971",
+      appId: "1:23183103971:web:75f097b4270cd38874f2d6"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    window.auth = firebase.auth();
+    
+const tickets=firebase.firestore().collection('oh01TransferTickets');
+const stages=['Pre-process','Ready to pull','Pulling','Post-process','Completed'];
+const actions=['Ready to pull','Start pulling','Finish pulling','Complete ticket'];
+const byId=id=>document.getElementById(id);
+const message=t=>byId('message').textContent=t;
+let rows=[], completed=false, focus=new URL(location.href).searchParams.get('ticket'), unsubscribe;
+function element(tag,value){const node=document.createElement(tag);node.textContent=value;return node}
+function button(name,fn){const node=element('button',name);node.onclick=async()=>{node.disabled=true;try{await fn()}catch(e){message(e.message)}finally{node.disabled=false}};return node}
+function showLabel(id){
+ const url=new URL(location.pathname,location.origin);url.searchParams.set('ticket',id);
+ const qr=qrcode(0,'M');qr.addData(url.href);qr.make();
+ const img=new Image();img.src=qr.createDataURL(6,4);img.alt='QR code for ticket '+id;
+ const label=byId('label');label.replaceChildren(element('h2','Transfer ticket '+id),img,button('Print label',()=>print()),button('Close',()=>label.hidden=true));label.hidden=false;label.scrollIntoView()
+}
+function render(){
+ const open=rows.filter(r=>r.stage<4).length;
+ for(const [id,count,selected] of [['active',open,!completed],['done',rows.length-open,completed]]){
+ const b=byId(id);b.textContent=(id==='active'?'Active':'Completed')+' ('+count+')';b.setAttribute('aria-pressed',selected)}
+ const list=byId('list');list.replaceChildren();
+ for(const row of rows.filter(r=>(r.stage===4)===completed)){
+ const card=element('article','');card.id='ticket-'+row.id;
+ card.append(element('h2','Ticket '+row.id),element('strong',stages[row.stage]));
+ for(let n=0;n<=row.stage;n++){const event=row['step'+n];if(event)card.append(element('small',stages[n]+' · '+event.worker+' · '+(event.at?.toDate().toLocaleString()||'Saving…')))}
+ if(row.stage<4){const advance=button(actions[row.stage],()=>save(row.id,row.stage));advance.className='next';card.append(advance)}
+ card.append(button('QR label',()=>showLabel(row.id)));list.append(card)}
+ if(!list.children.length)list.append(element('p',completed?'No completed tickets.':'No active tickets.'))
+}
+async function save(id,expected){
+ const user=firebase.auth().currentUser;if(!user)throw Error('Sign in through WarehouseOps first.');
+ const ref=tickets.doc(id);
+ await firebase.firestore().runTransaction(async tx=>{
+ const snap=await tx.get(ref);if(expected===-1&&snap.exists)return;
+ if((snap.exists?snap.data().stage:-1)!==expected)throw Error('Another worker updated this ticket. Review its current stage.');
+ const stage=expected+1;tx.set(ref,{stage,['step'+stage]:{uid:user.uid,worker:user.displayName||user.email||user.uid,at:firebase.firestore.FieldValue.serverTimestamp()}},{merge:true})})
+}
+function locate(id){const row=rows.find(r=>r.id===id);if(!row)return false;completed=row.stage===4;render();document.getElementById('ticket-'+id)?.scrollIntoView();message('Opened ticket '+id);return true}
+byId('entry').onsubmit=async e=>{e.preventDefault();const id=byId('number').value.trim().toUpperCase();try{focus=id;await save(id,-1);if(locate(id))focus=null;byId('number').value=''}catch(err){focus=null;message(err.message)}};
+for(const id of ['active','done'])byId(id).onclick=()=>{completed=id==='done';focus=null;message('');render()};
+firebase.auth().onAuthStateChanged(user=>{unsubscribe?.();rows=[];render();byId('label').hidden=true;
+ if(!user){message('Sign in on the WarehouseOps home page to view tickets.');return}
+ message('Loading tickets…');unsubscribe=tickets.onSnapshot(snapshot=>{rows=snapshot.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.step0?.at?.seconds||0)-(a.step0?.at?.seconds||0));message('');render();if(focus){if(!locate(focus))message('Ticket '+focus+' was not found.');focus=null}},err=>message('Could not load tickets. '+err.message))})
+</script></body></html>
