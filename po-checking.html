@@ -92,6 +92,7 @@
       <section class="card">
         <h2>Upload PO</h2>
         <div class="file-box">
+          <label>PO Number for this upload<input id="poNumberUpload" placeholder="Example: SPO0235461" autocomplete="off" /></label>
           <label>PDF, picture, Excel or CSV PO file<input id="poFile" type="file" accept=".pdf,.xlsx,.xls,.csv,image/jpeg,image/png,image/webp,image/heic,image/heif" /></label>
           <div class="page-actions"><button id="readPoBtn" class="primary" type="button">Read PO File</button></div>
           <p id="fileStatus" class="message">Nothing uploaded yet.</p>
@@ -296,12 +297,15 @@
     try {
       await db.collection("activityLogs").add(payload);
       $("saveStatus").textContent = `PO ${poNumber} saved as one summary record with ${lines.length} checked lines.`;
-      $("poNumber").value = ""; $("exceptions").value = 0; $("notes").value = ""; $("poFile").value = ""; $("manualLines").innerHTML = ""; addLine();
+      $("poNumber").value = ""; $("poNumberUpload").value = ""; $("exceptions").value = 0; $("notes").value = ""; $("poFile").value = ""; $("manualLines").innerHTML = ""; addLine();
       await loadDay();
     } catch (err) { console.error(err); $("saveStatus").textContent = `Could not save PO summary: ${err.message}`; }
     finally { $("savePoBtn").disabled = false; }
   }
 
+  const poTop=$("poNumber"), poUpload=$("poNumberUpload");
+  poTop.addEventListener("input",()=>{if(poUpload.value!==poTop.value)poUpload.value=poTop.value;});
+  poUpload.addEventListener("input",()=>{if(poTop.value!==poUpload.value)poTop.value=poUpload.value;});
   $("workDate").value = today();
   addLine();
   $("addLineBtn").addEventListener("click", () => addLine());
@@ -320,6 +324,6 @@
 })();
 </script>
 <script src="po-qr-labels.js?v=20261120-4"></script>
-<script src="po-pdf-import.js?v=20261120-7"></script>
+<script src="po-pdf-import.js?v=20261120-9"></script>
 </body>
 </html>
