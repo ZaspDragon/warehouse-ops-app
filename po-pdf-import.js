@@ -45,9 +45,67 @@
       "This is a scanned image PDF, so there are no selectable item lines. Review the page preview and add/verify the lines manually; no quantities have been guessed.")+
       " Nothing from this PDF is uploaded to Firestore.";
   }
+
+  let imageLoaded = false;
+  $("poFile")?.addEventListener("change", async () => {
+    const file=$("poFile")?.files?.[0];
+    imageLoaded=false;
+    $("photoReviewArea")?.classList.add("hidden");
+    if (!file || !/^image\//.test(file.type)) return;
+    $("pdfReviewArea")?.classList.add("hidden");
+    try {
+      const image=await createImageBitmap(file);
+      const canvas=$("photoReviewCanvas");
+      const scale=Math.min(1,2200/Math.max(image.width,image.height));
+      canvas.width=Math.round(image.width*scale);
+      canvas.height=Math.round(image.height*scale);
+      canvas.getContext("2d").drawImage(image,0,0,canvas.width,canvas.height);
+      image.close?.();
+      imageLoaded=true;
+      $("photoOcrText").value="";
+      $("photoReviewArea").classList.remove("hidden");
+      $("fileStatus").textContent="Photo preview ready. Read Text From Photo, then verify the result before adding item numbers.";
+    } catch(e) {$("fileStatus").textContent="Unable to preview this picture. Try JPG or PNG: "+e.message;}
+  });
+  $("photoOcrBtn")?.addEventListener("click", async () => {
+    if(!imageLoaded) return;
+    const btn=$("photoOcrBtn");
+    btn.disabled=true; $("fileStatus").textContent="Reading the photo locally…";
+    let worker;
+    try {
+      if(!window.Tesseract) throw Error("Text reader unavailable. Check connection.");
+      worker=await Tesseract.createWorker("eng");
+      const result=await worker.recognize($("photoReviewCanvas"));
+      $("photoOcrText").value=result.data.text||"";
+      $("fileStatus").textContent="Photo text detected. Review against the original image; handwriting may be inaccurate.";
+    } catch(e) {$("fileStatus").textContent="Could not read photo: "+e.message;}
+    finally {if(worker)await worker.terminate();btn.disabled=false;}
+  });
+  $("photoItemsBtn")?.addEventListener("click", () => {
+    if(!imageLoaded) return;
+    const text=$("photoOcrText").value;
+    const matches=[...new Set((text.match(/\b\d{6}\b/g)||[]))].slice(0,100);
+    if(!matches.length){$("fileStatus").textContent="No six-digit item numbers detected. Add PO lines manually.";return;}
+    if(!confirm("Add "+matches.length+" six-digit candidates as draft item lines? Confirm they are Chadwell item numbers and enter actual quantities.")) return;
+    const previous=[...document.querySelectorAll("#manualLines .item-number")].map(e=>e.value.trim());
+    let count=0;
+    for(const item of matches){
+      if(previous.includes(item))continue;
+      $("addLineBtn").click();
+      const rows=[...document.querySelectorAll("#manualLines .line-editor")];
+      const row=rows[rows.length-1];
+      row.querySelector(".item-number").value=item;
+      row.querySelector(".item-qty").value="";
+      row.querySelector(".checked-qty").value="";
+      count++;
+    }
+    document.querySelector("#manualLines .item-number")?.dispatchEvent(new Event("input",{bubbles:true}));
+    $("fileStatus").textContent=count+" candidate items added. Check each item number and manually enter PO and checked quantities.";
+  });
   $("readPoBtn")?.addEventListener("click",async event=>{
     const file=$("poFile")?.files?.[0];
-    if (!file || !/\.pdf$/i.test(file.name)) return;
+    if (!file || !/\.(pdf|jpe?g|png|webp|heic|heif)$/i.test(file.name)) return;
+    if (/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name)) {event.stopImmediatePropagation();return;}
     event.stopImmediatePropagation();
     $("readPoBtn").disabled=true;
     $("fileStatus").textContent="Opening PDF locally…";
