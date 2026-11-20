@@ -23,9 +23,9 @@ main{max-width:1450px;margin:18px auto;padding:0 14px}.panel{border:1px solid #d
 <label>Report Excel (.xlsx / .xls / .xlsm)<input id="file" type="file" accept=".xlsx,.xls,.xlsm,.csv"></label>
 <label>Audit date<input id="date" type="date"></label>
 <label>Auditor initials<input id="auditor" placeholder="Your initials"></label>
-<label>Shift<input id="shift" placeholder="Shift"></label><input id="count" type="hidden" value="15">
+<label>Default Shift<select id="shift"><option value="">Unassigned</option><option>1st Shift</option><option>2nd Shift</option><option>3rd Shift</option><option>Weekend</option></select></label><input id="count" type="hidden" value="15">
 </div>
-<div class="controls"><label>Audit tabs<input id="drivers" readonly value="Dawitt Mengesha, Kristopher Mintier, Dury Anderson, Haven Payne, Dustin Ward" title="Matches the five audit tabs in the master workbook"></label></div>
+<div class="controls"><label>Add Driver<input id="newDriverName" maxlength="90" placeholder="Driver full name"></label><label>Driver Shift<select id="newDriverShift"><option value="">Unassigned</option><option>1st Shift</option><option>2nd Shift</option><option>3rd Shift</option><option>Weekend</option></select></label><button type="button" id="addDriver">+ Add Driver</button></div><div class="controls"><label>Selected Driver's Shift<select id="driverShift"><option value="">Unassigned</option><option>1st Shift</option><option>2nd Shift</option><option>3rd Shift</option><option>Weekend</option></select></label><button type="button" id="removeDriver">Remove Selected Driver</button></div><p class="muted">Add a driver to create an audit tab. Names must match the report Employee field to import moves.</p>
 <div class="actions"><button type="button" class="primary" id="import">CHOOSE BIN MOVE DETAIL FILE / Refresh</button><button type="button" id="export">Download Audited Excel</button><button type="button" id="print">Print Driver Audit</button><button type="button" id="clear">Clear Saved Audit</button></div>
 <p id="status" class="status" role="status">Choose your bin-transfer detail report to begin.</p></section>
 <section class="panel" id="summaryPanel"><h2>Audit Summary</h2><div class="summary"><div><strong id="total">0</strong>Moves loaded</div><div><strong id="good">0</strong>GOOD</div><div><strong id="bad">0</strong>BAD</div><div><strong id="pending">0</strong>Not checked</div><div><strong id="accuracy">—</strong>Accuracy (reviewed)</div></div></section>
@@ -36,14 +36,26 @@ main{max-width:1450px;margin:18px auto;padding:0 14px}.panel{border:1px solid #d
 const config={apiKey:"AIzaSyAAJgxXqBqKgvWnNIIBaG72iwiZ3PFykoU",authDomain:"put-away-log-cw.firebaseapp.com",projectId:"put-away-log-cw",storageBucket:"put-away-log-cw.firebasestorage.app",messagingSenderId:"23183103971",appId:"1:23183103971:web:75f097b4270cd38874f2d6"};
 if(!firebase.apps.length)firebase.initializeApp(config);
 const $=id=>document.getElementById(id);
-let current=null,audits={},storageKey="";
+let current=null,audits={},storageKey="",driverNames=[],driverShifts={};
+const defaultDrivers=["Dawitt Mengesha","Kristopher Mintier","Dury Anderson","Haven Payne","Dustin Ward"];
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=x=>String(x??"").trim().toLowerCase().replace(/[^a-z0-9]/g,"");
 const num=x=>{const n=Number(String(x??"").replace(/,/g,""));return Number.isFinite(n)?n:0};
 const now=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
-function save(){if(!current)return;try{localStorage.setItem(storageKey,JSON.stringify({audits,date:$("date").value,auditor:$("auditor").value,shift:$("shift").value}));}catch(e){message("Browser could not save audit: "+e.message,true);}}
+function save(){if(!current)return;try{localStorage.setItem(storageKey,JSON.stringify({audits,driverNames,driverShifts,date:$("date").value,auditor:$("auditor").value,shift:$("shift").value}));}catch(e){message("Browser could not save audit: "+e.message,true);}}
 function message(s,bad){$("status").textContent=s;$("status").style.color=bad?"#b42318":"#344154"}
-function roster(){return ["Dawitt Mengesha","Kristopher Mintier","Dury Anderson","Haven Payne","Dustin Ward"]}
+function roster(){return driverNames}
+function addDriver(){
+ const name=$("newDriverName").value.trim().replace(/\s+/g," ");
+ if(!name||driverNames.some(n=>norm(n)===norm(name))){message("Enter a unique driver name.",true);return;}
+ driverNames.push(name);audits[name]=[];driverShifts[name]=$("newDriverShift").value||$("shift").value||"";
+ $("newDriverName").value="";save();render();$("driver").value=name;render();message("Added "+name+". Upload a transfer detail report to load their moves.");
+}
+function removeDriver(){
+ const name=$("driver").value;if(!name)return;
+ if((audits[name]||[]).length&&!confirm("Remove "+name+" and their saved audit checks? Export first to preserve them."))return;
+ delete audits[name];delete driverShifts[name];driverNames=driverNames.filter(n=>n!==name);save();render();message("Removed "+name+".");
+}
 
 function headerGuess(grid) {
  // Header positions in Bin Transfer Productivity Detail do NOT match data positions.
@@ -100,15 +112,16 @@ function filteredMoves(raw) {
  return result;
 }
 function render(){
- const names=Object.keys(audits),old=$("driver").value;
+ const names=roster(),old=$("driver").value;
  $("driver").innerHTML=names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join("");
  if(names.includes(old))$("driver").value=old;
  $("driverTabs").innerHTML=names.map(n=>'<button type="button" data-driver="'+esc(n)+'" class="'+(n===$("driver").value?"primary":"")+'">'+esc(n)+' ('+(audits[n]?.length||0)+')</button>').join("");
  const name=$("driver").value,lines=audits[name]||[];
+ $("driverShift").value=driverShifts[name]||"";$("removeDriver").disabled=!name;
  $("driverTitle").textContent="BIN TRANSFER AUDIT — "+(name||"DRIVER").toUpperCase();
  $("driverSubtitle").textContent=name==="Dawitt Mengesha"?"OH01 • Reusable Bin Move Quality Review • first 15 moves from RAW REPORT":"OH01 • Lift Driver • Up to 15 random moves, sorted by TO BIN";
- $("metaAuditor").textContent=$("auditor").value||"—";$("metaDate").textContent=$("date").value||"—";$("metaShift").textContent=$("shift").value||"—";$("metaCount").textContent=lines.length;
- $("rows").innerHTML=lines.length?lines.map((r,i)=>'<tr class="'+(r.result==="GOOD"?"ok":r.result==="BAD"?"bad":"")+'"><td>'+(i+1)+'</td><td>'+esc(r.item)+'</td><td>'+esc(r.qty)+'</td><td>'+esc(r.from)+'</td><td>'+esc(r.to)+'</td><td>'+esc(r.priority)+'</td><td>'+esc(r.time)+'</td><td><input aria-label="GOOD row '+(i+1)+'" type="checkbox" data-row="'+i+'" data-value="GOOD" '+(r.result==="GOOD"?"checked":"")+'></td><td><input aria-label="BAD row '+(i+1)+'" type="checkbox" data-row="'+i+'" data-value="BAD" '+(r.result==="BAD"?"checked":"")+'></td><td><input data-note="'+i+'" aria-label="Audit notes row '+(i+1)+'" value="'+esc(r.notes||"")+'" placeholder="Reason / notes"></td></tr>').join(""):'<tr><td colspan="10">No imported moves for this driver. Check the imported RAW REPORT.</td></tr>';
+ $("metaAuditor").textContent=$("auditor").value||"—";$("metaDate").textContent=$("date").value||"—";$("metaShift").textContent=driverShifts[name]||"Unassigned";$("metaCount").textContent=lines.length;
+ $("rows").innerHTML=lines.length?lines.map((r,i)=>'<tr class="'+(r.result==="GOOD"?"ok":r.result==="BAD"?"bad":"")+'"><td>'+(i+1)+'</td><td>'+esc(r.item)+'</td><td>'+esc(r.qty)+'</td><td>'+esc(r.from)+'</td><td>'+esc(r.to)+'</td><td>'+esc(r.time)+'</td><td>'+esc(r.date||'')+'</td><td><input aria-label="GOOD row '+(i+1)+'" type="checkbox" data-row="'+i+'" data-value="GOOD" '+(r.result==="GOOD"?"checked":"")+'></td><td><input aria-label="BAD row '+(i+1)+'" type="checkbox" data-row="'+i+'" data-value="BAD" '+(r.result==="BAD"?"checked":"")+'></td><td><input data-note="'+i+'" aria-label="Audit notes row '+(i+1)+'" value="'+esc(r.notes||"")+'" placeholder="Reason / notes"></td></tr>').join(""):'<tr><td colspan="10">No imported moves for this driver. Check the imported RAW REPORT.</td></tr>';
  const all=Object.values(audits).flat(),good=all.filter(x=>x.result==="GOOD").length,bad=all.filter(x=>x.result==="BAD").length;
  $("total").textContent=all.length;$("good").textContent=good;$("bad").textContent=bad;$("pending").textContent=all.length-good-bad;
  $("accuracy").textContent=good+bad?Math.round(100*good/(good+bad))+"%":"—";
@@ -126,6 +139,10 @@ async function runImport(){
 }
 $("file").addEventListener("change",runImport);$("import").addEventListener("click",runImport);
 $("driver").addEventListener("change",render);
+$("addDriver").addEventListener("click",addDriver);
+$("newDriverName").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addDriver();}});
+$("removeDriver").addEventListener("click",removeDriver);
+$("driverShift").addEventListener("change",()=>{const name=$("driver").value;if(!name)return;driverShifts[name]=$("driverShift").value;save();render();});
 $("driverTabs").addEventListener("click",e=>{const button=e.target.closest("button[data-driver]");if(!button)return;$("driver").value=button.dataset.driver;render();});
 $("rows").addEventListener("change",e=>{
  const row=Number(e.target.dataset.row),value=e.target.dataset.value,lines=audits[$("driver").value];
@@ -135,11 +152,11 @@ $("rows").addEventListener("input",e=>{if(e.target.dataset.note===undefined)retu
 ["date","auditor","shift"].forEach(id=>$(id).addEventListener("change",()=>{save();render();}));
 $("export").addEventListener("click",()=>{
  if(!Object.values(audits).flat().length)return message("Import or restore an audit before exporting.",true);
- const book=XLSX.utils.book_new(),summary=[["Driver","Moves Reviewed","GOOD","BAD","Pending","Auditor","Date"]];
+ const book=XLSX.utils.book_new(),summary=[["Driver","Shift","Moves Reviewed","GOOD","BAD","Pending","Auditor","Date"]];
  for(const [name,lines]of Object.entries(audits)){
   const data=[["#","Item #","Qty","FROM BIN","TO BIN","Xfer Time","Xfer Date","GOOD","BAD","Audit Notes / Reason"]];
   lines.forEach((r,i)=>data.push([i+1,r.item,r.qty,r.from,r.to,r.time,r.date||"",r.result==="GOOD"?"X":"",r.result==="BAD"?"X":"",r.notes||""]));
-  summary.push([name,lines.length,lines.filter(x=>x.result==="GOOD").length,lines.filter(x=>x.result==="BAD").length,lines.filter(x=>!x.result).length,$("auditor").value,$("date").value]);
+  summary.push([name,driverShifts[name]||"",lines.length,lines.filter(x=>x.result==="GOOD").length,lines.filter(x=>x.result==="BAD").length,lines.filter(x=>!x.result).length,$("auditor").value,$("date").value]);
   XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(data),name.replace(/[\\/?*\[\]:]/g,"").slice(0,31)||"Driver");
  }
  XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(summary),"Audit Summary");
@@ -153,7 +170,13 @@ firebase.auth().onAuthStateChanged(user=>{
  $("loginNotice").classList.toggle("hidden",Boolean(user));$("app").classList.toggle("hidden",!user);
  if(!user)return;
  storageKey="warehouseos_bin_move_audit_v1_"+user.uid;
- try{const existing=JSON.parse(localStorage.getItem(storageKey)||"{}");audits=existing.audits||{};$("date").value=existing.date||now();$("auditor").value=existing.auditor||"";$("shift").value=existing.shift||"";}catch(e){message("Saved audit could not be loaded.",true);}
+ try{
+ const existing=JSON.parse(localStorage.getItem(storageKey)||"{}");audits=existing.audits||{};
+ driverNames=Array.isArray(existing.driverNames)?existing.driverNames.filter(n=>typeof n==="string"&&n.trim()):[...new Set([...defaultDrivers,...Object.keys(audits)])];
+ driverShifts=existing.driverShifts&&typeof existing.driverShifts==="object"?existing.driverShifts:{};
+ driverNames.forEach(name=>{if(!Array.isArray(audits[name]))audits[name]=[];if(!(name in driverShifts))driverShifts[name]=existing.shift||"";});
+ $("date").value=existing.date||now();$("auditor").value=existing.auditor||"";$("shift").value=existing.shift||"";
+ }catch(e){driverNames=[...defaultDrivers];driverShifts={};message("Saved audit could not be loaded.",true);}
  render();
 });
 })();
