@@ -98,7 +98,7 @@ function parseBinMgrPaste(raw){
  for(let i=headerIndex+1;i<entries.length;i++){
    let r=entries[i];
    if(r.length!==head.length){invalid++;continue}
-   if(r.every(x=>/^:?-{2,}:?$/.test(x)||!x))continue;
+   if(r.every(x=>/^:?-+:?$/.test(x)||!x))continue;
    const item=String(r[m.item]||"").trim(),from=String(r[m.from]||"").trim(),to=String(r[m.to]||"").trim();
    const digits=/^-?\d+(?:\.\d+)?$/;
    if(!/^\d{4,}$/.test(item)||!from||!to||![m.qty,m.available,m.overstock,m.min,m.max,m.priority].every(k=>digits.test(String(r[k]).replace(/,/g,"")))){invalid++;continue}
