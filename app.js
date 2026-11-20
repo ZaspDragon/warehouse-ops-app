@@ -3640,6 +3640,32 @@ function renderItemHistory() {
     return true;
   });
 
+  // Calculate from the exact filtered rows shown in Item History,
+  // not all-time data. One completed Put Away table row = one putaway.
+  const putawayRows = state.itemHistoryRows.filter((row) =>
+    normalizeProcessValue(row.process) === normalizeProcessValue("putaway") &&
+    String(row.status || "").trim().toLowerCase() === "completed"
+  );
+  const totalUnits = putawayRows.reduce((sum, row) => {
+    const value = Number(String(row.qty ?? "").replace(/,/g, "").trim());
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+  const workDays = new Set(putawayRows.map(row => String(row.date || "").slice(0, 10)).filter(Boolean));
+  const putawayCount = $("itemHistoryPutawayCount");
+  const putawayQty = $("itemHistoryPutawayQty");
+  const putawayDays = $("itemHistoryPutawayDays");
+  if (putawayCount) putawayCount.textContent = putawayRows.length.toLocaleString("en-US");
+  if (putawayQty) putawayQty.textContent = totalUnits.toLocaleString("en-US");
+  if (putawayDays) putawayDays.textContent = workDays.size.toLocaleString("en-US");
+  const scope = $("itemHistorySummaryScope");
+  if (scope) {
+    const names = [];
+    if (worker) names.push("Worker: " + ($("itemHistoryWorker")?.value.trim() || ""));
+    if (start || end) names.push("Dates: " + (start || "Any") + " to " + (end || "Any"));
+    if (item) names.push("Item: " + ($("itemHistorySearch")?.value.trim() || ""));
+    scope.textContent = (names.length ? names.join(" · ") : "All dates and workers") +
+      " · Completed Put Away rows in the filtered table";
+  }
   body.innerHTML = "";
 
   if (!state.itemHistoryRows.length) {
