@@ -1,12 +1,13 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Transfer Tickets | WarehouseOps</title>
-<style>*{box-sizing:border-box}body{font:16px system-ui;background:#f4f6fa;color:#17283e;margin:auto;max-width:850px;padding:20px}button,input{font:inherit;padding:9px;border:1px solid #aab8c7;border-radius:6px}button{background:white;cursor:pointer}article,form{background:white;padding:16px;margin:12px 0;border-radius:10px}article>*{margin:4px}h2{font-size:20px}button[aria-pressed=true],.next{background:#174e78;color:white}small{display:block}#label{background:white;padding:15px} @media print{body>*:not(#label){display:none}#label button{display:none}}</style>
+<style>*{box-sizing:border-box}body{font:14px system-ui;background:#f4f6fa;color:#17283e;margin:auto;max-width:1060px;padding:22px}h1{font-size:29px;letter-spacing:-.7px;margin:14px 0}h2{font-size:17px}a{color:#17518b} .tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#65758a} .hint{color:#60718a;font-size:12px;line-height:1.5} .tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center} .section-title{font-size:13px;color:#66768a;font-weight:700;text-transform:uppercase;letter-spacing:.065em} .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px} .ticket-stage{font-size:12px;border-radius:99px;background:#e9f0f9;color:#174e78;padding:4px 10px;display:inline-block} .compact-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0} .compact-tabs button{font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px} .upload-box{border:1px dashed #b8c9da;background:#f9fbff;border-radius:10px;padding:15px} .upload-box input{max-width:100%;font-size:13px} .upload-box label{display:block;font-weight:600;font-size:13px;margin-bottom:8px} .upload-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap} .upload-row>*{flex:1} article{border:1px solid #e2e9f1;box-shadow:0 1px 5px #1d31440a} article .actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px} article .actions button{font-size:13px} .auth-error{color:#9b321e;background:#fff4f0;padding:12px;border-radius:8px;border:1px solid #ffddd1} #label{text-align:center;border:1px solid #dfe8f3;border-radius:10px;margin:15px 0;max-width:380px} #label img{display:block;margin:10px auto;max-width:210px} @media(max-width:640px){body{padding:12px}.upload-row{flex-direction:column;align-items:stretch}.upload-row>*{width:100%}h1{font-size:24px}}button,input{font:inherit;padding:9px;border:1px solid #aab8c7;border-radius:7px}button{background:white;cursor:pointer}article,form{background:white;padding:16px;margin:12px 0;border-radius:12px}article>*{margin:4px}button[aria-pressed=true],.next{background:#174e78;color:white}small{display:block}#label{background:white;padding:15px} @media print{body>*:not(#label){display:none}#label button{display:none}}</style>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script></head><body>
-<a href="./">← WarehouseOps</a><h1>Transfer tickets</h1>
-<form id="entry"><label>Ticket number <input id="number" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,63}" placeholder="Scan or type ticket number"></label> <button>Add or open</button></form>
-<button id="active">Active</button> <button id="done">Completed</button>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script></head><body>
+<a href="./" class="hint">← Back to Warehouse Ops</a><div class="section-head"><div><span class="tag">OH01 · Transfer workflow</span><h1>Transfer Tickets</h1><p class="hint">Create a scannable ticket QR and track each step from pre-process to completion.</p></div></div>
+<section class="upload-box"><span class="section-title">Upload and generate ticket QR</span><div class="upload-row"><div><label for="ticketFile">Upload a transfer ticket (PDF, JPG, PNG or WebP)</label><input id="ticketFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp" aria-describedby="uploadHelp"><div id="uploadHelp" class="hint">The first PDF page or photo is read on this device. Confirm the ticket number; no image is uploaded to Firestore.</div></div><button id="readTicket" type="button">Read Ticket</button></div><p id="uploadStatus" class="hint" role="status"></p></section>
+<form id="entry"><div class="section-title">Ticket details</div><div class="tools"><label for="number">Ticket number</label><input id="number" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,63}" placeholder="Scan, upload or type ticket #" style="flex:1;min-width:220px"><button class="next" type="submit">Create / Open &amp; Generate QR</button></div><p class="hint">After creating the ticket, print its QR. A phone camera can scan the QR and open the ticket directly, after employee sign-in.</p></form>
+<div class="compact-tabs" role="group" aria-label="Ticket status"><button id="active">Active</button><button id="done">Completed</button></div>
 <p id="message" role="status"></p><main id="list"></main><section id="label" hidden></section>
 <script>
 const firebaseConfig = {
@@ -30,10 +31,11 @@ let rows=[], completed=false, focus=new URL(location.href).searchParams.get('tic
 function element(tag,value){const node=document.createElement(tag);node.textContent=value;return node}
 function button(name,fn){const node=element('button',name);node.onclick=async()=>{node.disabled=true;try{await fn()}catch(e){message(e.message)}finally{node.disabled=false}};return node}
 function showLabel(id){
+ if(typeof qrcode!=='function'){message('QR library did not load. Check connection and retry.');return}
  const url=new URL(location.pathname,location.origin);url.searchParams.set('ticket',id);
  const qr=qrcode(0,'M');qr.addData(url.href);qr.make();
  const img=new Image();img.src=qr.createDataURL(6,4);img.alt='QR code for ticket '+id;
- const label=byId('label');label.replaceChildren(element('h2','Transfer ticket '+id),img,button('Print label',()=>print()),button('Close',()=>label.hidden=true));label.hidden=false;label.scrollIntoView()
+ const label=byId('label');label.replaceChildren(element('h2','Transfer ticket '+id),img,element('small','Scan with a phone camera to open this ticket. WarehouseOS login is required.'),button('Print label',()=>print()),button('Close',()=>label.hidden=true));label.hidden=false;label.scrollIntoView()
 }
 function render(){
  const open=rows.filter(r=>r.stage<4).length;
@@ -42,10 +44,10 @@ function render(){
  const list=byId('list');list.replaceChildren();
  for(const row of rows.filter(r=>(r.stage===4)===completed)){
  const card=element('article','');card.id='ticket-'+row.id;
- card.append(element('h2','Ticket '+row.id),element('strong',stages[row.stage]));
+ card.append(element('h2','Ticket '+row.id)); const stageTag=element('span',stages[row.stage]);stageTag.className='ticket-stage';card.append(stageTag);
  for(let n=0;n<=row.stage;n++){const event=row['step'+n];if(event)card.append(element('small',stages[n]+' · '+event.worker+' · '+(event.at?.toDate().toLocaleString()||'Saving…')))}
  if(row.stage<4){const advance=button(actions[row.stage],()=>save(row.id,row.stage));advance.className='next';card.append(advance)}
- card.append(button('QR label',()=>showLabel(row.id)));list.append(card)}
+ card.append(button('Show / Print QR',()=>showLabel(row.id)));list.append(card)}
  if(!list.children.length)list.append(element('p',completed?'No completed tickets.':'No active tickets.'))
 }
 async function save(id,expected){
@@ -57,9 +59,51 @@ async function save(id,expected){
  const stage=expected+1;tx.set(ref,{stage,['step'+stage]:{uid:user.uid,worker:user.displayName||user.email||user.uid,at:firebase.firestore.FieldValue.serverTimestamp()}},{merge:true})})
 }
 function locate(id){const row=rows.find(r=>r.id===id);if(!row)return false;completed=row.stage===4;render();document.getElementById('ticket-'+id)?.scrollIntoView();message('Opened ticket '+id);return true}
-byId('entry').onsubmit=async e=>{e.preventDefault();const id=byId('number').value.trim().toUpperCase();try{focus=id;await save(id,-1);if(locate(id))focus=null;byId('number').value=''}catch(err){focus=null;message(err.message)}};
+byId('entry').onsubmit=async e=>{e.preventDefault();const id=byId('number').value.trim().toUpperCase();try{focus=id;await save(id,-1);if(locate(id))focus=null;showLabel(id);byId('number').value=''}catch(err){focus=null;message(err.message)}};
 for(const id of ['active','done'])byId(id).onclick=()=>{completed=id==='done';focus=null;message('');render()};
 firebase.auth().onAuthStateChanged(user=>{unsubscribe?.();rows=[];render();byId('label').hidden=true;
  if(!user){message('Sign in on the WarehouseOps home page to view tickets.');return}
- message('Loading tickets…');unsubscribe=tickets.onSnapshot(snapshot=>{rows=snapshot.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.step0?.at?.seconds||0)-(a.step0?.at?.seconds||0));message('');render();if(focus){if(!locate(focus))message('Ticket '+focus+' was not found.');focus=null}},err=>message('Could not load tickets. '+err.message))})
+ message('Loading tickets…');unsubscribe=tickets.onSnapshot(snapshot=>{rows=snapshot.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.step0?.at?.seconds||0)-(a.step0?.at?.seconds||0));message('');render();if(focus){if(!locate(focus))message('Ticket '+focus+' was not found.');focus=null}},err=>{message('Could not load tickets. '+err.message+(err.code==='permission-denied'?' The signed-in account may not have a permitted transfer role, or the live Firestore rules may not be deployed. Ask an administrator to verify roles and deployed Firestore rules.':''));})})
+
+async function readTicketUpload(){
+ const file=byId('ticketFile').files?.[0], status=byId('uploadStatus'),btn=byId('readTicket');
+ if(!file){status.textContent='Select a ticket PDF or photo first.';return;}
+ if(file.size>18*1024*1024){status.textContent='File exceeds 18 MB. Upload a smaller image or PDF.';return;}
+ btn.disabled=true;
+ let worker,bitmap;
+ try{
+  status.textContent='Reading the ticket number locally…';
+  let canvas=document.createElement('canvas');
+  if(file.type==='application/pdf'||/\.pdf$/i.test(file.name)){
+   if(!window.pdfjsLib)throw Error('PDF reader unavailable.');
+   pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+   const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+   const first=await pdf.getPage(1);
+   const viewport=first.getViewport({scale:2});
+   canvas.width=Math.round(viewport.width);canvas.height=Math.round(viewport.height);
+   await first.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  }else if(/^image\/(jpeg|png|webp)$/.test(file.type)){
+   bitmap=await createImageBitmap(file);
+   const scale=Math.min(1,2200/Math.max(bitmap.width,bitmap.height));
+   canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
+   canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);
+  }else throw Error('Use a PDF, JPG, PNG, or WebP file.');
+  if(!window.Tesseract)throw Error('OCR library unavailable.');
+  worker=await Tesseract.createWorker('eng');
+  const result=await worker.recognize(canvas);
+  const raw=String(result.data?.text||'').toUpperCase().replace(/\r/g,'');
+  const hits=[...raw.matchAll(/(?:TRANSFER\s*(?:TICKET|NUMBER|#|NO\.?)|TICKET\s*(?:NUMBER|#|NO\.?)|TICKET)\s*[:#.\- ]*\s*([A-Z0-9][A-Z0-9._-]{3,63})/g)];
+  const valid=hits.map(m=>m[1]).filter(v=>/^(?=.*\d)[A-Z0-9][A-Z0-9._-]{3,63}$/.test(v)&&!/^(NUMBER|TRANSFER|PULLING)$/.test(v));
+  const candidates=[...new Set(valid)];
+  if(candidates.length===1){
+   byId('number').value=candidates[0];
+   status.textContent='Detected ticket '+candidates[0]+'. Verify it matches the uploaded document, then select Create / Open & Generate QR.';
+  }else if(candidates.length>1){
+   status.textContent='Multiple possible ticket numbers: '+candidates.slice(0,5).join(', ')+'. Type the correct ticket number below.';
+  }else status.textContent='Could not confidently read a ticket number. Type the number below to generate its QR. The uploaded file is not saved.';
+ }catch(e){status.textContent='Ticket reading failed: '+e.message;}
+ finally{if(worker)await worker.terminate();bitmap?.close?.();btn.disabled=false;}
+}
+byId('readTicket').addEventListener('click',readTicketUpload);
+byId('ticketFile').addEventListener('change',()=>{if(byId('ticketFile').files?.length)readTicketUpload();});
 </script></body></html>
