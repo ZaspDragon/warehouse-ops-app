@@ -65,45 +65,77 @@
     document.querySelector("#manualLines .item-number")?.dispatchEvent(new Event("input",{bubbles:true}));
   }
   async function scanReceivingColumns() {
-    if(!pdf){$("fileStatus").textContent="Upload and read a PDF first.";return;}
-    if(!window.Tesseract) { $("fileStatus").textContent="OCR text reader unavailable.";return;}
+    if(!pdf) { $("fileStatus").textContent="Upload and read a PDF first."; return; }
+    if(!window.Tesseract) { $("fileStatus").textContent="OCR library unavailable. Check your internet connection."; return; }
     const button=$("pdfScanReceivingBtn");
     button.disabled=true;
-    let worker;
-    try{
-      $("fileStatus").textContent="Scanning only receiving report columns on the first page…";
-      const pageOne=await pdf.getPage(1);
-      const viewport=pageOne.getViewport({scale:2.2});
-      const canvas=document.createElement("canvas");
-      canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
-      await pageOne.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
+    let worker=null;
+    try {
+      $("fileStatus").textContent="Reading Item # column on page 1…";
+      const p=await pdf.getPage(1);
+      const viewport=p.getViewport({scale:2.8});
+      const full=document.createElement("canvas");
+      full.width=Math.ceil(viewport.width);full.height=Math.ceil(viewport.height);
+      await p.render({canvasContext:full.getContext("2d"),viewport}).promise;
       worker=await Tesseract.createWorker("eng");
-      const result=await worker.recognize(canvas);
-      const words=(result.data.words||[]).map(w=>({text:String(w.text||"").trim().toUpperCase(),x:(w.bbox.x0+w.bbox.x1)/2/canvas.width,y:(w.bbox.y0+w.bbox.y1)/2/canvas.height})).filter(w=>w.text);
-      // Briggs OH01 receiving-report form: item numbers in right-centre,
-      // bin immediately to right and handwritten received qty at far right.
-      // Never use ordered or remaining quantity columns as received quantity.
-      const itemWords=words.filter(w=>w.x>.43&&w.x<.59&&w.y>.23&&w.y<.58 && /^\d{6}$/.test(w.text.replace(/[^0-9]/g,"")));
-      const distinct=[];
-      for(const w of itemWords) {
-        const item=w.text.replace(/\D/g,"");
-        if(distinct.some(x=>Math.abs(x.y-w.y)<.022))continue;
-        const near=words.filter(a=>Math.abs(a.y-w.y)<.023);
-        const binText=near.filter(a=>a.x>.58&&a.x<.75).map(a=>a.text).join(" ").replace(/\s+/g,"").replace(/[—–]/g,"-");
-        const binMatch=binText.match(/[A-Z]{1,2}-?\d{1,2}(?:-\d{1,2}){1,2}/);
-        const qtyWords=near.filter(a=>a.x>.895&&a.x<.998).map(a=>a.text.replace(/[^0-9]/g,"")).filter(Boolean);
-        const received=qtyWords.length===1 && /^\d{1,5}$/.test(qtyWords[0])?Number(qtyWords[0]):null;
-        distinct.push({item,bin:binMatch?.[0]||"",received,y:w.y});
+      const crop=(x1,y1,x2,y2)=>{
+        const c=document.createElement("canvas");
+        c.width=Math.max(1,Math.round((x2-x1)*full.width));
+        c.height=Math.max(1,Math.round((y2-y1)*full.height));
+        c.getContext("2d").drawImage(full,Math.round(x1*full.width),Math.round(y1*full.height),c.width,c.height,0,0,c.width,c.height);
+        return c;
+      };
+      // On this receiving report the printed Item # column is positioned
+      // between the description and BIN column. Separate crops prevent
+      // unrelated digits in descriptions, ordered quantity and PO metadata
+      // from being used as labels.
+      const itemCrop=crop(.435,.225,.585,.555);
+      let itemResult=await worker.recognize(itemCrop);
+      const textFor=result=>String(result.data?.text||"").toUpperCase();
+      let itemText=textFor(itemResult);
+      const getItems=text=>[...new Set((text.match(/(?:^|[^0-9])([0-9]{6})(?=[^0-9]|$)/gm)||[])
+        .map(x=>(x.match(/[0-9]{6}/)||[])[0]).filter(Boolean))];
+      let items=getItems(itemText);
+      // A wider crop helps if the PDF was scanned a little off-center.
+      if(items.length<2){
+        const alternate=await worker.recognize(crop(.39,.23,.61,.565));
+        const found=getItems(textFor(alternate));
+        if(found.length>items.length){items=found;itemResult=alternate;itemText=textFor(alternate);}
       }
-      distinct.sort((a,b)=>a.y-b.y);
-      if(!distinct.length) {
-        $("fileStatus").textContent="OCR couldn't reliably identify six-digit item numbers in the Item # column. Use the PDF preview and manually add or correct the five PO lines; no quantities were guessed.";
+      // Use line positions to pair bin/quantity with the correct item when
+      // OCR supplies word boxes; otherwise import item-only draft rows.
+      const words=itemResult.data?.words||[];
+      const matches=words.filter(w=>/^\d{6}$/.test(String(w.text||"").replace(/\s/g,"")));
+      let rows=items.map(item=>({
+        item,bin:"",received:null,
+        y:(matches.find(w=>String(w.text||"").replace(/\s/g,"")===item)?.bbox?.y0??NaN)/(itemResult===undefined?1:itemCrop.height)
+      }));
+      // Received values are handwritten, therefore never take ordered or
+      // remaining numbers as a fallback. Keep missing values blank.
+      $("fileStatus").textContent="Found "+items.length+" possible item numbers; reading bin column…";
+      const binResult=await worker.recognize(crop(.58,.225,.74,.555));
+      const binText=textFor(binResult);
+      const binCandidates=(binText.match(/[A-Z]{1,2}\s*[-]?\s*\d{1,2}\s*(?:-\s*\d{1,2}){1,2}/g)||[])
+        .map(v=>v.replace(/\s+/g,"").toUpperCase());
+      // Associate bin values by the visible row order only when their counts match.
+      if(binCandidates.length===rows.length)rows.forEach((row,i)=>row.bin=binCandidates[i]);
+      // OCR the far right edge of the table separately. These handwritten
+      // quantities must still be confirmed manually by the checker.
+      const qtyResult=await worker.recognize(crop(.875,.225,.99,.555));
+      const qtyCandidates=textFor(qtyResult).split(/\n+/).map(v=>v.replace(/[^0-9]/g,""))
+        .filter(v=>/^\d{1,5}$/.test(v)).map(Number);
+      if(qtyCandidates.length===rows.length)rows.forEach((row,i)=>row.received=qtyCandidates[i]);
+      if(!rows.length){
+        $("fileStatus").textContent="No six-digit item numbers confidently found. Try a clearer scan, or add the five rows manually. OCR text (Item #): "+(itemText.trim().slice(0,160)||"[blank]");
         return;
       }
-      populateReceivingRows(distinct);
-      $("fileStatus").textContent=distinct.length+" candidate lines imported from the Item #, Bin, and Qty Received columns. IMPORTANT: review every value against the PDF. Blank quantities mean OCR could not read the handwriting; never print until verified.";
-    }catch(e){console.error(e);$("fileStatus").textContent="Receiving OCR failed: "+e.message;}
-    finally{if(worker)await worker.terminate();button.disabled=false;}
+      populateReceivingRows(rows);
+      $("fileStatus").textContent="Automatically added "+rows.length+" detected item-number rows. "+
+        rows.filter(r=>!r.bin||r.received===null).length+" lines need a bin or received-quantity review. "+
+        "Verify all three columns against the PDF before printing. OCR sample: "+itemText.trim().slice(0,100);
+      $("manualLines")?.scrollIntoView({behavior:"smooth",block:"start"});
+    } catch(e){ console.error(e);$("fileStatus").textContent="PO detection failed: "+e.message; }
+    finally {if(worker)await worker.terminate();button.disabled=false;}
   }
   $("pdfScanReceivingBtn")?.addEventListener("click",scanReceivingColumns);
 
