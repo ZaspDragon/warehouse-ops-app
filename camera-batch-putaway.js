@@ -196,6 +196,43 @@
     } catch(e){console.error(e);info("Camera scan failed: "+e.message);}
     finally{scanning=false;}
   }
+
+  async function readUploadedPhoto(file) {
+    if(!file || !/^image\//.test(file.type)) return info("Choose a JPG, PNG, or WebP image.");
+    if(file.size > 16*1024*1024) return info("Photo is too large (maximum 16 MB).");
+    if(batch.length>=MAX) return info("Batch is full. Verify and submit first.");
+    let bitmap, ocr;
+    try{
+      bitmap=await createImageBitmap(file);
+      const canvas=document.createElement("canvas");
+      const scale=Math.min(1,2200/Math.max(bitmap.width,bitmap.height));
+      canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
+      canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);
+      if(qrMode && rackTarget===null){await scanWarehouseQR(canvas);return;}
+      if(!worker) worker=await Tesseract.createWorker("eng");
+      ocr=await worker.recognize(canvas);
+      const raw=ocr.data.text||"";
+      if(rackTarget!==null){
+        const record=batch[rackTarget],matches=readRack(raw);
+        if(!record)return info("No pallet selected for rack verification.");
+        if(matches.length!==1)return info("Photo must show exactly one readable rack magnet. Retake or enter destination manually and scan the rack.");
+        const expected=normalLocation(record.location);
+        record.rackRead=matches[0];
+        record.rackVerified=Boolean(expected&&record.rackRead===expected);
+        record.reviewed=false;redraw();
+        if(record.rackVerified){rackTarget=null;info("Photo magnet "+record.rackRead+" matches selected pallet. Confirm the item and review.");}
+        else info("Magnet photo shows "+record.rackRead+", but destination is "+(expected||"missing")+". Putaway remains blocked.");
+        return;
+      }
+      const row=parseLabel(raw);
+      if(!row.item&&!row.qty&&!row.po&&!row.location)return info("Could not read useful pallet label fields. Try a closer photo or Add label manually.");
+      // OCR text is only a draft. Item, quantity and exact air slot must be confirmed.
+      batch.push(row);redraw();
+      info("Bulk pallet picture read into draft row "+batch.length+". Confirm item, quantity and exact air location, then scan the actual rack magnet before submitting.");
+    }catch(e){console.error(e);info("Photo could not be processed: "+e.message);}
+    finally{bitmap?.close?.();const fileInput=byId("cameraBatchPhoto");if(fileInput)fileInput.value="";}
+  }
+
   function stop(){
     active=false;clearInterval(timer);timer=null;
     if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
@@ -251,8 +288,8 @@
     section.id="cameraBatch";section.className="card";
     section.hidden=true;section.style.display="none";
     section.style.marginTop="16px";
-    section.innerHTML='<h3>Camera Batch Scanner</h3><p class="hint">Scan up to 25 receiving labels using Scan now for each steady image. Scan each actual rack magnet and review every handwritten field before submitting through the existing Put Away Log. Photos stay on this device and are not uploaded.</p>'+
-      '<div class="actions"><button type="button" id="cameraBatchQRMode">Mode: OCR labels</button><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button><button type="button" id="cameraBatchManual">+ Add label manually</button></div>'+
+    section.innerHTML='<h3>Camera Batch Scanner</h3><p class="hint">Drivers can upload or take a bulk-pallet photo, or scan up to 25 receiving labels using Scan now for each steady image. Scan each actual rack magnet and review every handwritten field before submitting through the existing Put Away Log. Photos stay on this device and are not uploaded.</p>'+
+      '<div class="actions"><label style="display:inline-block;padding:8px;border:1px solid #ccc;border-radius:8px">📷 Upload / take pallet photo<input id="cameraBatchPhoto" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" style="display:block;max-width:240px" /></label><button type="button" id="cameraBatchQRMode">Mode: OCR labels</button><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button><button type="button" id="cameraBatchManual">+ Add label manually</button></div>'+
       '<video id="cameraBatchVideo" playsinline muted style="width:100%;max-height:330px;background:#111;border-radius:8px;object-fit:contain"></video>'+
       '<p class="hint" id="cameraBatchStatus" role="status">Camera is stopped.</p><strong id="cameraBatchCount">0 / 25 labels</strong>'+
       '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item #</th><th>Location</th><th>Qty</th><th>Purchase order</th><th>Rack magnet</th><th>Item # check</th><th>Review</th><th></th></tr></thead><tbody id="cameraBatchRows"></tbody></table></div>'+
@@ -268,6 +305,7 @@
       if(opening){section.scrollIntoView({behavior:"smooth",block:"start"});}
       else{stop();}
     });
+    byId("cameraBatchPhoto").addEventListener("change",e=>readUploadedPhoto(e.target.files?.[0]));
     byId("cameraBatchQRMode").addEventListener("click",()=>{qrMode=!qrMode;byId("cameraBatchQRMode").textContent=qrMode?"Mode: WarehouseOS QR":"Mode: OCR labels";info(qrMode?"QR mode enabled. Aim at one WarehouseOS Putaway QR sticker and tap Scan now.":"OCR mode enabled.");});
     byId("cameraBatchStart").addEventListener("click",start);
     byId("cameraBatchCapture").addEventListener("click",capture);
