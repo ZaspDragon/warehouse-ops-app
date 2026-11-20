@@ -1,0 +1,20 @@
+name: WarehouseOS security checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit external scripts
+        run: python3 scripts/security_audit.py
+      - name: Check for accidental private-key commits
+        run: |
+          if grep -RIE --exclude-dir=.git --exclude-dir=node_modules --exclude=security-audit.yml --exclude=security_audit.py '-----BEGIN (RSA |EC |OPENSSH |PRIVATE |ENCRYPTED )*PRIVATE KEY-----' .; then
+            echo "Potential private key found"; exit 1
+          fi
