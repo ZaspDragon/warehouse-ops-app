@@ -52,7 +52,7 @@
     if(!lines.length) return;
     const existing=[...document.querySelectorAll("#manualLines .line-editor")];
     if(existing.some(r=>r.querySelector(".item-number").value.trim()) &&
-       !confirm("Replace existing draft PO lines with these detected receiving-report lines?")) return;
+       !confirm("A different PO draft is open. Replace existing lines with the newly uploaded PO?")) return;
     $("manualLines").replaceChildren();
     for(const line of lines){
       $("addLineBtn").click();
@@ -64,6 +64,7 @@
       row.querySelector(".label-copies").value="1";
     }
     document.querySelector("#manualLines .item-number")?.dispatchEvent(new Event("input",{bubbles:true}));
+    document.dispatchEvent(new CustomEvent("warehouseos:po-lines-updated"));
   }
   async function scanReceivingColumns() {
     if(!pdf) { $("fileStatus").textContent="Upload and read a PDF first."; return; }
@@ -217,5 +218,40 @@
     catch(e){console.error(e);$("fileStatus").textContent="PDF could not be opened: "+e.message;}
     finally{$("readPoBtn").disabled=false;}
   },true);
+
+  // Selecting a PO now performs the read AND starts extraction without requiring
+  // the separate Read / Detect buttons. Old buttons are retained for retries.
+  let autoSequence=0;
+  $("poFile")?.addEventListener("change",async ()=>{
+    const file=$("poFile")?.files?.[0]; if(!file)return;
+    const seq=++autoSequence;
+    const btn=$("readPoBtn");
+    btn.disabled=true;
+    $("fileStatus").textContent="Auto-processing "+file.name+"…";
+    try{
+      if(/\.pdf$/i.test(file.name) || file.type==="application/pdf"){
+        await importPDF(file);
+        if(seq!==autoSequence)return;
+        await scanReceivingColumns();
+      }else if(/\.(xlsx?|csv)$/i.test(file.name)){
+        btn.disabled=false;
+        // Existing spreadsheet parser is wired to this button.
+        btn.click();
+        document.dispatchEvent(new CustomEvent("warehouseos:po-lines-updated"));
+      }else if(/^image\//.test(file.type)){
+        // Photo preview already occurs in the change handler above.
+        // Await an image load before firing the photo OCR action.
+        await new Promise(resolve=>setTimeout(resolve,400));
+        if(seq!==autoSequence)return;
+        if(imageLoaded){
+          $("photoOcrBtn").click();
+          $("fileStatus").textContent="Image loaded. Reading item numbers; verify them before printing.";
+        }
+      }else{
+        $("fileStatus").textContent="Unsupported file type. Use PDF, photo, Excel, or CSV.";
+      }
+    }catch(e){console.error(e);$("fileStatus").textContent="Automatic PO detection failed: "+e.message;}
+    finally{btn.disabled=false;}
+  });
   $("pdfNextPage")?.addEventListener("click",()=>{if(pdf){page=page%pdf.numPages+1;showPage().catch(e=>$("fileStatus").textContent=e.message);}});
 })();
