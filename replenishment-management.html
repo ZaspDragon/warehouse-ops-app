@@ -54,7 +54,63 @@ function filters(){return '<div class="filters no-print"><label>Aisle <select id
 function filterRows(rows){let a=el("aisleFilter")?.value||"",s=el("statusFilter")?.value||"",q=(el("q")?.value||"").toLowerCase();return rows.filter(r=>(!a||r.aisle===a)&&(!s||(s==="done"?! !state.completed[r.id]:!state.completed[r.id]))&&(!q||[r.item,r.from,r.to].some(v=>String(v).toLowerCase().includes(q))))}
 function renderList(which){let rows=currentRows().filter(r=>which==="zeros"?zero(r):true).slice().sort(prioritySort);el("content").innerHTML='<h2>'+(which==="zeros"?"Zero-Primary Replenishments":"Replenishments by Aisle & Priority")+'</h2><p class="muted">Aisle is calculated from destination bin; priority comes from the imported report. Check off completed jobs below.</p>'+filters()+'<div id="listTable"></div>';function refresh(){el("listTable").innerHTML=table(filterRows(rows),rowCols())}["aisleFilter","statusFilter","q"].forEach(id=>el(id).addEventListener("input",refresh));refresh()}
 function board(){let rows=currentRows(),aisles=aisleOrder.map(a=>({aisle:a,replens:rows.filter(r=>r.aisle===a).length,complete:rows.filter(r=>r.aisle===a&&state.completed[r.id]).length}));el("content").innerHTML='<h2>Daily Replenishment & Putaway Aisle Board</h2><p class="muted">Replenishments come from the uploaded report. Putaway counts are entered separately; they are not guessed from replenishment records.</p>'+table(aisles,[["Aisle",r=>escape(r.aisle)],["Replenishments",r=>r.replens],["Completed",r=>r.complete],["Remaining",r=>r.replens-r.complete],["Putaways",r=>'<input class="putaway-count" data-aisle="'+r.aisle+'" type="number" min="0" style="width:90px" value="'+(num(state.putaways?.[r.aisle]))+'">'],["Total Work",r=>r.replens+num(state.putaways?.[r.aisle])]])+'<p class="note">Putaway entries are stored locally alongside the imported snapshot.</p>'}
-function importPage(){el("content").innerHTML='<h2>Import Replenishment Report</h2><p>Upload your Bin Restock Report (.xlsx, .xls or .csv) directly, the original replenishment report, or the multi-sheet Excel template. For template workbooks, the “REPLENISHMENT REPORT — PASTE DATA HERE” worksheet is used. Bin Restock Report columns are detected automatically, including headers on row 3. Qty means current bin stock; Purch Qty is not a move quantity.</p><label>Choose file <input type="file" id="upload" accept=".xlsx,.xls,.csv"></label><p class="note">Import replaces the current report snapshot, not WarehouseOps putaway history. Export first if you need to preserve local completion marks. No data is uploaded to GitHub or SharePoint.</p><div id="importFeedback"></div><hr><button class="no-print" id="clearReport">Clear Local Replenishment Snapshot</button>' ;el("upload").addEventListener("change",importFile);el("clearReport").addEventListener("click",()=>{if(confirm("Clear the imported report and its completion marks in this browser?")){state.rows=[];state.completed={};state.putaways={};state.source="";persist();render()}})}
+function importPage(){
+el("content").innerHTML='<h2>Import Replenishments</h2><h3>Paste from BinMgr</h3><p>Copy the replenishment table in BinMgr and paste it below. Supports the table as tab-separated text or the Markdown table format. No Excel file is needed.</p><textarea id="pasteBinMgr" rows="10" style="display:block;width:100%;font:13px monospace;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Item   Select   Qty To Move   From Bin   To Bin   Qty Avail   Qty In Overstock   Primary Bin Min   Primary Bin Max   Priority"></textarea><div class="toolbar no-print"><button id="previewPaste" class="primary">Preview Pasted Restocks</button><button id="commitPaste" disabled>Import Previewed Rows</button></div><div id="pasteFeedback" role="status"></div><div id="pastePreview"></div><hr><h3>Or upload an Excel / CSV report</h3><p>Existing Excel import still works, including Bin Restock Report and Replenishment Report templates.</p><label>Choose file <input type="file" id="upload" accept=".xlsx,.xls,.csv"></label><p class="note">Import replaces the current replenishment snapshot and its completion/assignment marks in this browser. It does not modify BinMgr or other WarehouseOps records. Data stays in your browser.</p><div id="importFeedback"></div><hr><button class="no-print" id="clearReport">Clear Local Replenishment Snapshot</button>';
+let staged=null;
+el("previewPaste").onclick=()=>{
+ try{
+  staged=parseBinMgrPaste(el("pasteBinMgr").value);
+  const total=staged.length,zeros=staged.filter(r=>r.available===0).length;
+  el("pasteFeedback").textContent="Preview: "+total+" replenishment rows, "+zeros+" zero primaries. Review the first 10 rows, then import.";
+  el("pastePreview").innerHTML=table(staged.slice(0,10),rowCols());
+  el("commitPaste").disabled=false;
+ }catch(err){staged=null;el("commitPaste").disabled=true;el("pastePreview").innerHTML="";el("pasteFeedback").textContent="Paste error: "+err.message}
+};
+el("pasteBinMgr").oninput=()=>{staged=null;el("commitPaste").disabled=true;el("pastePreview").innerHTML="";el("pasteFeedback").textContent=""};
+el("commitPaste").onclick=()=>{
+ if(!staged||!staged.length)return;
+ if(state.rows.length&&!confirm("Replace the current replenishment snapshot and reset completion/driver assignments?"))return;
+ const count=staged.length;
+ state.rows=staged;state.completed={};state.putaways={};assignments={};saveAssignments();state.source="BinMgr pasted table";state.date=el("workDate").value||today();persist();render();
+ el("pasteFeedback").textContent="Imported "+count+" BinMgr replenishments successfully.";
+ el("pastePreview").innerHTML="";
+};
+el("upload").addEventListener("change",importFile);
+el("clearReport").addEventListener("click",()=>{if(confirm("Clear the imported report and completion marks in this browser?")){state.rows=[];state.completed={};state.putaways={};state.source="";persist();render()}});
+}
+function parseBinMgrPaste(raw){
+ const lines=String(raw||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+ if(!lines.length)throw Error("Paste the rows copied from BinMgr first.");
+ // Markdown tables have outer pipes; browser clipboard tables normally contain tabs.
+ let entries=lines.map(line=>{
+   if(line.startsWith("|")&&line.endsWith("|"))return line.slice(1,-1).split("|").map(x=>x.trim());
+   if(line.includes("\t"))return line.split("\t").map(x=>x.trim());
+   return line.split(/\s{2,}/).map(x=>x.trim());
+ });
+ const clean=s=>String(s??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+ const headerIndex=entries.findIndex(row=>row.some(x=>clean(x)==="item")&&row.some(x=>clean(x)==="qtytomove")&&row.some(x=>clean(x)==="frombin")&&row.some(x=>clean(x)==="tobin"));
+ if(headerIndex<0)throw Error("Couldn't find BinMgr headers: Item, Qty To Move, From Bin, To Bin. Include the header row when copying.");
+ const head=entries[headerIndex].map(clean);
+ const col=(...names)=>head.findIndex(h=>names.some(n=>h===clean(n)));
+ const m={item:col("Item"),qty:col("Qty To Move"),from:col("From Bin"),to:col("To Bin"),available:col("Qty Avail"),overstock:col("Qty In Overstock"),min:col("Primary Bin Min"),max:col("Primary Bin Max"),priority:col("Priority")};
+ if(Object.values(m).some(i=>i<0))throw Error("Missing one or more BinMgr columns. Copy the full table including quantities, bins and priority.");
+ const result=[],seen=new Map();let invalid=0;
+ for(let i=headerIndex+1;i<entries.length;i++){
+   let r=entries[i];
+   if(r.length!==head.length){invalid++;continue}
+   if(r.every(x=>/^:?-{2,}:?$/.test(x)||!x))continue;
+   const item=String(r[m.item]||"").trim(),from=String(r[m.from]||"").trim(),to=String(r[m.to]||"").trim();
+   const digits=/^-?\d+(?:\.\d+)?$/;
+   if(!/^\d{4,}$/.test(item)||!from||!to||![m.qty,m.available,m.overstock,m.min,m.max,m.priority].every(k=>digits.test(String(r[k]).replace(/,/g,"")))){invalid++;continue}
+   const qty=num(r[m.qty]);
+   if(qty<=0){invalid++;continue}
+   let identity=[item,from,to,qty].join("|"),occur=(seen.get(identity)||0)+1;seen.set(identity,occur);
+   result.push({id:identity+"|"+occur,item,qty,from,to,aisle:fromBin(to),available:num(r[m.available]),overstock:num(r[m.overstock]),min:num(r[m.min]),max:num(r[m.max]),priority:num(r[m.priority]),reportType:"binmgr-paste"});
+ }
+ if(!result.length)throw Error("No valid replenishment rows found. Try copying the table into a spreadsheet first and copying those cells.");
+ if(invalid)throw Error(invalid+" row(s) could not be read. Nothing imported. Ensure all rows have the complete 10 columns.");
+ return result;
+}
 const normalized=s=>String(s??"").toLowerCase().replace(/[^a-z0-9]/g,"");
 function readHeader(row){let arr=row.map(normalized);function idx(...names){return arr.findIndex(x=>names.some(n=>x===normalized(n)))}return {item:idx("Item","Item Number","Item #"),qty:idx("Qty To Move","Move Qty","Quantity To Move"),from:idx("From Bin","Source Bin"),to:idx("To Bin","Destination Bin"),available:idx("Qty Avail","Bin Qty","Primary Qty","Current Primary Quantity"),overstock:idx("Qty In Overstock","Overstock Qty"),min:idx("Primary Bin Min","Primary Min"),max:idx("Primary Bin Max","Primary Max"),priority:idx("Priority","Age / Priority")}}
 async function importFile(e){let file=e.target.files?.[0];if(!file)return;try{if(!window.XLSX)throw Error("Excel reader is unavailable. Check the internet connection.");let wb=XLSX.read(await file.arrayBuffer(),{type:"array"});let name=wb.SheetNames.find(s=>/replenishment report.*paste data/i.test(s))||wb.SheetNames.find(s=>/replenishment report/i.test(s))||wb.SheetNames[0];let data=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:""});// Native Chadwell Bin Restock Report: headers normally begin on row 3.
