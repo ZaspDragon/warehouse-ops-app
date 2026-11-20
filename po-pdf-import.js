@@ -46,6 +46,67 @@
       " Nothing from this PDF is uploaded to Firestore.";
   }
 
+
+  function populateReceivingRows(lines) {
+    if(!lines.length) return;
+    const existing=[...document.querySelectorAll("#manualLines .line-editor")];
+    if(existing.some(r=>r.querySelector(".item-number").value.trim()) &&
+       !confirm("Replace existing draft PO lines with these detected receiving-report lines?")) return;
+    $("manualLines").replaceChildren();
+    for(const line of lines){
+      $("addLineBtn").click();
+      const row=document.querySelector("#manualLines .line-editor:last-child");
+      row.querySelector(".item-number").value=line.item||"";
+      row.querySelector(".po-bin").value=line.bin||"";
+      row.querySelector(".checked-qty").value=line.received==null?"":line.received;
+      row.querySelector(".item-qty").value="";
+      row.querySelector(".label-copies").value="1";
+    }
+    document.querySelector("#manualLines .item-number")?.dispatchEvent(new Event("input",{bubbles:true}));
+  }
+  async function scanReceivingColumns() {
+    if(!pdf){$("fileStatus").textContent="Upload and read a PDF first.";return;}
+    if(!window.Tesseract) { $("fileStatus").textContent="OCR text reader unavailable.";return;}
+    const button=$("pdfScanReceivingBtn");
+    button.disabled=true;
+    let worker;
+    try{
+      $("fileStatus").textContent="Scanning only receiving report columns on the first page…";
+      const pageOne=await pdf.getPage(1);
+      const viewport=pageOne.getViewport({scale:2.2});
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+      await pageOne.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
+      worker=await Tesseract.createWorker("eng");
+      const result=await worker.recognize(canvas);
+      const words=(result.data.words||[]).map(w=>({text:String(w.text||"").trim().toUpperCase(),x:(w.bbox.x0+w.bbox.x1)/2/canvas.width,y:(w.bbox.y0+w.bbox.y1)/2/canvas.height})).filter(w=>w.text);
+      // Briggs OH01 receiving-report form: item numbers in right-centre,
+      // bin immediately to right and handwritten received qty at far right.
+      // Never use ordered or remaining quantity columns as received quantity.
+      const itemWords=words.filter(w=>w.x>.43&&w.x<.59&&w.y>.23&&w.y<.58 && /^\d{6}$/.test(w.text.replace(/[^0-9]/g,"")));
+      const distinct=[];
+      for(const w of itemWords) {
+        const item=w.text.replace(/\D/g,"");
+        if(distinct.some(x=>Math.abs(x.y-w.y)<.022))continue;
+        const near=words.filter(a=>Math.abs(a.y-w.y)<.023);
+        const binText=near.filter(a=>a.x>.58&&a.x<.75).map(a=>a.text).join(" ").replace(/\s+/g,"").replace(/[—–]/g,"-");
+        const binMatch=binText.match(/[A-Z]{1,2}-?\d{1,2}(?:-\d{1,2}){1,2}/);
+        const qtyWords=near.filter(a=>a.x>.895&&a.x<.998).map(a=>a.text.replace(/[^0-9]/g,"")).filter(Boolean);
+        const received=qtyWords.length===1 && /^\d{1,5}$/.test(qtyWords[0])?Number(qtyWords[0]):null;
+        distinct.push({item,bin:binMatch?.[0]||"",received,y:w.y});
+      }
+      distinct.sort((a,b)=>a.y-b.y);
+      if(!distinct.length) {
+        $("fileStatus").textContent="OCR couldn't reliably identify six-digit item numbers in the Item # column. Use the PDF preview and manually add or correct the five PO lines; no quantities were guessed.";
+        return;
+      }
+      populateReceivingRows(distinct);
+      $("fileStatus").textContent=distinct.length+" candidate lines imported from the Item #, Bin, and Qty Received columns. IMPORTANT: review every value against the PDF. Blank quantities mean OCR could not read the handwriting; never print until verified.";
+    }catch(e){console.error(e);$("fileStatus").textContent="Receiving OCR failed: "+e.message;}
+    finally{if(worker)await worker.terminate();button.disabled=false;}
+  }
+  $("pdfScanReceivingBtn")?.addEventListener("click",scanReceivingColumns);
+
   let imageLoaded = false;
   $("poFile")?.addEventListener("change", async () => {
     const file=$("poFile")?.files?.[0];
