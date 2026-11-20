@@ -95,10 +95,11 @@
 
   function readWarehouseQR(raw) {
     const parts=String(raw||"").trim().split("|");
-    if(parts.length!==5 || parts[0]!=="WOS1") return null;
-    const [,po,item,qty,branch]=parts;
+    if(!((parts.length===5&&parts[0]==="WOS1")||(parts.length===6&&parts[0]==="WOS2"))) return null;
+    const [,po,item,qty,branch,bin=""]=parts;
     if(!/^[A-Za-z0-9-]{4,32}$/.test(po) || !/^\d{6}$/.test(item) || !/^[1-9]\d{0,5}$/.test(qty) || branch!=="OH01") return null;
-    return {item,qty,po,location:"",reviewed:false,itemConfirmed:false,rackVerified:false,rackRead:"",raw:"WarehouseOS QR ("+branch+")",id:crypto.randomUUID?.()||String(Date.now()+Math.random())};
+    if(bin && !normalLocation(bin)) return null;
+    return {item,qty,po,location:normalLocation(bin),reviewed:false,itemConfirmed:false,rackVerified:false,rackRead:"",raw:"WarehouseOS QR ("+branch+")",id:crypto.randomUUID?.()||String(Date.now()+Math.random())};
   }
   async function scanWarehouseQR(canvas) {
     let value = "";
@@ -123,7 +124,7 @@
     if(batch.some(x=>x.id===row.id)) return;
     // Repeated identical boxes are legitimate, so do not discard matching item/qty stickers.
     batch.push(row);redraw();
-    info("QR read: item "+row.item+", box qty "+row.qty+", PO "+row.po+". Enter the destination location, scan its rack magnet, and verify before submitting.");
+    info("QR read: item "+row.item+", box qty "+row.qty+", PO "+row.po+". Confirm the receiving bin or enter the correct destination, scan its rack magnet, and verify before submitting.");
   }
 
   async function capture() {
