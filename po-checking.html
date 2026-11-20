@@ -97,7 +97,7 @@
           <p id="fileStatus" class="message">Nothing uploaded yet.</p>
           <p class="read-note">On a phone, choose Camera or Photo Library to upload a PO photo. Photos are processed on your device; verify any detected text.</p>
           <div id="photoReviewArea" class="hidden" style="margin-top:12px"><h3>PO Photo Preview</h3><canvas id="photoReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><div class="page-actions"><button id="photoOcrBtn" type="button">Read Text From Photo</button><button id="photoItemsBtn" type="button">Add Detected Item Numbers for Review</button></div><label>Recognized text (review and correct)<textarea id="photoOcrText" rows="7" placeholder="Press Read Text From Photo. OCR can make mistakes."></textarea></label><p class="read-note">Detected item numbers are only drafts. You must enter and confirm quantities yourself before printing stickers or saving.</p></div>
-          <div id="pdfReviewArea" class="hidden" style="margin-top:12px"><p class="read-note">Scanned PDFs may require manual review. Use the document preview to verify PO item numbers and quantities before printing.</p><canvas id="pdfReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><p class="read-note" id="pdfReviewHint"></p><button id="pdfNextPage" type="button">Next PDF page</button></div>
+          <div id="pdfReviewArea" class="hidden" style="margin-top:12px"><p class="read-note">Scanned PDFs may require manual review. Use the document preview to verify PO item numbers and quantities before printing.</p><canvas id="pdfReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><p class="read-note" id="pdfReviewHint"></p><button id="pdfNextPage" type="button">Next PDF page</button><button id="pdfScanReceivingBtn" type="button" class="primary">Detect Item # / Bin / Qty Received (OCR)</button></div>
         </div>
       </section>
 
@@ -119,7 +119,7 @@
 
       <section class="card" id="poQrSection">
         <h2>PO QR Sticker Printer</h2>
-        <p class="read-note">Print one WarehouseOS putaway QR and an optional Chadwell item-search QR on each sticker. Enter the verified finished quantity, quantity per box, and number of stickers above. The putaway QR fills item, PO, and box quantity; destination location must still be verified. No label data is written to Firestore.</p>
+        <p class="read-note">Read Item #, Bin and Qty Received from the receiving report. After reviewing these fields, choose how many labels to make for each line. The verified received quantity is split across those stickers, including any remainder; scan and verify the destination magnet during putaway.</p>
         <div class="form-grid"><label>Branch<input id="qrBranch" value="OH01" maxlength="12"></label><label>Website search link template<input id="qrSearchTemplate" value="https://www.chadwellsupply.com/search?q={item}" aria-describedby="qrWebsiteNotice"></label></div>
         <p class="read-note" id="qrWebsiteNotice">The Chadwell search URL is provisional; test a printed website QR with a real item before relying on it. Replace {item} in the template with the item number.</p>
         <div class="page-actions"><button id="previewPoLabelsBtn" type="button">Preview QR Stickers</button><button id="printPoLabelsBtn" class="primary" type="button">Print Checked Labels</button></div>
@@ -188,7 +188,7 @@
   function addLine(itemNumber = "", quantity = "") {
     const row = document.createElement("div");
     row.className = "line-editor";
-    row.innerHTML = `<label>Item Number<input class="item-number" value="${esc(itemNumber)}" placeholder="Item #" /></label><label>PO Qty<input class="item-qty" type="number" min="0" value="${esc(quantity)}" /></label><label>Finished Checked Qty<input class="checked-qty" type="number" min="0" step="1" placeholder="Verify actual qty" /></label><label>Qty per sticker<input class="box-qty" type="number" min="1" step="1" placeholder="Qty in each box" /></label><label>Sticker copies<input class="label-copies" type="number" min="1" max="100" step="1" value="1" /></label><button class="danger remove-line" type="button">Remove</button>`;
+    row.innerHTML = `<label>Item Number<input class="item-number" value="${esc(itemNumber)}" placeholder="Item #" /></label><label>PO Qty<input class="item-qty" type="number" min="0" value="${esc(quantity)}" /></label><label>BIN<input class="po-bin" placeholder="G-32-1" /></label><label>Qty Received / Verified<input class="checked-qty" type="number" min="0" step="1" placeholder="Verify actual qty" /></label><label>Sticker copies<input class="label-copies" type="number" min="1" max="100" step="1" value="1" /></label><button class="danger remove-line" type="button">Remove</button>`;
     row.querySelector(".remove-line").addEventListener("click", () => { row.remove(); updateTotals(); });
     row.querySelectorAll("input").forEach(input => input.addEventListener("input", updateTotals));
     $("manualLines").appendChild(row);
@@ -319,7 +319,7 @@
   });
 })();
 </script>
-<script src="po-qr-labels.js?v=20261120-2"></script>
-<script src="po-pdf-import.js?v=20261120-1"></script>
+<script src="po-qr-labels.js?v=20261120-4"></script>
+<script src="po-pdf-import.js?v=20261120-4"></script>
 </body>
 </html>
