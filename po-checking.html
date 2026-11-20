@@ -92,9 +92,11 @@
       <section class="card">
         <h2>Upload PO</h2>
         <div class="file-box">
-          <label>PDF, Excel or CSV PO file<input id="poFile" type="file" accept=".pdf,.xlsx,.xls,.csv" /></label>
+          <label>PDF, picture, Excel or CSV PO file<input id="poFile" type="file" accept=".pdf,.xlsx,.xls,.csv,image/jpeg,image/png,image/webp,image/heic,image/heif" /></label>
           <div class="page-actions"><button id="readPoBtn" class="primary" type="button">Read PO File</button></div>
           <p id="fileStatus" class="message">Nothing uploaded yet.</p>
+          <p class="read-note">On a phone, choose Camera or Photo Library to upload a PO photo. Photos are processed on your device; verify any detected text.</p>
+          <div id="photoReviewArea" class="hidden" style="margin-top:12px"><h3>PO Photo Preview</h3><canvas id="photoReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><div class="page-actions"><button id="photoOcrBtn" type="button">Read Text From Photo</button><button id="photoItemsBtn" type="button">Add Detected Item Numbers for Review</button></div><label>Recognized text (review and correct)<textarea id="photoOcrText" rows="7" placeholder="Press Read Text From Photo. OCR can make mistakes."></textarea></label><p class="read-note">Detected item numbers are only drafts. You must enter and confirm quantities yourself before printing stickers or saving.</p></div>
           <div id="pdfReviewArea" class="hidden" style="margin-top:12px"><p class="read-note">Scanned PDFs may require manual review. Use the document preview to verify PO item numbers and quantities before printing.</p><canvas id="pdfReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><p class="read-note" id="pdfReviewHint"></p><button id="pdfNextPage" type="button">Next PDF page</button></div>
         </div>
       </section>
