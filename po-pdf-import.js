@@ -1,22 +1,21 @@
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
-  let pdf = null, page = 1;
+  let pdf = null;
   async function showPage() {
     if (!pdf) return;
-    const p = await pdf.getPage(page);
+    const p = await pdf.getPage(1);
     const viewport = p.getViewport({scale:1.6});
     const canvas = $("pdfReviewCanvas");
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
     await p.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
-    $("pdfReviewHint").textContent = "Page " + page + " of " + pdf.numPages + ". Confirm each item and quantity against the original.";
+    $("pdfReviewHint").textContent = "Only page 1 is used (" + pdf.numPages + " total pages). Review all detected fields before printing.";
   }
   async function importPDF(file) {
     if (!window.pdfjsLib) throw new Error("PDF reader did not load. Refresh and retry.");
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
     pdf = await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
-    page = 1;
     $("pdfReviewArea").classList.remove("hidden");
     await showPage();
     let foundPo = "";
@@ -41,7 +40,7 @@
       candidates.forEach((line,i)=>{rows[i].querySelector(".item-number").value=line.item;rows[i].querySelector(".item-qty").value=line.qty;});
       rows[0]?.querySelector(".item-number").dispatchEvent(new Event("input",{bubbles:true}));
     }
-    $("fileStatus").textContent = file.name+" loaded ("+pdf.numPages+" pages). "+
+    $("fileStatus").textContent = file.name+" loaded. Detection uses page 1 only of "+pdf.numPages+" pages. "+
       (text.trim() ? "Selectable text found. Review each item line and box quantity before printing." :
       "This is a scanned image PDF, so there are no selectable item lines. Review the page preview and add/verify the lines manually; no quantities have been guessed.")+
       " Nothing from this PDF is uploaded to Firestore.";
@@ -259,5 +258,4 @@
     }catch(e){console.error(e);$("fileStatus").textContent="Automatic PO detection failed: "+e.message;}
     finally{btn.disabled=false;}
   });
-  $("pdfNextPage")?.addEventListener("click",()=>{if(pdf){page=page%pdf.numPages+1;showPage().catch(e=>$("fileStatus").textContent=e.message);}});
 })();
