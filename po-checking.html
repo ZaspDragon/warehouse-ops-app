@@ -122,6 +122,7 @@
 
       <section class="card" id="poQrSection">
         <h2>PO QR Sticker Printer</h2>
+        <p class="read-note">Sticker drafts appear automatically when a PO is uploaded. Complete and verify any missing item numbers, bins, or received quantities before generating printable QR codes.</p>
         <p class="read-note">Read Item #, Bin and Qty Received from the receiving report. After reviewing these fields, choose how many labels to make for each line. The verified received quantity is split across those stickers, including any remainder; scan and verify the destination magnet during putaway.</p>
         <div class="form-grid"><label>Branch<input id="qrBranch" value="OH01" maxlength="12"></label><label>Website search link template<input id="qrSearchTemplate" value="https://www.chadwellsupply.com/search?q={item}" aria-describedby="qrWebsiteNotice"></label></div>
         <p class="read-note" id="qrWebsiteNotice">The Chadwell search URL is provisional; test a printed website QR with a real item before relying on it. Replace {item} in the template with the item number.</p>
@@ -239,6 +240,7 @@
       });
       if (detectedPo && !$("poNumber").value) $("poNumber").value = detectedPo;
       $("fileStatus").textContent = `Detected ${collectLines().length} item lines from ${file.name}. No PO rows were uploaded to Firestore.`;
+      document.dispatchEvent(new CustomEvent("warehouseos:po-lines-updated"));
     } catch (err) {
       console.error(err);
       $("fileStatus").textContent = `Could not read file: ${err.message}`;
@@ -325,7 +327,7 @@
   });
 })();
 </script>
-<script src="po-qr-labels.js?v=20261120-4"></script>
-<script src="po-pdf-import.js?v=20261120-9"></script>
+<script src="po-qr-labels.js?v=20261120-auto-2"></script>
+<script src="po-pdf-import.js?v=20261120-auto-2"></script>
 </body>
 </html>
