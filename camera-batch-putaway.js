@@ -2,6 +2,7 @@
   "use strict";
   const MAX = 25;
   let stream = null, worker = null, scanning = false, active = false, timer = null;
+  let qrMode = false;
   let rackTarget = null; // null: receive labels; index: verify actual rack magnet
   const batch = [];
   const byId = (id) => document.getElementById(id);
@@ -91,6 +92,40 @@
     ctx.putImageData(image,0,0);
     return canvas;
   }
+
+  function readWarehouseQR(raw) {
+    const parts=String(raw||"").trim().split("|");
+    if(parts.length!==5 || parts[0]!=="WOS1") return null;
+    const [,po,item,qty,branch]=parts;
+    if(!/^[A-Za-z0-9-]{4,32}$/.test(po) || !/^\d{6}$/.test(item) || !/^[1-9]\d{0,5}$/.test(qty) || branch!=="OH01") return null;
+    return {item,qty,po,location:"",reviewed:false,itemConfirmed:false,rackVerified:false,rackRead:"",raw:"WarehouseOS QR ("+branch+")",id:crypto.randomUUID?.()||String(Date.now()+Math.random())};
+  }
+  async function scanWarehouseQR(canvas) {
+    let value = "";
+    if ("BarcodeDetector" in window) {
+      try {
+        const detector=new BarcodeDetector({formats:["qr_code"]});
+        const codes=await detector.detect(canvas);
+        if(codes.length===1) value=codes[0].rawValue || "";
+        if(codes.length>1) throw Error("Multiple QR codes detected. Aim at one WarehouseOS Putaway QR.");
+      } catch(e) {
+        if(/Multiple QR/.test(e.message)) throw e;
+      }
+    }
+    if(!value && typeof window.jsQR==="function"){
+      const ctx=canvas.getContext("2d",{willReadFrequently:true});
+      const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
+      value=window.jsQR(pixels.data,pixels.width,pixels.height,{inversionAttempts:"attemptBoth"})?.data||"";
+    }
+    if(!value) throw Error("QR not recognized. Move closer to the WarehouseOS Putaway QR and scan again.");
+    const row=readWarehouseQR(value);
+    if(!row) throw Error("This is not a valid OH01 WarehouseOS putaway QR label.");
+    if(batch.some(x=>x.id===row.id)) return;
+    // Repeated identical boxes are legitimate, so do not discard matching item/qty stickers.
+    batch.push(row);redraw();
+    info("QR read: item "+row.item+", box qty "+row.qty+", PO "+row.po+". Enter the destination location, scan its rack magnet, and verify before submitting.");
+  }
+
   async function capture() {
     if(scanning || !stream || batch.length>=MAX)return;
     scanning=true;
@@ -99,6 +134,7 @@
       const video=byId("cameraBatchVideo"), canvas=document.createElement("canvas");
       canvas.width=video.videoWidth;canvas.height=video.videoHeight;
       canvas.getContext("2d").drawImage(video,0,0);
+      if(qrMode && rackTarget===null){ await scanWarehouseQR(canvas); return; }
       if(!worker)worker=await Tesseract.createWorker("eng");
       let result=await worker.recognize(canvas);
       // Handwriting is difficult for standard OCR; try a contrast-enhanced crop
@@ -216,7 +252,7 @@
     section.hidden=true;section.style.display="none";
     section.style.marginTop="16px";
     section.innerHTML='<h3>Camera Batch Scanner</h3><p class="hint">Scan up to 25 receiving labels using Scan now for each steady image. Scan each actual rack magnet and review every handwritten field before submitting through the existing Put Away Log. Photos stay on this device and are not uploaded.</p>'+
-      '<div class="actions"><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button><button type="button" id="cameraBatchManual">+ Add label manually</button></div>'+
+      '<div class="actions"><button type="button" id="cameraBatchQRMode">Mode: OCR labels</button><button type="button" id="cameraBatchStart" class="primary">Start camera</button><button type="button" id="cameraBatchCapture">Scan now</button><button type="button" id="cameraBatchClear">Clear batch</button><button type="button" id="cameraBatchManual">+ Add label manually</button></div>'+
       '<video id="cameraBatchVideo" playsinline muted style="width:100%;max-height:330px;background:#111;border-radius:8px;object-fit:contain"></video>'+
       '<p class="hint" id="cameraBatchStatus" role="status">Camera is stopped.</p><strong id="cameraBatchCount">0 / 25 labels</strong>'+
       '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item #</th><th>Location</th><th>Qty</th><th>Purchase order</th><th>Rack magnet</th><th>Item # check</th><th>Review</th><th></th></tr></thead><tbody id="cameraBatchRows"></tbody></table></div>'+
@@ -232,6 +268,7 @@
       if(opening){section.scrollIntoView({behavior:"smooth",block:"start"});}
       else{stop();}
     });
+    byId("cameraBatchQRMode").addEventListener("click",()=>{qrMode=!qrMode;byId("cameraBatchQRMode").textContent=qrMode?"Mode: WarehouseOS QR":"Mode: OCR labels";info(qrMode?"QR mode enabled. Aim at one WarehouseOS Putaway QR sticker and tap Scan now.":"OCR mode enabled.");});
     byId("cameraBatchStart").addEventListener("click",start);
     byId("cameraBatchCapture").addEventListener("click",capture);
     byId("cameraBatchManual").addEventListener("click",addManualLabel);
