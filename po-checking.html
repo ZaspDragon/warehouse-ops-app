@@ -11,6 +11,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     * { box-sizing: border-box; }
     .checker-shell { max-width: 1400px; margin: 0 auto; padding: 18px; }
@@ -22,7 +24,7 @@
     .metric strong { display: block; font-size: 1.75rem; }
     .wide { grid-column: 1 / -1; }
     .file-box { border: 2px dashed #aab4bf; border-radius: 12px; padding: 16px; background: #f8fafc; }
-    .line-editor { display: grid; grid-template-columns: minmax(125px, 1fr) minmax(90px, .5fr) minmax(115px, .65fr) auto; gap: 8px; align-items: end; margin-bottom: 8px; }
+    .line-editor { display: grid; grid-template-columns: repeat(5, minmax(105px,1fr)) auto; gap: 8px; align-items: end; margin-bottom: 8px; }
     .read-note { color: #59636e; font-size: .92rem; }
     .hidden { display: none !important; }
     @media (max-width: 760px) {
@@ -90,9 +92,10 @@
       <section class="card">
         <h2>Upload PO</h2>
         <div class="file-box">
-          <label>Excel or CSV PO file<input id="poFile" type="file" accept=".xlsx,.xls,.csv" /></label>
+          <label>PDF, Excel or CSV PO file<input id="poFile" type="file" accept=".pdf,.xlsx,.xls,.csv" /></label>
           <div class="page-actions"><button id="readPoBtn" class="primary" type="button">Read PO File</button></div>
           <p id="fileStatus" class="message">Nothing uploaded yet.</p>
+          <div id="pdfReviewArea" class="hidden" style="margin-top:12px"><p class="read-note">Scanned PDFs may require manual review. Use the document preview to verify PO item numbers and quantities before printing.</p><canvas id="pdfReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><p class="read-note" id="pdfReviewHint"></p><button id="pdfNextPage" type="button">Next PDF page</button></div>
         </div>
       </section>
 
@@ -114,7 +117,7 @@
 
       <section class="card" id="poQrSection">
         <h2>PO QR Sticker Printer</h2>
-        <p class="read-note">Print two codes per checked item: Chadwell item website lookup and completed checked quantity. Enter the verified finished quantity beside each item above before printing. No label data is written to Firestore.</p>
+        <p class="read-note">Print one WarehouseOS putaway QR and an optional Chadwell item-search QR on each sticker. Enter the verified finished quantity, quantity per box, and number of stickers above. The putaway QR fills item, PO, and box quantity; destination location must still be verified. No label data is written to Firestore.</p>
         <div class="form-grid"><label>Branch<input id="qrBranch" value="OH01" maxlength="12"></label><label>Website search link template<input id="qrSearchTemplate" value="https://www.chadwellsupply.com/search?q={item}" aria-describedby="qrWebsiteNotice"></label></div>
         <p class="read-note" id="qrWebsiteNotice">The Chadwell search URL is provisional; test a printed website QR with a real item before relying on it. Replace {item} in the template with the item number.</p>
         <div class="page-actions"><button id="previewPoLabelsBtn" type="button">Preview QR Stickers</button><button id="printPoLabelsBtn" class="primary" type="button">Print Checked Labels</button></div>
@@ -183,7 +186,7 @@
   function addLine(itemNumber = "", quantity = "") {
     const row = document.createElement("div");
     row.className = "line-editor";
-    row.innerHTML = `<label>Item Number<input class="item-number" value="${esc(itemNumber)}" placeholder="Item #" /></label><label>PO Qty<input class="item-qty" type="number" min="0" value="${esc(quantity)}" /></label><label>Finished Checked Qty<input class="checked-qty" type="number" min="0" step="1" placeholder="Verify actual qty" /></label><button class="danger remove-line" type="button">Remove</button>`;
+    row.innerHTML = `<label>Item Number<input class="item-number" value="${esc(itemNumber)}" placeholder="Item #" /></label><label>PO Qty<input class="item-qty" type="number" min="0" value="${esc(quantity)}" /></label><label>Finished Checked Qty<input class="checked-qty" type="number" min="0" step="1" placeholder="Verify actual qty" /></label><label>Qty per sticker<input class="box-qty" type="number" min="1" step="1" placeholder="Qty in each box" /></label><label>Sticker copies<input class="label-copies" type="number" min="1" max="100" step="1" value="1" /></label><button class="danger remove-line" type="button">Remove</button>`;
     row.querySelector(".remove-line").addEventListener("click", () => { row.remove(); updateTotals(); });
     row.querySelectorAll("input").forEach(input => input.addEventListener("input", updateTotals));
     $("manualLines").appendChild(row);
@@ -314,6 +317,7 @@
   });
 })();
 </script>
-<script src="po-qr-labels.js?v=20261113-1"></script>
+<script src="po-qr-labels.js?v=20261120-2"></script>
+<script src="po-pdf-import.js?v=20261120-1"></script>
 </body>
 </html>
