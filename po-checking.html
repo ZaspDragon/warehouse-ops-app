@@ -100,7 +100,7 @@
           <p id="fileStatus" class="message">Nothing uploaded yet.</p>
           <p class="read-note">On a phone, choose Camera or Photo Library to upload a PO photo. Photos are processed on your device; verify any detected text.</p>
           <div id="photoReviewArea" class="hidden" style="margin-top:12px"><h3>PO Photo Preview</h3><canvas id="photoReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><div class="page-actions"><button id="photoOcrBtn" type="button">Read Text From Photo</button><button id="photoItemsBtn" type="button">Add Detected Item Numbers for Review</button></div><label>Recognized text (review and correct)<textarea id="photoOcrText" rows="7" placeholder="Press Read Text From Photo. OCR can make mistakes."></textarea></label><p class="read-note">Detected item numbers are only drafts. You must enter and confirm quantities yourself before printing stickers or saving.</p></div>
-          <div id="pdfReviewArea" class="hidden" style="margin-top:12px"><p class="read-note">Scanned PDFs may require manual review. Use the document preview to verify PO item numbers and quantities before printing.</p><canvas id="pdfReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><p class="read-note" id="pdfReviewHint"></p><button id="pdfNextPage" type="button">Next PDF page</button><button id="pdfScanReceivingBtn" type="button" class="primary">Detect Item # / Bin / Qty Received (OCR)</button></div>
+          <div id="pdfReviewArea" class="hidden" style="margin-top:12px"><p class="read-note">Only page 1 of an uploaded PDF is used for PO line detection and sticker preparation. Review item numbers, bins, and received quantities before printing.</p><canvas id="pdfReviewCanvas" style="max-width:100%;height:auto;border:1px solid #cbd5e1;background:white"></canvas><p class="read-note" id="pdfReviewHint"></p><button id="pdfScanReceivingBtn" type="button" class="primary">Detect Item # / Bin / Qty Received (OCR)</button></div>
         </div>
       </section>
 
@@ -328,6 +328,6 @@
 })();
 </script>
 <script src="po-qr-labels.js?v=20261120-auto-2"></script>
-<script src="po-pdf-import.js?v=20261120-auto-2"></script>
+<script src="po-pdf-import.js?v=20261120-firstpage-1"></script>
 </body>
 </html>
