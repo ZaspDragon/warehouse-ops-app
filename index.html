@@ -163,7 +163,27 @@
             <button class="nav-entry tab" type="button" data-tab="settings">Settings</button>
           </div>
         </details>
-      </nav>      <!-- CYCLE COUNT PRODUCTION: integrated WarehouseOps tab -->
+      </nav>
+      <script>
+        (() => {
+          const nav = document.querySelector('#appPanel nav.tabs');
+          if (!nav) return;
+          const groups = [...nav.querySelectorAll('details.nav-group')];
+          groups.forEach(group => group.addEventListener('toggle', () => {
+            if (group.open) groups.forEach(other => { if (other !== group) other.open = false; });
+          }));
+          nav.addEventListener('click', event => {
+            if (event.target.closest('.nav-entry')) groups.forEach(group => { group.open = false; });
+          });
+          document.addEventListener('click', event => {
+            if (!nav.contains(event.target)) groups.forEach(group => { group.open = false; });
+          });
+          document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') groups.forEach(group => { group.open = false; });
+          });
+        })();
+      </script>
+      <!-- CYCLE COUNT PRODUCTION: integrated WarehouseOps tab -->
       <section id="cycleProductionTab" class="tab-panel">
         <div class="card" style="padding:8px">
           <iframe id="cycleProductionFrame" title="Cycle Count Production" loading="lazy"
