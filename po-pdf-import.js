@@ -182,7 +182,13 @@
       worker=await Tesseract.createWorker("eng");
       const result=await worker.recognize($("photoReviewCanvas"));
       $("photoOcrText").value=result.data.text||"";
-      $("fileStatus").textContent="Photo text detected. Review against the original image; handwriting may be inaccurate.";
+      const items=[...new Set(($("photoOcrText").value.match(/\b\d{6}\b/g)||[]))].slice(0,100);
+      if(items.length){
+        const rows=items.map(item=>({item,bin:"",received:null}));
+        populateReceivingRows(rows);
+        $("fileStatus").textContent="Automatically added "+items.length+" candidate item lines from the photo. Review bin and quantity before printing.";
+      }else $("fileStatus").textContent="No clear six-digit item numbers in photo. Review image and add lines manually.";
+      document.dispatchEvent(new CustomEvent("warehouseos:po-lines-updated"));
     } catch(e) {$("fileStatus").textContent="Could not read photo: "+e.message;}
     finally {if(worker)await worker.terminate();btn.disabled=false;}
   });
