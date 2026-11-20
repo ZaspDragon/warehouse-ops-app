@@ -11,6 +11,28 @@ label{font-size:13px;font-weight:bold}select,input{font:inherit;padding:9px;bord
 .tag{border-radius:5px;padding:3px 7px;background:#e8f3ff;font-weight:bold}.warning{background:#fff1d6}.done{background:#e4f7ec}.note{font-size:12px;color:#64748b}.hidden{display:none!important}
 @media(max-width:700px){body{padding:9px}.card{padding:11px}.nav{gap:5px}.nav a{font-size:12px;padding:8px}.stats>div{min-width:130px}}
 @media print{.nav,.toolbar,.filters,.no-print{display:none!important}body{background:white}.card{box-shadow:none;border:1px solid #ddd}}
+
+/* Excel-inspired daily aisle board: styles scoped to the board only */
+.aisle-board{color:#102e55;font-family:Arial,Helvetica,sans-serif}
+.aisle-board .board-title{background:#19385f;color:#fff;text-align:center;padding:24px 12px;font-size:clamp(21px,3vw,38px);font-weight:800;letter-spacing:.02em}
+.aisle-board .board-meta{display:grid;grid-template-columns:2fr 1fr 1fr;background:#dbeaf7;font-size:19px;font-weight:800;align-items:center}
+.aisle-board .board-meta>div{padding:15px 12px}
+.aisle-board .board-meta .board-total{background:#d7ead2;text-align:center}
+.aisle-board .board-meta input{max-width:160px;background:transparent;border:0;border-bottom:2px solid #19385f;border-radius:0;font-size:18px;color:#19385f}
+.aisle-board .board-scroll{overflow-x:auto;margin-top:22px}
+.aisle-board .board-table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:680px;white-space:normal;font-size:clamp(16px,2vw,27px)}
+.aisle-board .board-table th{position:static;background:#4677c2;color:white;text-align:center;padding:13px 6px;border:1px solid #24476e;font-size:clamp(13px,1.6vw,21px)}
+.aisle-board .board-table td{border:1px solid #84909b;text-align:center;padding:10px 5px;height:60px}
+.aisle-board .board-table tbody tr:hover td{filter:none;background-color:inherit}
+.aisle-board .board-table td.aisle-name{background:#dbeaf7;font-weight:800}
+.aisle-board .board-table td.board-put{background:#fff1c9}
+.aisle-board .board-table td.board-sum{background:#e1eedb}
+.aisle-board .board-table td.board-grand{background:#d6e8f6;font-weight:800}
+.aisle-board .board-table input.putaway-count{display:block;width:100%;min-width:52px;max-width:none;border:0;border-radius:0;background:transparent;text-align:center;font-size:inherit;padding:6px;color:#102e55}
+.aisle-board .board-subtitle{background:#19385f;color:white;text-align:center;font-size:20px;font-weight:800;padding:13px;margin-top:25px}
+.aisle-board .board-note{font-size:13px;color:#57697a;margin-top:12px}
+@media(max-width:700px){.aisle-board .board-meta{grid-template-columns:1fr 1fr}.aisle-board .board-meta .board-total{grid-column:1/-1}.aisle-board .board-title{padding:17px 9px}}
+@media print{.aisle-board .board-title,.aisle-board .board-subtitle,.aisle-board .board-table th{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body><main>
 <h1>WarehouseOps · Replenishment Management</h1>
 <p class="muted">OH01 report workspace · Import a fresh spreadsheet to populate these tabs. Imported records stay in this browser only.</p>
@@ -53,7 +75,33 @@ function summary(){const rows=currentRows(),zeros=rows.filter(zero);el("stats").
 function filters(){return '<div class="filters no-print"><label>Aisle <select id="aisleFilter"><option value="">All aisles</option>'+aisleOrder.map(a=>'<option>'+a+'</option>').join("")+'</select></label><label>Status <select id="statusFilter"><option value="">All</option><option value="pending">Pending</option><option value="done">Completed</option></select></label><label>Search item/bin <input id="q" placeholder="Item number or bin"></label></div>'}
 function filterRows(rows){let a=el("aisleFilter")?.value||"",s=el("statusFilter")?.value||"",q=(el("q")?.value||"").toLowerCase();return rows.filter(r=>(!a||r.aisle===a)&&(!s||(s==="done"?! !state.completed[r.id]:!state.completed[r.id]))&&(!q||[r.item,r.from,r.to].some(v=>String(v).toLowerCase().includes(q))))}
 function renderList(which){let rows=currentRows().filter(r=>which==="zeros"?zero(r):true).slice().sort(prioritySort);el("content").innerHTML='<h2>'+(which==="zeros"?"Zero-Primary Replenishments":"Replenishments by Aisle & Priority")+'</h2><p class="muted">Aisle is calculated from destination bin; priority comes from the imported report. Check off completed jobs below.</p>'+filters()+'<div id="listTable"></div>';function refresh(){el("listTable").innerHTML=table(filterRows(rows),rowCols())}["aisleFilter","statusFilter","q"].forEach(id=>el(id).addEventListener("input",refresh));refresh()}
-function board(){let rows=currentRows(),aisles=aisleOrder.map(a=>({aisle:a,replens:rows.filter(r=>r.aisle===a).length,complete:rows.filter(r=>r.aisle===a&&state.completed[r.id]).length}));el("content").innerHTML='<h2>Daily Replenishment & Putaway Aisle Board</h2><p class="muted">Replenishments come from the uploaded report. Putaway counts are entered separately; they are not guessed from replenishment records.</p>'+table(aisles,[["Aisle",r=>escape(r.aisle)],["Replenishments",r=>r.replens],["Completed",r=>r.complete],["Remaining",r=>r.replens-r.complete],["Putaways",r=>'<input class="putaway-count" data-aisle="'+r.aisle+'" type="number" min="0" style="width:90px" value="'+(num(state.putaways?.[r.aisle]))+'">'],["Total Work",r=>r.replens+num(state.putaways?.[r.aisle])]])+'<p class="note">Putaway entries are stored locally alongside the imported snapshot.</p>'}
+function board(){
+ const rows=currentRows();
+ state.putaways=state.putaways||{};
+ const counts={};
+ for(const a of aisleOrder)counts[a]=rows.filter(r=>r.aisle===a).length;
+ function put(a){return num(state.putaways[a])}
+ function block(left,right){
+  const top='<thead><tr>'+["AISLE","REPLENS","PUTAWAYS","TOTAL","AISLE","REPLENS","PUTAWAYS","TOTAL"].map(x=>'<th>'+x+'</th>').join("")+'</tr></thead>';
+  const max=Math.max(left.length,right.length);
+  let body="";
+  for(let i=0;i<max;i++){
+   const cells=a=>{
+    if(!a)return '<td></td><td></td><td></td><td></td>';
+    return '<td class="aisle-name">'+escape(a)+'</td><td>'+counts[a]+'</td><td class="board-put"><input class="putaway-count" aria-label="Putaways for aisle '+escape(a)+'" data-aisle="'+escape(a)+'" type="number" min="0" step="1" value="'+put(a)+'"></td><td class="board-sum">'+(counts[a]+put(a))+'</td>';
+   };
+   body+='<tr>'+cells(left[i])+cells(right[i])+'</tr>';
+  }
+  const total=as=>as.reduce((sum,a)=>sum+counts[a],0), putTotal=as=>as.reduce((sum,a)=>sum+put(a),0);
+  const summary=as=>'<td class="board-grand">TOTAL</td><td class="board-grand">'+total(as)+'</td><td class="board-put">'+putTotal(as)+'</td><td class="board-sum">'+(total(as)+putTotal(as))+'</td>';
+  return '<div class="board-scroll"><table class="board-table">'+top+'<tbody>'+body+'<tr>'+summary(left)+summary(right)+'</tr></tbody></table></div>';
+ }
+ const baseLeft=["A","B","C","D","E","F"],baseRight=["G","H","I","J","K","L"];
+ const extraLeft=["RA","RB","RC","RD","RE"],extraRight=["RF","RG","XA","XB","XC","XD","XE","XF","XG","FAB","OTHER"];
+ const total=rows.length;
+ el("content").innerHTML='<div class="aisle-board"><div class="board-title">DAILY REPLENISHMENT &amp; PUTAWAY AISLE BOARD</div><div class="board-meta"><div>Date: <strong>'+escape(state.date)+'</strong></div><div>Shift: <input id="boardShift" type="text" maxlength="35" aria-label="Shift" placeholder="Enter shift" value="'+escape(state.shift||"")+'"></div><div class="board-total">TOTAL REPLENS: '+total+'</div></div>'+block(baseLeft,baseRight)+'<div class="board-subtitle">EXTENDED / OVERFLOW AISLES</div>'+block(extraLeft,extraRight)+'<p class="board-note">Replenishments count the active imported BinMgr rows by destination aisle. Putaways are entered manually; totals update when an entry changes. This board does not change BinMgr quantities.</p></div>';
+ el("boardShift").addEventListener("change",e=>{state.shift=e.target.value.trim();persist()});
+}
 function importPage(){
 const headings=["Item","Select","Qty To Move","From Bin","To Bin","Qty Avail","Qty In Overstock","Primary Bin Min","Primary Bin Max","Priority"];
 el("content").innerHTML='<h2>Import Replenishments</h2><h3>Paste from BinMgr</h3><p>BinMgr columns are already set up below. Copy the rows from BinMgr and paste them into the box. The app automatically aligns them into the fixed-column preview. Full tables with headers also work.</p><div class="tablewrap" style="max-height:480px;overflow:auto"><table id="binMgrGrid"><thead><tr>'+headings.map(h=>'<th scope="col">'+escape(h)+'</th>').join("")+'</tr></thead><tbody id="binMgrGridBody"><tr><td colspan="10" class="muted">Paste your rows below. These headers are locked and will remain visible.</td></tr></tbody></table></div><label for="pasteBinMgr">Paste BinMgr restock rows</label><textarea id="pasteBinMgr" rows="6" style="display:block;width:100%;font:13px monospace;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Paste copied rows here (Ctrl+V). Column headings are already configured."></textarea><div class="toolbar no-print"><button id="previewPaste" class="primary">Arrange & Preview Rows</button><button id="commitPaste" disabled>Import Previewed Rows</button></div><div id="pasteFeedback" role="status" aria-live="polite"></div><hr><h3>Or upload an Excel / CSV report</h3><p>Existing Excel import remains available.</p><label>Choose file <input type="file" id="upload" accept=".xlsx,.xls,.csv"></label><p class="note">Import replaces the current replenishment snapshot and its completion/assignment marks in this browser. It does not update BinMgr or other WarehouseOps records.</p><div id="importFeedback"></div><hr><button class="no-print" id="clearReport">Clear Local Replenishment Snapshot</button>';
