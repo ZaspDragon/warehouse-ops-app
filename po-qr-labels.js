@@ -13,10 +13,9 @@
     }
     return url.href;
   }
-  function checkedUrl(line) {
-    const url = new URL(appOrigin.href);
-    [["po",line.po],["item",line.item],["qty",String(line.qty)],["branch",line.branch],["checker",line.checker],["date",line.date]].forEach(([key,value]) => url.searchParams.set(key,value));
-    return url.href;
+  function putawayPayload(line) {
+    // Offline-readable QR. Only contains checked label fields; it is not a proof of receipt.
+    return ["WOS1", line.po, line.item, String(line.qty), line.branch].join("|");
   }
   function readLines() {
     const po = $("poNumber").value.trim();
@@ -24,17 +23,24 @@
     const branch = $("qrBranch").value.trim().toUpperCase() || "OH01";
     const date = $("workDate").value;
     if (!po || !checker) throw Error("Enter the PO number and checker name first.");
-    const lines = [...document.querySelectorAll("#manualLines .line-editor")].map((row, index) => {
+    if (!/^[A-Za-z0-9-]{4,32}$/.test(po)) throw Error("PO number may contain only letters, digits and hyphens.");
+    const lines = [];
+    [...document.querySelectorAll("#manualLines .line-editor")].forEach((row, index) => {
       const item = row.querySelector(".item-number")?.value.trim() || "";
-      const input = row.querySelector(".checked-qty");
-      const raw = input?.value.trim() || "";
-      if (!item || !raw) return null;
-      const qty = Number(raw);
-      if (!Number.isSafeInteger(qty) || qty < 0) throw Error("Checked quantity must be a nonnegative whole number on line " + (index + 1) + ".");
-      return {item,qty,po,checker,branch,date,sequence:index+1};
-    }).filter(Boolean);
-    if (!lines.length) throw Error("Enter at least one verified Finished Checked Qty before printing.");
-    if (lines.length > 100) throw Error("Print at most 100 labels at once.");
+      const checkedRaw = row.querySelector(".checked-qty")?.value.trim() || "";
+      const boxRaw = row.querySelector(".box-qty")?.value.trim() || "";
+      const copiesRaw = row.querySelector(".label-copies")?.value.trim() || "";
+      if (!item && !checkedRaw && !boxRaw) return;
+      if (!/^\d{6}$/.test(item)) throw Error("Item must be six digits on line "+(index+1)+".");
+      const checked = Number(checkedRaw), box = Number(boxRaw), copies = Number(copiesRaw);
+      if (!checkedRaw || !Number.isSafeInteger(checked) || checked < 1) throw Error("Enter a positive verified Finished Checked Qty on line "+(index+1)+".");
+      if (!boxRaw || !Number.isSafeInteger(box) || box < 1) throw Error("Enter Qty per sticker on line "+(index+1)+".");
+      if (!Number.isSafeInteger(copies) || copies < 1 || copies > 100) throw Error("Sticker copies must be 1–100 on line "+(index+1)+".");
+      if (box * copies > checked) throw Error("Line "+(index+1)+": stickers total more than verified checked quantity. Adjust copies or box quantity.");
+      for(let i=0;i<copies;i++) lines.push({item,qty:box,po,checker,branch,date,sequence:index+1,copy:i+1,copies,checked});
+    });
+    if (!lines.length) throw Error("Complete at least one verified item line, per-box qty and sticker copies.");
+    if (lines.length > 100) throw Error("Print at most 100 stickers in one batch.");
     return lines;
   }
   function addQR(container, value) {
@@ -43,7 +49,7 @@
   function preview() {
     if (typeof QRCode === "undefined") throw Error("QR code generator did not load. Check internet access and refresh.");
     const lines = readLines();
-    const urls = lines.map(line => ({...line,website:websiteUrl(line.item),checked:checkedUrl(line)}));
+    const urls = lines.map(line => ({...line,website:websiteUrl(line.item),checked:putawayPayload(line)}));
     const out = $("poQrLabels");
     out.replaceChildren();
     urls.forEach(line => {
@@ -51,14 +57,14 @@
       section.className = "qr-label";
       section.innerHTML = '<div class="qr-large">CHADWELL SUPPLY · '+esc(line.branch)+'</div>'+
         '<div class="qr-small"><b>PO:</b> '+esc(line.po)+' &nbsp; <b>ITEM:</b> '+esc(line.item)+'</div>'+
-        '<div class="qr-large">CHECKED: '+esc(line.qty)+' EA</div>'+
-        '<div class="qr-pair"><div><div>CHADWELL ITEM SEARCH</div><div class="qr-website"></div></div><div><div>FINISHED CHECKED QTY</div><div class="qr-checked"></div></div></div>'+
-        '<div class="qr-small">Checker: '+esc(line.checker)+' · '+esc(line.date)+' · Line '+line.sequence+'</div>';
+        '<div class="qr-large">BOX QTY: '+esc(line.qty)+' EA</div>'+
+        '<div class="qr-pair"><div><div>CHADWELL ITEM SEARCH</div><div class="qr-website"></div></div><div><div>WAREHOUSEOS PUTAWAY QR</div><div class="qr-checked"></div></div></div>'+
+        '<div class="qr-small">Checker: '+esc(line.checker)+' · '+esc(line.date)+' · Line '+line.sequence+' · Sticker '+line.copy+'/'+line.copies+'</div>';
       out.appendChild(section);
       addQR(section.querySelector(".qr-website"),line.website);
       addQR(section.querySelector(".qr-checked"),line.checked);
     });
-    status("Ready: "+urls.length+" sticker(s). Website search QR uses a provisional link; test it on Chadwell Supply.");
+    status("Ready: "+urls.length+" box sticker(s). Scan WarehouseOS Putaway QR in the Camera Batch Scanner. Website QR remains a provisional item search link.");
     return urls.length;
   }
   $("previewPoLabelsBtn")?.addEventListener("click", () => {try{preview();}catch(e){status(e.message)}});
