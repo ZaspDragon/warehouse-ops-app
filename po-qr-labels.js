@@ -15,32 +15,32 @@
   }
   function putawayPayload(line) {
     // Offline-readable QR. Only contains checked label fields; it is not a proof of receipt.
-    return ["WOS1", line.po, line.item, String(line.qty), line.branch].join("|");
+    return ["WOS2", line.po, line.item, String(line.qty), line.branch, line.bin].join("|");
   }
   function readLines() {
-    const po = $("poNumber").value.trim();
-    const checker = $("checkerName").value.trim();
-    const branch = $("qrBranch").value.trim().toUpperCase() || "OH01";
-    const date = $("workDate").value;
-    if (!po || !checker) throw Error("Enter the PO number and checker name first.");
-    if (!/^[A-Za-z0-9-]{4,32}$/.test(po)) throw Error("PO number may contain only letters, digits and hyphens.");
-    const lines = [];
-    [...document.querySelectorAll("#manualLines .line-editor")].forEach((row, index) => {
-      const item = row.querySelector(".item-number")?.value.trim() || "";
-      const checkedRaw = row.querySelector(".checked-qty")?.value.trim() || "";
-      const boxRaw = row.querySelector(".box-qty")?.value.trim() || "";
-      const copiesRaw = row.querySelector(".label-copies")?.value.trim() || "";
-      if (!item && !checkedRaw && !boxRaw) return;
-      if (!/^\d{6}$/.test(item)) throw Error("Item must be six digits on line "+(index+1)+".");
-      const checked = Number(checkedRaw), box = Number(boxRaw), copies = Number(copiesRaw);
-      if (!checkedRaw || !Number.isSafeInteger(checked) || checked < 1) throw Error("Enter a positive verified Finished Checked Qty on line "+(index+1)+".");
-      if (!boxRaw || !Number.isSafeInteger(box) || box < 1) throw Error("Enter Qty per sticker on line "+(index+1)+".");
-      if (!Number.isSafeInteger(copies) || copies < 1 || copies > 100) throw Error("Sticker copies must be 1–100 on line "+(index+1)+".");
-      if (box * copies > checked) throw Error("Line "+(index+1)+": stickers total more than verified checked quantity. Adjust copies or box quantity.");
-      for(let i=0;i<copies;i++) lines.push({item,qty:box,po,checker,branch,date,sequence:index+1,copy:i+1,copies,checked});
+    const po=$("poNumber").value.trim(), checker=$("checkerName").value.trim();
+    const branch=$("qrBranch").value.trim().toUpperCase()||"OH01";
+    const date=$("workDate").value;
+    if(!po || !checker) throw Error("Enter the PO number and checker name first.");
+    if(!/^[A-Za-z0-9-]{4,32}$/.test(po)) throw Error("Invalid PO number.");
+    const lines=[];
+    [...document.querySelectorAll("#manualLines .line-editor")].forEach((row,index)=>{
+      const item=row.querySelector(".item-number")?.value.trim()||"";
+      const bin=(row.querySelector(".po-bin")?.value||"").trim().toUpperCase();
+      const qtyRaw=row.querySelector(".checked-qty")?.value.trim()||"";
+      const copiesRaw=row.querySelector(".label-copies")?.value.trim()||"";
+      if(!item && !qtyRaw && !bin) return;
+      if(!/^\d{6}$/.test(item)) throw Error("Line "+(index+1)+": verify the six-digit Item #.");
+      if(!/^[A-Z]{1,2}-\d{2}(?:-\d{1,2}){0,2}$/.test(bin)) throw Error("Line "+(index+1)+": verify the Bin (for example G-32-1 or RD-01).");
+      const qty=Number(qtyRaw),copies=Number(copiesRaw);
+      if(!qtyRaw||!Number.isSafeInteger(qty)||qty<1) throw Error("Line "+(index+1)+": confirm Qty Received before printing.");
+      if(!Number.isSafeInteger(copies)||copies<1||copies>100)throw Error("Line "+(index+1)+": enter 1–100 stickers.");
+      if(copies>qty)throw Error("Line "+(index+1)+": cannot split "+qty+" units across "+copies+" positive-quantity labels.");
+      const base=Math.floor(qty/copies),extra=qty%copies;
+      for(let i=0;i<copies;i++)lines.push({item,bin,qty:base+(i<extra?1:0),po,checker,branch,date,sequence:index+1,copy:i+1,copies,received:qty});
     });
-    if (!lines.length) throw Error("Complete at least one verified item line, per-box qty and sticker copies.");
-    if (lines.length > 100) throw Error("Print at most 100 stickers in one batch.");
+    if(!lines.length) throw Error("Review at least one item, bin and received quantity before printing.");
+    if(lines.length>100) throw Error("Print at most 100 stickers at a time.");
     return lines;
   }
   function addQR(container, value) {
@@ -57,14 +57,14 @@
       section.className = "qr-label";
       section.innerHTML = '<div class="qr-large">CHADWELL SUPPLY · '+esc(line.branch)+'</div>'+
         '<div class="qr-small"><b>PO:</b> '+esc(line.po)+' &nbsp; <b>ITEM:</b> '+esc(line.item)+'</div>'+
-        '<div class="qr-large">BOX QTY: '+esc(line.qty)+' EA</div>'+
+        '<div class="qr-small"><b>RECEIVING BIN:</b> '+esc(line.bin)+'</div>'+ '<div class="qr-large">STICKER QTY: '+esc(line.qty)+' EA</div>'+
         '<div class="qr-pair"><div><div>CHADWELL ITEM SEARCH</div><div class="qr-website"></div></div><div><div>WAREHOUSEOS PUTAWAY QR</div><div class="qr-checked"></div></div></div>'+
         '<div class="qr-small">Checker: '+esc(line.checker)+' · '+esc(line.date)+' · Line '+line.sequence+' · Sticker '+line.copy+'/'+line.copies+'</div>';
       out.appendChild(section);
       addQR(section.querySelector(".qr-website"),line.website);
       addQR(section.querySelector(".qr-checked"),line.checked);
     });
-    status("Ready: "+urls.length+" box sticker(s). Scan WarehouseOS Putaway QR in the Camera Batch Scanner. Website QR remains a provisional item search link.");
+    status("Ready: "+urls.length+" sticker(s), with received quantities distributed across them. Scan WarehouseOS Putaway QR in the Camera Batch Scanner. Website QR remains a provisional item search link.");
     return urls.length;
   }
   $("previewPoLabelsBtn")?.addEventListener("click", () => {try{preview();}catch(e){status(e.message)}});
