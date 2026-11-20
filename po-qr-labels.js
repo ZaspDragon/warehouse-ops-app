@@ -67,6 +67,41 @@
     status("Ready: "+urls.length+" sticker(s), with received quantities distributed across them. Scan WarehouseOS Putaway QR in the Camera Batch Scanner. Website QR remains a provisional item search link.");
     return urls.length;
   }
+
+  // Always show a live sticker preparation view after importing a PO.
+  // A draft is NOT a printable/scan-ready label until fields are verified.
+  function updateDraftPreview(){
+    const rows=[...document.querySelectorAll("#manualLines .line-editor")].filter(r=>r.querySelector(".item-number")?.value.trim());
+    const out=$("poQrLabels");if(!out)return;
+    if(!rows.length){out.replaceChildren();status("Upload a PO to create sticker drafts automatically.");return;}
+    const po=$("poNumber")?.value.trim()||"PO pending";
+    out.replaceChildren();
+    let complete=0;
+    for(const [i,row] of rows.entries()){
+      const item=row.querySelector(".item-number")?.value.trim()||"Needs review";
+      const bin=row.querySelector(".po-bin")?.value.trim()||"Needs review";
+      const raw=row.querySelector(".checked-qty")?.value.trim()||"";
+      const copies=Number(row.querySelector(".label-copies")?.value||1);
+      const valid=/^\d{6}$/.test(item)&&/^[A-Z]{1,2}-\d{2}(?:-\d{1,2}){0,2}$/.test(bin)&&/^[1-9]\d*$/.test(raw)&&Number(raw)>=copies&&copies>=1&&copies<=100;
+      if(valid)complete++;
+      const card=document.createElement("section");
+      card.className="qr-label";
+      card.innerHTML='<div class="qr-large">STICKER DRAFT · '+(i+1)+'</div>'+
+        '<div class="qr-small"><b>PO:</b> '+esc(po)+'</div>'+
+        '<div class="qr-large">ITEM '+esc(item)+'</div>'+
+        '<div class="qr-small"><b>BIN:</b> '+esc(bin)+'</div>'+
+        '<div class="qr-large">QTY RECEIVED: '+esc(raw||"Needs review")+'</div>'+
+        '<div class="qr-small"><b>Sticker copies:</b> '+esc(String(copies))+'</div>'+
+        '<div class="qr-small"><b>Status:</b> '+(valid?"Fields ready — verify against PO":"Review missing or invalid fields")+'</div>';
+      out.appendChild(card);
+    }
+    status(rows.length+" PO sticker draft(s) loaded automatically. "+complete+" line(s) have complete fields. Verify against the PO, enter checker name, then Preview QR Stickers or Print Checked Labels.");
+  }
+  document.addEventListener("warehouseos:po-lines-updated",updateDraftPreview);
+  $("manualLines")?.addEventListener("input",updateDraftPreview);
+  $("manualLines")?.addEventListener("change",updateDraftPreview);
+  $("poNumber")?.addEventListener("input",updateDraftPreview);
+  $("poNumberUpload")?.addEventListener("input",updateDraftPreview);
   $("previewPoLabelsBtn")?.addEventListener("click", () => {try{preview();}catch(e){status(e.message)}});
   $("printPoLabelsBtn")?.addEventListener("click", () => {
     try {preview(); window.setTimeout(() => window.print(), 160);}
