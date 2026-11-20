@@ -23,7 +23,8 @@
     const first = await pdf.getPage(1);
     const text = (await first.getTextContent()).items.map(x=>x.str).join(" ");
     foundPo = (text.match(/\b(?:SPO|PO)[- ]?\d{5,12}\b/i)||[])[0] || "";
-    if (foundPo && !$("poNumber").value.trim()) $("poNumber").value=foundPo.replace(/\s/g,"");
+    if (foundPo && !$("poNumber").value.trim()) { $("poNumber").value=foundPo.replace(/\s/g,""); $("poNumberUpload").value=$("poNumber").value; }
+    if(!$("poNumber").value.trim()) {const fromName=(file.name.match(/(?:SPO|PO)[-_ ]?\d{5,12}/i)||[])[0];if(fromName){$("poNumber").value=fromName.replace(/[-_ ]/g,"");$("poNumberUpload").value=$("poNumber").value;}}
     const lines = text.split(/\n/).map(x=>x.trim());
     const candidates = [];
     // Digitally-generated PO documents may contain structured text lines.
@@ -89,42 +90,52 @@
       // between the description and BIN column. Separate crops prevent
       // unrelated digits in descriptions, ordered quantity and PO metadata
       // from being used as labels.
-      const itemCrop=crop(.435,.225,.585,.555);
-      let itemResult=await worker.recognize(itemCrop);
-      const textFor=result=>String(result.data?.text||"").toUpperCase();
-      let itemText=textFor(itemResult);
-      const getItems=text=>[...new Set((text.match(/(?:^|[^0-9])([0-9]{6})(?=[^0-9]|$)/gm)||[])
-        .map(x=>(x.match(/[0-9]{6}/)||[])[0]).filter(Boolean))];
-      let items=getItems(itemText);
-      // A wider crop helps if the PDF was scanned a little off-center.
-      if(items.length<2){
-        const alternate=await worker.recognize(crop(.39,.23,.61,.565));
-        const found=getItems(textFor(alternate));
-        if(found.length>items.length){items=found;itemResult=alternate;itemText=textFor(alternate);}
-      }
-      // Use line positions to pair bin/quantity with the correct item when
-      // OCR supplies word boxes; otherwise import item-only draft rows.
-      const words=itemResult.data?.words||[];
-      const matches=words.filter(w=>/^\d{6}$/.test(String(w.text||"").replace(/\s/g,"")));
-      let rows=items.map(item=>({
-        item,bin:"",received:null,
-        y:(matches.find(w=>String(w.text||"").replace(/\s/g,"")===item)?.bbox?.y0??NaN)/(itemResult===undefined?1:itemCrop.height)
+      // The source receiving form has five horizontal rows. Read the
+      // printed item-number column first, then read bin and received qty
+      // independently within each matched row. This avoids requiring a
+      // perfect five-item OCR result from every column.
+      const itemCrop=crop(.305,.235,.445,.555);
+      const itemResult=await worker.recognize(itemCrop);
+      const itemText=String(itemResult.data?.text||"").toUpperCase();
+      const getItems=text=>[...new Set((text.match(/\b\d{6}\b/g)||[]))];
+      const itemWords=(itemResult.data?.words||[]).filter(w=>/^\d{6}$/.test(String(w.text||"").trim()));
+      const itemPositions=itemWords.map(w=>({
+        item:String(w.text).trim(),
+        y:.235+((w.bbox.y0+w.bbox.y1)/2)/itemCrop.height*.32
       }));
-      // Received values are handwritten, therefore never take ordered or
-      // remaining numbers as a fallback. Keep missing values blank.
-      $("fileStatus").textContent="Found "+items.length+" possible item numbers; reading bin column…";
-      const binResult=await worker.recognize(crop(.58,.225,.74,.555));
-      const binText=textFor(binResult);
-      const binCandidates=(binText.match(/[A-Z]{1,2}\s*[-]?\s*\d{1,2}\s*(?:-\s*\d{1,2}){1,2}/g)||[])
-        .map(v=>v.replace(/\s+/g,"").toUpperCase());
-      // Associate bin values by the visible row order only when their counts match.
-      if(binCandidates.length===rows.length)rows.forEach((row,i)=>row.bin=binCandidates[i]);
-      // OCR the far right edge of the table separately. These handwritten
-      // quantities must still be confirmed manually by the checker.
-      const qtyResult=await worker.recognize(crop(.875,.225,.99,.555));
-      const qtyCandidates=textFor(qtyResult).split(/\n+/).map(v=>v.replace(/[^0-9]/g,""))
-        .filter(v=>/^\d{1,5}$/.test(v)).map(Number);
-      if(qtyCandidates.length===rows.length)rows.forEach((row,i)=>row.received=qtyCandidates[i]);
+      // The report's five row centers, measured from the photographed
+      // receiving form. Used only as a fallback when OCR loses word boxes.
+      const rowCenters=[.267,.324,.382,.435,.493];
+      const itemList=getItems(itemText);
+      let rows=itemList.map((item,index)=>({
+        item,bin:"",received:null,
+        y:itemPositions.find(w=>w.item===item)?.y ?? rowCenters[index] ?? NaN
+      }));
+      if(rows.length<2){
+        const broad=await worker.recognize(crop(.28,.23,.47,.57));
+        const more=getItems(String(broad.data?.text||""));
+        if(more.length>rows.length)rows=more.map((item,index)=>({
+          item,bin:"",received:null,y:rowCenters[index]??NaN
+        }));
+      }
+      const readField=async (x1,x2,y0,y1)=>{
+        const result=await worker.recognize(crop(x1,y0,x2,y1));
+        return String(result.data?.text||"").toUpperCase().trim();
+      };
+      for(let i=0;i<rows.length;i++){
+        const r=rows[i];
+        if(!Number.isFinite(r.y))continue;
+        const top=Math.max(.238,r.y-.022),bottom=Math.min(.547,r.y+.022);
+        $("fileStatus").textContent="Reading bin and received quantity for item "+r.item+" ("+(i+1)+"/"+rows.length+")…";
+        const binText=await readField(.447,.575,top,bottom);
+        const m=binText.replace(/\s+/g,"").match(/[A-Z]{1,2}-?\d{1,2}(?:-\d{1,2}){1,2}/);
+        if(m)r.bin=m[0];
+        // Only read handwritten quantity from the actual received column.
+        // Do not substitute ordered or remaining values from other columns.
+        const qtyText=await readField(.914,.997,top,bottom);
+        const candidates=qtyText.match(/\d{1,5}/g)||[];
+        if(candidates.length===1)r.received=Number(candidates[0]);
+      }
       if(!rows.length){
         $("fileStatus").textContent="No six-digit item numbers confidently found. Try a clearer scan, or add the five rows manually. OCR text (Item #): "+(itemText.trim().slice(0,160)||"[blank]");
         return;
