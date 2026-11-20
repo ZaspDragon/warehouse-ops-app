@@ -14,12 +14,36 @@
   <link rel="stylesheet" href="responsive-fix.css?v=20260604-1" />
 
   <style>
-    .tabs .tab {
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 16px;
-      font-weight: 800;
-      line-height: 1.2;
-      text-decoration: none;
+    /* Compact professional navigation; existing tab data attributes remain unchanged. */
+    #appPanel .tabs {
+      display:flex;
+      flex-wrap:wrap;
+      align-items:center;
+      gap:6px;
+      padding:10px 0;
+      margin-bottom:12px;
+    }
+    #appPanel .tabs .tab {
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      font-size:12px;
+      font-weight:600;
+      letter-spacing:.01em;
+      line-height:1.2;
+      text-decoration:none;
+      white-space:nowrap;
+      padding:9px 12px;
+      min-height:34px;
+      width:auto;
+      flex:0 0 auto;
+      border:1px solid #cbd5e1;
+      border-radius:8px;
+      box-shadow:none;
+    }
+    #appPanel .tabs .tab:hover {border-color:#8ea5c0;}
+    #appPanel .tabs .tab.active {font-weight:700;}
+    @media (max-width:640px) {
+      #appPanel .tabs {gap:5px;}
+      #appPanel .tabs .tab {font-size:11px;padding:8px 10px;min-height:32px;white-space:normal;}
     }
   </style>
 
