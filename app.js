@@ -3456,6 +3456,26 @@ function renderLogs() {
   renderLeaderboard();
 }
 
+function putawayBatchTimeSummary(group = {}) {
+  // One submission is one saved record; keep its time separate from the daily total.
+  const batches = (group.sourceRecords || [])
+    .map(record => {
+      const activeLines = (record.lines || []).filter(line => line.active !== false);
+      if (!activeLines.length) return null;
+      const savedAt = record.submittedAt || record.createdAt || activeLines[0]?.submittedAt;
+      const date = parseDateValue(savedAt);
+      const time = date && !Number.isNaN(date.getTime())
+        ? date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })
+        : "Time unavailable";
+      return { time, count: activeLines.length, sortAt: date ? date.getTime() : 0 };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.sortAt - a.sortAt);
+  return batches.map(batch =>
+    `<div>${escapeHtml(batch.time)} — ${batch.count} putaway${batch.count === 1 ? "" : "s"}</div>`
+  ).join("");
+}
+
 function renderPutawayLogs() {
   const body = $("putawayLogBody");
   if (!body) return;
@@ -3477,7 +3497,7 @@ function renderPutawayLogs() {
       `
       <tr>
         <td>${escapeHtml(group.workDate || "")}</td>
-        <td>${escapeHtml(formatDateTime(lastPutawaySubmittedAt(group)))}</td>
+        <td>${putawayBatchTimeSummary(group)}</td>
         <td>${escapeHtml(group.employeeName || "")}</td>
         <td>${group.totalLines || 0}</td>
         <td>${group.totalQty || 0}</td>
