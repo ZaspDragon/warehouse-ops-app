@@ -7,6 +7,13 @@
   <title>Cycle Count Production</title>
   <link rel="stylesheet" href="styles.css" />
   <style>.aisle-breakdown-table{min-width:600px}.aisle-share-meter{height:6px;margin-top:5px;background:#e8edf4;border-radius:8px;overflow:hidden;max-width:180px}.aisle-share-meter span{display:block;height:100%;background:#2563eb;border-radius:8px}</style>
+<style>
+/* Keep legacy controls in the document for compatibility, but use the batch workflow by default. */
+body:not(.show-legacy) .legacy-cycle-section{display:none!important}
+#batchBreakdown .history-table{width:100%;min-width:520px}
+#batchBreakdown select{width:100%;min-width:140px}
+#batchEmployeeTotals .kpi{min-width:130px}
+</style>
 </head>
 <body>
   <main class="app-shell">
@@ -38,7 +45,7 @@
       </div>
     </header>
 
-    <section class="card team-members-section">
+    <section class="card team-members-section legacy-cycle-section">
       <div class="section-heading">
         <div>
           <h2>Team Members</h2>
@@ -96,10 +103,10 @@
 
     <section class="card">
       <div class="section-heading">
-        <h2>Inventory File</h2>
+        <h2>1. Upload Cycle Count Detail</h2>
         <span id="fileSourceStatus" class="status">Ready</span>
       </div>
-      <fieldset class="file-source-group">
+      <fieldset class="file-source-group legacy-cycle-section">
         <legend>Inventory File Source</legend>
         <label class="radio-option"><input type="radio" name="fileSource" value="manual" checked /><span>Manual Upload</span></label>
       </fieldset>
@@ -108,14 +115,14 @@
         <span id="expectedFilename" class="file-hint">Upload the original, unfiltered Cycle Count Detail Excel report. Batch totals are calculated automatically.</span>
         <input id="sourceFile" type="file" accept=".xlsx,.xls" />
       </label>
-      <div id="sourceControls" class="controls hidden">
+      <div id="sourceControls" class="controls hidden legacy-cycle-section">
         <label>Report sheet<select id="sourceSheet"></select></label>
         <label>Created-count / Batch column<select id="batchColumn"></select></label>
       </div>
       <div id="sourceStatus" class="status">Waiting for file</div>
     </section>
 
-    <section class="card already-counted-section">
+    <section class="card already-counted-section legacy-cycle-section">
       <div class="section-heading">
         <div>
           <span class="step">2</span>
@@ -159,7 +166,7 @@
       <div id="alreadyCountedPreview" class="hidden"></div>
     </section>
 
-    <section id="resultsSection" class="card hidden">
+    <section id="resultsSection" class="card hidden legacy-cycle-section">
       <div class="section-heading">
         <div><span class="step">3</span><h2>Review Production</h2></div>
         <span id="recordSummary" class="status success"></span>
@@ -178,16 +185,17 @@
       <div id="saveMessage" class="message hidden" role="status"></div>
     </section>
 
-    <section id="batchBreakdown" class="card hidden">
-      <div class="section-heading"><div><h2>Batch ID Breakdown</h2><small>Assign the employee who completed each batch.</small></div><span id="batchSummary" class="status"></span></div>
-      <p class="privacy-note">Upload the original report without filtering Excel. Totals use Times Counted. Explicit other-branch records are excluded automatically; unknown branch records are flagged. Employee selections are saved on this device and remain separate from existing production credit.</p>
+    <section class="card"><h2>Employees</h2>      <details style="margin:12px 0"><summary><strong>Manage batch employee names</strong></summary><div class="action-row" style="margin:12px 0"><label>Employee name <input id="batchRosterName" type="text" autocomplete="off" placeholder="New employee name"></label><button id="batchRosterAdd" class="secondary" type="button">Add employee</button></div><div id="batchRosterList"></div><p class="privacy-note">Removing a name hides it from new batch selections without erasing saved assignments. This list is specific to the selected branch.</p></details></section>
+    <section id="batchBreakdown" class="card">
+      <div class="section-heading"><div><h2>2. Assign Batch IDs</h2><small>Assign the employee who completed each batch.</small></div><span id="batchSummary" class="status"></span></div>
+      <p class="privacy-note">Upload the original report without filtering Excel. Totals use Times Counted. Explicit other-branch records are excluded automatically; unknown branch records are flagged. Choose the employee for each batch. Totals below update immediately. Selections save on this device.</p>
       <div class="table-wrap"><table class="history-table"><thead><tr><th>Batch ID</th><th>Report Lines</th><th>Total Counts</th><th>Employee</th></tr></thead><tbody id="batchBreakdownRows"></tbody></table></div>
-      <details style="margin:12px 0"><summary><strong>Manage batch employee names</strong></summary><div class="action-row" style="margin:12px 0"><label>Employee name <input id="batchRosterName" type="text" autocomplete="off" placeholder="New employee name"></label><button id="batchRosterAdd" class="secondary" type="button">Add employee</button></div><div id="batchRosterList"></div><p class="privacy-note">Removing a name hides it from new batch selections without erasing saved assignments. This list is specific to the selected branch.</p></details>
+
       <p id="batchImportNotice" class="privacy-note" role="status"></p>
-      <div id="batchEmployeeTotals" class="kpi-strip" style="margin-top:16px"></div>
+      <p id="batchEmpty" class="privacy-note">Upload your Excel file to see batches here.</p>
     </section>
 
-    <section id="aisleBreakdown" class="card hidden" aria-label="Aisle Count Summary">
+    <section id="aisleBreakdown" class="card hidden legacy-cycle-section" aria-label="Aisle Count Summary">
       <div class="section-heading">
         <div><h2>Aisle Count Summary</h2></div>
         <span id="aisleBreakdownStatus" class="status">Waiting for report</span>
@@ -202,7 +210,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card legacy-cycle-section">
       <div class="section-heading">
         <div><span class="step">4</span><h2>Saved Results</h2></div>
         <span class="status">Saved on this device</span>
@@ -216,7 +224,7 @@
       <p class="privacy-note">Saved results stay in this browser's local storage.</p>
     </section>
 
-    <section id="dailyJournal" class="card">
+    <section id="dailyJournal" class="card legacy-cycle-section">
       <div class="section-heading">
         <div><h2>Daily Production &amp; Employee Notes</h2><small>Review each workday's count totals, goal completion, and notes.</small></div>
       </div>
@@ -239,10 +247,16 @@
       <p id="dailyJournalMessage" role="status" style="min-height:1.5em"></p>
     </section>
 
-    <section class="card assignments">
+    <section class="card assignments legacy-cycle-section">
       <h2>Aisle Assignments</h2>
       <div id="assignmentGrid" class="assignment-grid"></div>
     </section>
+    <section class="card" id="batchTotalsSection">
+      <h2>3. Employee Production Totals</h2>
+      <div class="table-wrap"><table class="history-table" style="width:100%"><thead><tr><th>Employee</th><th>Batches Assigned</th><th>Total Counts</th></tr></thead><tbody id="batchEmployeeTotals"></tbody><tfoot id="batchGrandTotal"></tfoot></table></div>
+      <p id="batchTotalsStatus" class="privacy-note">Upload a report to begin.</p>
+    </section>
+    <details class="card"><summary>Legacy production tools (optional)</summary><button type="button" class="secondary" id="legacyToggle">Show legacy tools</button></details>
   </main>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -319,10 +333,14 @@
   function renderBatches() {
     renderRoster();
     const section = el("batchBreakdown");
-    section.classList.toggle("hidden", !state.workbook);
-    if (!state.workbook || !el("sourceSheet").value) return;
+    el("batchEmpty").hidden = Boolean(state.workbook && el("sourceSheet").value);
+    if (!state.workbook || !el("sourceSheet").value) {
+      el("batchBreakdownRows").replaceChildren(); el("batchEmployeeTotals").replaceChildren(); el("batchGrandTotal").replaceChildren();
+      el("batchSummary").textContent = ""; el("batchImportNotice").textContent = ""; el("batchTotalsStatus").textContent = "Upload a report to begin.";
+      return;
+    }
     const body = el("batchBreakdownRows"), summary = el("batchSummary"), totals = el("batchEmployeeTotals");
-    body.replaceChildren(); totals.replaceChildren();
+    body.replaceChildren(); totals.replaceChildren(); el("batchGrandTotal").replaceChildren(); el("batchTotalsStatus").textContent = "";
     const matrix = workbookMatrix(state.workbook, el("sourceSheet").value);
     const groups = new Map();
     const names = activeNames();
@@ -355,24 +373,31 @@
       groups.set(batch,g);
     }
     el("batchImportNotice").textContent = excluded.toLocaleString()+" other-branch counts excluded. "+unknown.toLocaleString()+" counts have no confirmed branch; included for review, not verified as "+branchCode+".";
-    if (!cols) { summary.textContent = "No compatible detail columns found. Try another report sheet."; return; }
+    if (!cols) { summary.textContent = "No compatible detail columns found. Open legacy tools to select another worksheet."; el("batchTotalsStatus").textContent = "No report totals available."; return; }
     const entries = [...groups.values()].sort((a,b) => a.batch.localeCompare(b.batch,undefined,{numeric:true}));
     let total = 0;
     const employeeTotals = new Map();
     function drawTotals() {
       employeeTotals.clear();
+      for (const name of names) employeeTotals.set(name,{count:0,batches:0});
+      let assigned = 0, unassigned = 0;
       for (const g of entries) {
-        const employee = Object.prototype.hasOwnProperty.call(saved,g.key) ? (saved[g.key] || "Unassigned") : (g.suggested || "Unassigned");
-        employeeTotals.set(employee,(employeeTotals.get(employee)||0)+g.count);
+        const employee = saved[g.key] || "Unassigned";
+        const t = employeeTotals.get(employee) || {count:0,batches:0};
+        t.count += g.count; t.batches++; employeeTotals.set(employee,t);
+        if (employee === "Unassigned") unassigned += g.count; else assigned += g.count;
       }
-      if (missing) employeeTotals.set("Missing Batch ID",missing);
+      if (missing) employeeTotals.set("Missing Batch ID",{count:missing,batches:0});
       totals.replaceChildren();
-      for (const [name,count] of employeeTotals) {
-        const card = document.createElement("div"); card.className = "kpi";
-        const label = document.createElement("span"); label.textContent = name;
-        const value = document.createElement("strong"); value.textContent = count.toLocaleString();
-        card.append(label,value); totals.append(card);
+      function appendRow(parent, values, tag="td") {
+        const row = document.createElement("tr");
+        for (const value of values) { const cell = document.createElement(tag); cell.textContent = value; row.append(cell); }
+        parent.append(row);
       }
+      for (const [name,t] of employeeTotals) appendRow(totals,[name,t.batches.toLocaleString(),t.count.toLocaleString()]);
+      const grand = el("batchGrandTotal"); grand.replaceChildren();
+      appendRow(grand,["Grand total",entries.length.toLocaleString(),(assigned+unassigned+missing).toLocaleString()],"th");
+      el("batchTotalsStatus").textContent = assigned.toLocaleString()+" assigned counts • "+unassigned.toLocaleString()+" unassigned counts • "+missing.toLocaleString()+" missing Batch ID";
     }
     for (const g of entries) {
       total += g.count;
@@ -386,7 +411,7 @@
       select.setAttribute("aria-label","Employee for batch "+g.batch);
       select.add(new Option("Unassigned",""));
       for (const name of [...new Set([...names,...(saved[g.key]?[saved[g.key]]:[])])]) select.add(new Option(name,name));
-      select.value = Object.prototype.hasOwnProperty.call(saved,g.key) ? saved[g.key] : g.suggested;
+      select.value = saved[g.key] || "";
       select.addEventListener("change",() => {
         saved[g.key] = select.value;
         try { localStorage.setItem(key,JSON.stringify(saved)); } catch { alert("Employee selection could not be saved on this device."); }
@@ -397,6 +422,10 @@
     summary.textContent = entries.length+" batches • "+total.toLocaleString()+" counts"+(missing?" • "+missing.toLocaleString()+" counts missing Batch ID":"");
     drawTotals();
   }
+  el("legacyToggle").addEventListener("click", () => {
+    const show = document.body.classList.toggle("show-legacy");
+    el("legacyToggle").textContent = show ? "Hide legacy tools" : "Show legacy tools";
+  });
   const previousLoadSheet = loadSelectedSheet;
   let lastWorkbook = null;
   loadSelectedSheet = function(...args) {
@@ -411,7 +440,7 @@
     return previousLoadSheet.apply(this,args);
   };
   const previous = calculateProduction;
-  calculateProduction = function(...args) { const result = previous.apply(this,args); renderBatches(); return result; };
+  calculateProduction = function(...args) { try { return previous.apply(this,args); } finally { renderBatches(); } };
   el("sourceSheet")?.addEventListener("change",renderBatches);
   el("branchSelect")?.addEventListener("change",renderBatches);
   renderBatches();
