@@ -105,7 +105,7 @@
       </fieldset>
       <label class="file-drop" for="sourceFile">
         <strong>Choose Cycle Count Detail file</strong>
-        <span id="expectedFilename" class="file-hint">The app uses the Batch column and credits batches such as A-09-12, AA-09-12, A1-09-12, or OH01 7/21-2.</span>
+        <span id="expectedFilename" class="file-hint">Upload the original, unfiltered Cycle Count Detail Excel report. Batch totals are calculated automatically.</span>
         <input id="sourceFile" type="file" accept=".xlsx,.xls" />
       </label>
       <div id="sourceControls" class="controls hidden">
@@ -180,8 +180,9 @@
 
     <section id="batchBreakdown" class="card hidden">
       <div class="section-heading"><div><h2>Batch ID Breakdown</h2><small>Assign the employee who completed each batch.</small></div><span id="batchSummary" class="status"></span></div>
-      <p class="privacy-note">Totals use Times Counted from the selected report sheet. Employee selections are saved on this device by branch, batch and report count dates. These assignments are separate from existing production credit.</p>
+      <p class="privacy-note">Upload the original report without filtering Excel. Totals use Times Counted. Explicit other-branch records are excluded automatically; unknown branch records are flagged. Employee selections are saved on this device and remain separate from existing production credit.</p>
       <div class="table-wrap"><table class="history-table"><thead><tr><th>Batch ID</th><th>Report Lines</th><th>Total Counts</th><th>Employee</th></tr></thead><tbody id="batchBreakdownRows"></tbody></table></div>
+      <p id="batchImportNotice" class="privacy-note" role="status"></p>
       <div id="batchEmployeeTotals" class="kpi-strip" style="margin-top:16px"></div>
     </section>
 
@@ -287,31 +288,44 @@
     body.replaceChildren(); totals.replaceChildren();
     const matrix = workbookMatrix(state.workbook, el("sourceSheet").value);
     const groups = new Map();
-    let cols = null, missing = 0;
+    const names = [...new Set(getAssignments().map(a => str(a.name)).filter(Boolean))].sort();
+    const branch = el("branchSelect")?.value || "";
+    const branchCode = selectedCompanyBranchCode();
+    let cols = null, missing = 0, excluded = 0, unknown = 0;
     for (const row of matrix) {
       const h = row.map(norm);
-      const b = h.findIndex(v => ["batch","batchid","batchnumber","batchno"].includes(v));
-      const t = h.indexOf("timescounted"), d = h.indexOf("countdate");
+      const b = h.findIndex(v => ["batch","batchid","batchnumber","batchno","createdcount","createdcountbatch"].includes(v));
+      const t = h.findIndex(v => ["timescounted","counttimes","numberoftimescounted"].includes(v));
+      const d = h.findIndex(v => ["countdate","datecounted","cyclecountdate"].includes(v));
       const bin = h.findIndex(v => ["bin","binnumber","binlocation","binno"].includes(v));
-      if (b >= 0 && t >= 0 && d >= 0 && bin >= 0) { cols = {b,t,d,bin}; continue; }
+      const site = h.findIndex(v => ["branch","branchid","branchcode","site","siteid","warehouse","warehouseid","locationcode"].includes(v));
+      const emp = h.findIndex(v => ["employee","employeename","countedby","counter","countername","user","username","initials","employeeinitials"].includes(v));
+      if (b >= 0 && t >= 0 && d >= 0 && bin >= 0) { cols = {b,t,d,bin,site,emp}; continue; }
       if (!cols || !str(row[cols.d]) || !str(row[cols.bin])) continue;
       const count = Number(str(row[cols.t]).replace(/,/g,""));
       if (!Number.isFinite(count) || count <= 0) continue;
       const batch = str(row[cols.b]).toUpperCase();
+      const explicitSite = cols.site >= 0 ? str(row[cols.site]).toUpperCase() : "";
+      const rowBranch = detectCompanyBatchBranch(explicitSite) || detectCompanyBatchBranch(batch);
+      if (branchCode && rowBranch && rowBranch !== branchCode) { excluded += count; continue; }
+      if (!rowBranch) unknown += count;
       if (!batch) { missing += count; continue; }
-      const g = groups.get(batch) || {batch, lines:0, count:0, dates:new Set()};
-      g.lines++; g.count += count; g.dates.add(str(row[cols.d])); groups.set(batch,g);
+      const g = groups.get(batch) || {batch, lines:0, count:0, dates:new Set(), employees:new Set(), unresolved:false};
+      g.lines++; g.count += count; g.dates.add(str(row[cols.d]));
+      const worker = cols.emp >= 0 ? str(row[cols.emp]) : "";
+      const match = names.filter(n => norm(n) === norm(worker));
+      if (match.length === 1) g.employees.add(match[0]); else g.unresolved = true;
+      groups.set(batch,g);
     }
-    if (!cols) { summary.textContent = "Batch, Bin, Count Date or Times Counted column not found"; return; }
-    const names = [...new Set(getAssignments().map(a => str(a.name)).filter(Boolean))].sort();
-    const branch = el("branchSelect")?.value || "";
+    el("batchImportNotice").textContent = excluded.toLocaleString()+" other-branch counts excluded. "+unknown.toLocaleString()+" counts have no confirmed branch; included for review, not verified as "+branchCode+".";
+    if (!cols) { summary.textContent = "No compatible detail columns found. Try another report sheet."; return; }
     const entries = [...groups.values()].sort((a,b) => a.batch.localeCompare(b.batch,undefined,{numeric:true}));
     let total = 0;
     const employeeTotals = new Map();
     function drawTotals() {
       employeeTotals.clear();
       for (const g of entries) {
-        const employee = saved[g.key] || "Unassigned";
+        const employee = Object.prototype.hasOwnProperty.call(saved,g.key) ? (saved[g.key] || "Unassigned") : (g.suggested || "Unassigned");
         employeeTotals.set(employee,(employeeTotals.get(employee)||0)+g.count);
       }
       if (missing) employeeTotals.set("Missing Batch ID",missing);
@@ -326,6 +340,7 @@
     for (const g of entries) {
       total += g.count;
       g.key = JSON.stringify([branch,g.batch,[...g.dates].sort()]);
+      g.suggested = !g.unresolved && g.employees.size === 1 ? [...g.employees][0] : "";
       const tr = document.createElement("tr");
       for (const value of [g.batch,g.lines.toLocaleString(),g.count.toLocaleString()]) {
         const td = document.createElement("td"); td.textContent = value; tr.append(td);
@@ -334,9 +349,9 @@
       select.setAttribute("aria-label","Employee for batch "+g.batch);
       select.add(new Option("Unassigned",""));
       for (const name of [...new Set([...names,...(saved[g.key]?[saved[g.key]]:[])])]) select.add(new Option(name,name));
-      select.value = saved[g.key] || "";
+      select.value = Object.prototype.hasOwnProperty.call(saved,g.key) ? saved[g.key] : g.suggested;
       select.addEventListener("change",() => {
-        if (select.value) saved[g.key] = select.value; else delete saved[g.key];
+        saved[g.key] = select.value;
         try { localStorage.setItem(key,JSON.stringify(saved)); } catch { alert("Employee selection could not be saved on this device."); }
         drawTotals();
       });
