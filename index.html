@@ -194,7 +194,7 @@
         <details class="nav-group" id="inventoryMenu">
           <summary>Inventory <span aria-hidden="true">▾</span></summary>
           <div class="nav-dropdown">
-            <button id="cycleProductionNavBtn" type="button" class="nav-entry tab" data-tab="cycleProduction">Cycle Count Production</button>
+            <a id="cycleProductionNavBtn" class="nav-entry" href="cycle-count-production/index.html?v=20261125-batches">Cycle Count Production</a>
             <button type="button" class="nav-entry tab" data-tab="itemHistory">Item History</button>
             <a class="nav-entry" href="inventory-adjustments.html">Inventory Adjustments</a>
             <a class="nav-entry" href="bin-move-audit.html">Bin Move Audit</a>
@@ -257,7 +257,7 @@
       <section id="cycleProductionTab" class="tab-panel">
         <div class="card" style="padding:8px">
           <iframe id="cycleProductionFrame" title="Cycle Count Production" loading="lazy"
-            src="cycle-count-production/index.html"
+            src="cycle-count-production/index.html?v=20261125-batches"
             style="width:100%;min-height:1600px;border:0;border-radius:12px;background:#eef2f7"
             referrerpolicy="same-origin"></iframe>
         </div>
@@ -802,5 +802,15 @@
   <script src="history-upgrade.js?v=20261113-item-history-summary"></script>
   <script src="leaderboard-history-search.js?v=20261113-1"></script>
 <script src="responsive-ui.js?v=20261110-cycle-nav-fix"></script>
+<script>
+document.getElementById("cycleProductionNavBtn")?.addEventListener("click", function(event) {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  if (typeof switchTab !== "function" || !document.getElementById("cycleProductionTab")) return;
+  event.preventDefault();
+  switchTab("cycleProduction");
+  this.classList.add("active");
+});
+document.querySelectorAll("button.tab").forEach(button => button.addEventListener("click", () => document.getElementById("cycleProductionNavBtn")?.classList.remove("active")));
+</script>
 </body>
 </html>
