@@ -178,6 +178,13 @@
       <div id="saveMessage" class="message hidden" role="status"></div>
     </section>
 
+    <section id="batchBreakdown" class="card hidden">
+      <div class="section-heading"><div><h2>Batch ID Breakdown</h2><small>Assign the employee who completed each batch.</small></div><span id="batchSummary" class="status"></span></div>
+      <p class="privacy-note">Totals use Times Counted from the selected report sheet. Employee selections are saved on this device by branch, batch and report count dates. These assignments are separate from existing production credit.</p>
+      <div class="table-wrap"><table class="history-table"><thead><tr><th>Batch ID</th><th>Report Lines</th><th>Total Counts</th><th>Employee</th></tr></thead><tbody id="batchBreakdownRows"></tbody></table></div>
+      <div id="batchEmployeeTotals" class="kpi-strip" style="margin-top:16px"></div>
+    </section>
+
     <section id="aisleBreakdown" class="card hidden" aria-label="Aisle Count Summary">
       <div class="section-heading">
         <div><h2>Aisle Count Summary</h2></div>
@@ -263,5 +270,87 @@
   <script src="rosterBackup.js?v=20261013-1"></script>
   <script src="aisleBreakdown.js?v=20261110-1"></script>
   <script src="dailyJournal.js?v=20261110-1"></script>
+<script>
+(() => {
+  "use strict";
+  const key = "warehouseOps_batchEmployeeAssignments_v1";
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch {}
+  const el = id => document.getElementById(id);
+  const norm = x => String(x ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g,"");
+  const str = x => String(x ?? "").trim();
+  function renderBatches() {
+    const section = el("batchBreakdown");
+    section.classList.toggle("hidden", !state.workbook);
+    if (!state.workbook || !el("sourceSheet").value) return;
+    const body = el("batchBreakdownRows"), summary = el("batchSummary"), totals = el("batchEmployeeTotals");
+    body.replaceChildren(); totals.replaceChildren();
+    const matrix = workbookMatrix(state.workbook, el("sourceSheet").value);
+    const groups = new Map();
+    let cols = null, missing = 0;
+    for (const row of matrix) {
+      const h = row.map(norm);
+      const b = h.findIndex(v => ["batch","batchid","batchnumber","batchno"].includes(v));
+      const t = h.indexOf("timescounted"), d = h.indexOf("countdate");
+      const bin = h.findIndex(v => ["bin","binnumber","binlocation","binno"].includes(v));
+      if (b >= 0 && t >= 0 && d >= 0 && bin >= 0) { cols = {b,t,d,bin}; continue; }
+      if (!cols || !str(row[cols.d]) || !str(row[cols.bin])) continue;
+      const count = Number(str(row[cols.t]).replace(/,/g,""));
+      if (!Number.isFinite(count) || count <= 0) continue;
+      const batch = str(row[cols.b]).toUpperCase();
+      if (!batch) { missing += count; continue; }
+      const g = groups.get(batch) || {batch, lines:0, count:0, dates:new Set()};
+      g.lines++; g.count += count; g.dates.add(str(row[cols.d])); groups.set(batch,g);
+    }
+    if (!cols) { summary.textContent = "Batch, Bin, Count Date or Times Counted column not found"; return; }
+    const names = [...new Set(getAssignments().map(a => str(a.name)).filter(Boolean))].sort();
+    const branch = el("branchSelect")?.value || "";
+    const entries = [...groups.values()].sort((a,b) => a.batch.localeCompare(b.batch,undefined,{numeric:true}));
+    let total = 0;
+    const employeeTotals = new Map();
+    function drawTotals() {
+      employeeTotals.clear();
+      for (const g of entries) {
+        const employee = saved[g.key] || "Unassigned";
+        employeeTotals.set(employee,(employeeTotals.get(employee)||0)+g.count);
+      }
+      if (missing) employeeTotals.set("Missing Batch ID",missing);
+      totals.replaceChildren();
+      for (const [name,count] of employeeTotals) {
+        const card = document.createElement("div"); card.className = "kpi";
+        const label = document.createElement("span"); label.textContent = name;
+        const value = document.createElement("strong"); value.textContent = count.toLocaleString();
+        card.append(label,value); totals.append(card);
+      }
+    }
+    for (const g of entries) {
+      total += g.count;
+      g.key = JSON.stringify([branch,g.batch,[...g.dates].sort()]);
+      const tr = document.createElement("tr");
+      for (const value of [g.batch,g.lines.toLocaleString(),g.count.toLocaleString()]) {
+        const td = document.createElement("td"); td.textContent = value; tr.append(td);
+      }
+      const td = document.createElement("td"), select = document.createElement("select");
+      select.setAttribute("aria-label","Employee for batch "+g.batch);
+      select.add(new Option("Unassigned",""));
+      for (const name of [...new Set([...names,...(saved[g.key]?[saved[g.key]]:[])])]) select.add(new Option(name,name));
+      select.value = saved[g.key] || "";
+      select.addEventListener("change",() => {
+        if (select.value) saved[g.key] = select.value; else delete saved[g.key];
+        try { localStorage.setItem(key,JSON.stringify(saved)); } catch { alert("Employee selection could not be saved on this device."); }
+        drawTotals();
+      });
+      td.append(select); tr.append(td); body.append(tr);
+    }
+    summary.textContent = entries.length+" batches • "+total.toLocaleString()+" counts"+(missing?" • "+missing.toLocaleString()+" counts missing Batch ID":"");
+    drawTotals();
+  }
+  const previous = calculateProduction;
+  calculateProduction = function(...args) { const result = previous.apply(this,args); renderBatches(); return result; };
+  el("sourceSheet")?.addEventListener("change",renderBatches);
+  el("branchSelect")?.addEventListener("change",renderBatches);
+  renderBatches();
+})();
+</script>
 </body>
 </html>
