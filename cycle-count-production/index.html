@@ -182,6 +182,7 @@
       <div class="section-heading"><div><h2>Batch ID Breakdown</h2><small>Assign the employee who completed each batch.</small></div><span id="batchSummary" class="status"></span></div>
       <p class="privacy-note">Upload the original report without filtering Excel. Totals use Times Counted. Explicit other-branch records are excluded automatically; unknown branch records are flagged. Employee selections are saved on this device and remain separate from existing production credit.</p>
       <div class="table-wrap"><table class="history-table"><thead><tr><th>Batch ID</th><th>Report Lines</th><th>Total Counts</th><th>Employee</th></tr></thead><tbody id="batchBreakdownRows"></tbody></table></div>
+      <details style="margin:12px 0"><summary><strong>Manage batch employee names</strong></summary><div class="action-row" style="margin:12px 0"><label>Employee name <input id="batchRosterName" type="text" autocomplete="off" placeholder="New employee name"></label><button id="batchRosterAdd" class="secondary" type="button">Add employee</button></div><div id="batchRosterList"></div><p class="privacy-note">Removing a name hides it from new batch selections without erasing saved assignments. This list is specific to the selected branch.</p></details>
       <p id="batchImportNotice" class="privacy-note" role="status"></p>
       <div id="batchEmployeeTotals" class="kpi-strip" style="margin-top:16px"></div>
     </section>
@@ -280,7 +281,43 @@
   const el = id => document.getElementById(id);
   const norm = x => String(x ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g,"");
   const str = x => String(x ?? "").trim();
+  const rosterKey = "warehouseOps_batchRoster_v1";
+  let roster = {};
+  try { roster = JSON.parse(localStorage.getItem(rosterKey) || "{}") || {}; } catch {}
+  function activeNames() {
+    const code = selectedCompanyBranchCode();
+    const cfg = roster[code] || {added:[],removed:[]};
+    return [...new Set([...getAssignments().map(a => str(a.name)),...cfg.added])].filter(n => n && !cfg.removed.some(x => norm(x) === norm(n))).sort();
+  }
+  function changeRoster(name, remove) {
+    const code = selectedCompanyBranchCode();
+    if (!code || !name) return;
+    const cfg = roster[code] || (roster[code] = {added:[],removed:[]});
+    cfg.added = cfg.added.filter(x => norm(x) !== norm(name));
+    cfg.removed = cfg.removed.filter(x => norm(x) !== norm(name));
+    if (remove) cfg.removed.push(name);
+    else if (!getAssignments().some(a => norm(a.name) === norm(name))) cfg.added.push(name);
+    try { localStorage.setItem(rosterKey,JSON.stringify(roster)); } catch { alert("Roster could not be saved on this device."); }
+    renderBatches();
+  }
+  el("batchRosterAdd").addEventListener("click", () => {
+    const input = el("batchRosterName"), name = str(input.value);
+    if (!name || activeNames().some(n => norm(n) === norm(name))) return;
+    changeRoster(name,false); input.value = "";
+  });
+  function renderRoster() {
+    const list = el("batchRosterList");
+    list.replaceChildren();
+    for (const name of activeNames()) {
+      const row = document.createElement("div"); row.style.cssText = "display:flex;align-items:center;gap:12px;margin:6px 0";
+      const label = document.createElement("span"); label.textContent = name;
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "secondary small"; btn.textContent = "Remove";
+      btn.addEventListener("click", () => { if (confirm("Remove "+name+" from future batch selections?")) changeRoster(name,true); });
+      row.append(label,btn); list.append(row);
+    }
+  }
   function renderBatches() {
+    renderRoster();
     const section = el("batchBreakdown");
     section.classList.toggle("hidden", !state.workbook);
     if (!state.workbook || !el("sourceSheet").value) return;
@@ -288,7 +325,7 @@
     body.replaceChildren(); totals.replaceChildren();
     const matrix = workbookMatrix(state.workbook, el("sourceSheet").value);
     const groups = new Map();
-    const names = [...new Set(getAssignments().map(a => str(a.name)).filter(Boolean))].sort();
+    const names = activeNames();
     const branch = el("branchSelect")?.value || "";
     const branchCode = selectedCompanyBranchCode();
     let cols = null, missing = 0, excluded = 0, unknown = 0;
@@ -360,6 +397,19 @@
     summary.textContent = entries.length+" batches • "+total.toLocaleString()+" counts"+(missing?" • "+missing.toLocaleString()+" counts missing Batch ID":"");
     drawTotals();
   }
+  const previousLoadSheet = loadSelectedSheet;
+  let lastWorkbook = null;
+  loadSelectedSheet = function(...args) {
+    if (state.workbook && state.workbook !== lastWorkbook) {
+      lastWorkbook = state.workbook;
+      const sheet = state.workbook.SheetNames.find(name => workbookMatrix(state.workbook,name).some(row => {
+        const h = row.map(norm);
+        return h.some(v => ["batch","batchid","batchnumber","batchno","createdcount","createdcountbatch"].includes(v)) && h.some(v => ["timescounted","counttimes","numberoftimescounted"].includes(v)) && h.some(v => ["countdate","datecounted","cyclecountdate"].includes(v)) && h.some(v => ["bin","binnumber","binlocation","binno"].includes(v));
+      }));
+      if (sheet) el("sourceSheet").value = sheet;
+    }
+    return previousLoadSheet.apply(this,args);
+  };
   const previous = calculateProduction;
   calculateProduction = function(...args) { const result = previous.apply(this,args); renderBatches(); return result; };
   el("sourceSheet")?.addEventListener("change",renderBatches);
