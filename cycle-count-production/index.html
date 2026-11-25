@@ -185,7 +185,17 @@ body:not(.show-legacy) .legacy-cycle-section{display:none!important}
       <div id="saveMessage" class="message hidden" role="status"></div>
     </section>
 
-    <section class="card"><h2>Employees</h2>      <details style="margin:12px 0"><summary><strong>Manage batch employee names</strong></summary><div class="action-row" style="margin:12px 0"><label>Employee name <input id="batchRosterName" type="text" autocomplete="off" placeholder="New employee name"></label><button id="batchRosterAdd" class="secondary" type="button">Add employee</button></div><div id="batchRosterList"></div><p class="privacy-note">Removing a name hides it from new batch selections without erasing saved assignments. This list is specific to the selected branch.</p></details></section>
+    <section class="card" id="batchEmployeesSection">
+      <h2>Employees</h2>
+      <p class="privacy-note">Add employees here before or after uploading your report. No aisle assignment required.</p>
+      <form id="batchRosterForm" style="display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:12px 0">
+        <label style="flex:1;min-width:180px">Employee name <input id="batchRosterName" type="text" autocomplete="off" placeholder="Enter employee name" required style="width:100%"></label>
+        <button id="batchRosterAdd" class="primary" type="submit">+ Add Employee</button>
+      </form>
+      <p id="batchRosterMessage" role="status"></p>
+      <div id="batchRosterList"></div>
+      <p class="privacy-note">Removing an employee hides their name from future assignments without deleting saved batch assignments.</p>
+    </section>
     <section id="batchBreakdown" class="card">
       <div class="section-heading"><div><h2>2. Assign Batch IDs</h2><small>Assign the employee who completed each batch.</small></div><span id="batchSummary" class="status"></span></div>
       <p class="privacy-note">Upload the original report without filtering Excel. Totals use Times Counted. Explicit other-branch records are excluded automatically; unknown branch records are flagged. Choose the employee for each batch. Totals below update immediately. Selections save on this device.</p>
@@ -314,14 +324,21 @@ body:not(.show-legacy) .legacy-cycle-section{display:none!important}
     try { localStorage.setItem(rosterKey,JSON.stringify(roster)); } catch { alert("Roster could not be saved on this device."); }
     renderBatches();
   }
-  el("batchRosterAdd").addEventListener("click", () => {
-    const input = el("batchRosterName"), name = str(input.value);
-    if (!name || activeNames().some(n => norm(n) === norm(name))) return;
-    changeRoster(name,false); input.value = "";
+  el("batchRosterForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const input = el("batchRosterName"), name = str(input.value), message = el("batchRosterMessage");
+    if (!name) { message.textContent = "Enter an employee name."; return; }
+    if (!selectedCompanyBranchCode()) { message.textContent = "Select a branch first."; return; }
+    if (activeNames().some(n => norm(n) === norm(name))) { message.textContent = name+" is already on the list."; return; }
+    changeRoster(name,false);
+    input.value = "";
+    message.textContent = name+" added to the employee dropdowns.";
+    input.focus();
   });
   function renderRoster() {
     const list = el("batchRosterList");
     list.replaceChildren();
+    if (!activeNames().length) list.textContent = "No employees added yet.";
     for (const name of activeNames()) {
       const row = document.createElement("div"); row.style.cssText = "display:flex;align-items:center;gap:12px;margin:6px 0";
       const label = document.createElement("span"); label.textContent = name;
