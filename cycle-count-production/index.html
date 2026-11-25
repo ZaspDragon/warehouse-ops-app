@@ -358,39 +358,76 @@ body:not(.show-legacy) .legacy-cycle-section{display:none!important}
     }
     const body = el("batchBreakdownRows"), summary = el("batchSummary"), totals = el("batchEmployeeTotals");
     body.replaceChildren(); totals.replaceChildren(); el("batchGrandTotal").replaceChildren(); el("batchTotalsStatus").textContent = "";
-    const matrix = workbookMatrix(state.workbook, el("sourceSheet").value);
     const groups = new Map();
     const names = activeNames();
     const branch = el("branchSelect")?.value || "";
     const branchCode = selectedCompanyBranchCode();
-    let cols = null, missing = 0, excluded = 0, unknown = 0;
-    for (const row of matrix) {
+    const columns = row => {
       const h = row.map(norm);
-      const b = h.findIndex(v => ["batch","batchid","batchnumber","batchno","createdcount","createdcountbatch"].includes(v));
-      const t = h.findIndex(v => ["timescounted","counttimes","numberoftimescounted"].includes(v));
-      const d = h.findIndex(v => ["countdate","datecounted","cyclecountdate"].includes(v));
-      const bin = h.findIndex(v => ["bin","binnumber","binlocation","binno"].includes(v));
-      const site = h.findIndex(v => ["branch","branchid","branchcode","site","siteid","warehouse","warehouseid","locationcode"].includes(v));
-      const emp = h.findIndex(v => ["employee","employeename","countedby","counter","countername","user","username","initials","employeeinitials"].includes(v));
-      if (b >= 0 && t >= 0 && d >= 0 && bin >= 0) { cols = {b,t,d,bin,site,emp}; continue; }
-      if (!cols || !str(row[cols.d]) || !str(row[cols.bin])) continue;
-      const count = Number(str(row[cols.t]).replace(/,/g,""));
-      if (!Number.isFinite(count) || count <= 0) continue;
-      const batch = str(row[cols.b]).toUpperCase();
-      const explicitSite = cols.site >= 0 ? str(row[cols.site]).toUpperCase() : "";
-      const rowBranch = detectCompanyBatchBranch(explicitSite) || detectCompanyBatchBranch(batch);
-      if (branchCode && rowBranch && rowBranch !== branchCode) { excluded += count; continue; }
-      if (!rowBranch) unknown += count;
-      if (!batch) { missing += count; continue; }
-      const g = groups.get(batch) || {batch, lines:0, count:0, dates:new Set(), employees:new Set(), unresolved:false};
-      g.lines++; g.count += count; g.dates.add(str(row[cols.d]));
-      const worker = cols.emp >= 0 ? str(row[cols.emp]) : "";
-      const match = names.filter(n => norm(n) === norm(worker));
-      if (match.length === 1) g.employees.add(match[0]); else g.unresolved = true;
-      groups.set(batch,g);
+      return {
+        b:h.findIndex(v => /^(batch|batchid|batchnumber|batchno|createdcount|createdcountbatch|createdcountbatchid)$/.test(v)),
+        t:h.findIndex(v => /^(timescounted|counttimes|numberoftimescounted|totalcyclecount|counttotal)$/.test(v)),
+        d:h.findIndex(v => /^(countdate|datecounted|cyclecountdate)$/.test(v)),
+        bin:h.findIndex(v => /^(bin|binnumber|binlocation|binno)$/.test(v)),
+        item:h.findIndex(v => /^(item|itemnum|itemnumber|itemno|itemid)$/.test(v)),
+        site:h.findIndex(v => /^(branch|branchid|branchcode|site|siteid|warehouse|warehouseid|locationcode)$/.test(v))
+      };
+    };
+    const validHeader = x => x.b >= 0 && (x.t >= 0 || x.bin >= 0 || x.item >= 0);
+    let missing = 0, excluded = 0, unknown = 0, scanned = 0, invalid = 0, fallback = 0;
+    const candidates = state.workbook.SheetNames.map(name => {
+      const sheet = state.workbook.Sheets[name];
+      const matrix = XLSX.utils.sheet_to_json(sheet,{header:1,defval:"",blankrows:true,raw:true});
+      for (const merge of sheet["!merges"] || []) {
+        if (merge.s.c !== merge.e.c) continue;
+        const range = XLSX.utils.decode_range(sheet["!ref"] || "A1");
+        const row = merge.s.r-range.s.r, col=merge.s.c-range.s.c;
+        const value = matrix[row]?.[col];
+        if (value === undefined || value === "") continue;
+        for(let i=row+1;i<=merge.e.r-range.s.r;i++) if(matrix[i] && !str(matrix[i][col])) matrix[i][col]=value;
+      }
+      const header = matrix.findIndex(row => validHeader(columns(row)));
+      return {name,matrix,header};
+    }).filter(s => s.header >= 0);
+    const selected = candidates.find(s => s.name === el("sourceSheet").value);
+    const ordered = [...candidates].sort((a,b) => (b.matrix.length-b.header)-(a.matrix.length-a.header));
+    const chosen = selected && selected.matrix.length-selected.header >= (ordered[0]?.matrix.length-ordered[0]?.header || 0) ? selected : ordered[0];
+    if (!chosen) { summary.textContent = "No Batch ID column found"; el("batchImportNotice").textContent = "Sheets examined: "+state.workbook.SheetNames.join(", ")+". Upload a report with a Batch column and count or item/bin detail."; el("batchTotalsStatus").textContent = "No report totals available."; return; }
+    let cols = null, lastBatch = "", lastDate = "", lastSite = "";
+    for (const row of chosen.matrix) {
+      const h = columns(row);
+      if (validHeader(h)) { cols=h; lastBatch=""; lastDate=""; lastSite=""; continue; }
+      if (!cols) continue;
+      const first = str(row.find(v => str(v)));
+      if (!first) { lastBatch=""; lastDate=""; lastSite=""; continue; }
+      if (/^(grand total|sub.?total|total)(?:\s|:|$)/i.test(first)) { lastBatch=""; lastDate=""; lastSite=""; continue; }
+      const rawBatch = str(row[cols.b]);
+      if (rawBatch && !/^(grand total|sub.?total|total|batch)$/i.test(rawBatch)) lastBatch=rawBatch;
+      if (cols.d>=0 && str(row[cols.d])) lastDate=str(row[cols.d]);
+      if (cols.site>=0 && str(row[cols.site])) lastSite=str(row[cols.site]);
+      const bin = cols.bin>=0 ? str(row[cols.bin]) : "";
+      const item = cols.item>=0 ? str(row[cols.item]) : "";
+      const hasDetail = Boolean(bin || item);
+      const rawCount = cols.t>=0 ? str(row[cols.t]) : "";
+      if (!hasDetail && (cols.bin>=0 || cols.item>=0)) continue;
+      if (!hasDetail && !rawBatch) continue;
+      let count;
+      if (rawCount) {
+        count=Number(rawCount.replace(/,/g,""));
+        if (!Number.isFinite(count) || count<0) { invalid++; continue; }
+      } else if (cols.t<0 && hasDetail) { count=1; fallback++; }
+      else { invalid++; continue; }
+      scanned++;
+      const batch=lastBatch.toUpperCase();
+      const rowBranch=detectCompanyBatchBranch(lastSite) || detectCompanyBatchBranch(batch);
+      if (branchCode && rowBranch && rowBranch!==branchCode) { excluded+=count; continue; }
+      if (!rowBranch) unknown+=count;
+      if (!batch) { missing+=count; continue; }
+      const g=groups.get(batch)||{batch,lines:0,count:0,dates:new Set(),employees:new Set(),unresolved:true};
+      g.lines++; g.count+=count; if(lastDate) g.dates.add(lastDate); groups.set(batch,g);
     }
-    el("batchImportNotice").textContent = excluded.toLocaleString()+" other-branch counts excluded. "+unknown.toLocaleString()+" counts have no confirmed branch; included for review, not verified as "+branchCode+".";
-    if (!cols) { summary.textContent = "No compatible detail columns found. Open legacy tools to select another worksheet."; el("batchTotalsStatus").textContent = "No report totals available."; return; }
+    el("batchImportNotice").textContent = "Sheet: "+chosen.name+" • "+scanned.toLocaleString()+" detail rows read • "+excluded.toLocaleString()+" other-branch counts excluded • "+unknown.toLocaleString()+" counts with unconfirmed branch"+(invalid?" • "+invalid+" rows missing valid count values (not credited)":"")+(fallback?" • "+fallback+" rows counted as one because Times Counted is absent":"")+".";
+    if (!groups.size) el("batchImportNotice").textContent += " No batch rows found. Check the detected sheet and count columns.";
     const entries = [...groups.values()].sort((a,b) => a.batch.localeCompare(b.batch,undefined,{numeric:true}));
     let total = 0;
     const employeeTotals = new Map();
